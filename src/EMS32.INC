@@ -448,7 +448,7 @@ EMS_GET_PAGES_ALL_HANDLES ENDP
     ADD     EAX,[REG+08]
     ADD     EAX,[REG+12]
     ADD     EAX,[REG+16]
-    ENDM
+ENDM
 
 EMS_GET_SET_PAGE_MAP PROC
     CMP     AL,3                    ; Subfunction 0 to 3 ?

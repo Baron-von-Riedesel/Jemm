@@ -176,9 +176,9 @@ endif
 .text$01 ends
 
 if ?SHAREDGDT
-.text$01x segment para public 'CODE'
+.text$01x segment para flat public 'CODE'
 else
-.text$03x segment para public 'CODE'
+.text$03x segment para flat public 'CODE'
 endif
 
 ;--- GDT - Global Descriptor Table
@@ -205,7 +205,7 @@ endif
 
 if ?SHAREDIDT
     public V86IDT
-.text$01x segment para public 'CODE'
+.text$01x segment para flat public 'CODE'
 V86IDT  DQ 100h dup (0)
 .text$01x ends
 endif
@@ -451,7 +451,7 @@ endif
     ret
 renderitems endp
 
-.text$01w segment dword public 'CODE'
+.text$01w segment dword flat public 'CODE'
 
 exc_str label byte
     DB 13,10, ?NAME, ": exception "
@@ -583,7 +583,9 @@ V86_Monitor PROC public
 
     @v86pushreg
 
+if ?V86DBG and ?V86XDBG
     @DbgOutS <".">,?V86DBG
+endif
 
 ;-- we don't know for sure what size the stack is.
 ;-- There might exist other ring0 code which intruded in the
@@ -604,7 +606,7 @@ V86_Monitor PROC public
     CMP EBP, ?TOS - size V86FRAME           ; int/irq in v86 mode?
     JNZ @@IRQOREXC
 
-if ?V86DBG
+if ?V86DBG and ?V86XDBG
     @DbgOutS <"Int in v86-mode, #=">,1
     @DbgOutW cx,1
     @DbgOutS <", CS:EIP=">,1
@@ -886,7 +888,8 @@ HandleException endp
 
 V86_Exception proc
 
-if ?V86DBG  ;this happens quite often, so usually not good to activate
+if ?V86DBG and ?V86XDBG
+;--- this happens quite often, so usually not good to activate
     @DbgOutS <"exception in v86-mode, #=">,1
     @DbgOutW cx,1
     @DbgOutS <", CS:IP=">,1
@@ -2212,7 +2215,7 @@ endif
     mov cl,8
     rep stosd       ;78-7F
 
-if ?CLEARBOOTFLGS
+if 0;?CLEARBOOTFLGS
     movzx ecx, word ptr ds:[40Eh]
     jecxz @F
     shl ecx, 4

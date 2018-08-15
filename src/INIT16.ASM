@@ -52,7 +52,7 @@ endif
 
 	.data
 
-jemmini	JEMMINIT <>
+jemmini JEMMINIT <>
 XMSdriverAddress PF16 0
 dwAllocatedBytes	DD 0
 mem_largest	DD 0
@@ -67,7 +67,9 @@ xms_max	DD 0	;MAXEXT= value
 xms_num_handles	DW 32	;XMSHANDLES= value
 bNoE820	DB 0
 bNoE801	DB 0
+bI15Called db 0
 endif
+bI15Used db 0
 
 if ?INTEGRATED eq 0
 xmsspec3	DW 0
@@ -192,7 +194,7 @@ endif
     db "+VCPI/NOVCPI   VCPI Support on/off (default on)",LF
     db " VDS/NOVDS     Virtual DMA Services on/off (default on)",LF
 if ?VME
-    db "+VME/NOVME     V86-Mode Extensions on/off (default on)",LF
+    db "+VME/NOVME     V86-Mode Extensions on/off (default off)",LF
 endif
     db " VERBOSE       display additional details during start (abbr: /V)",LF
     db " X=start-end   exclude region from being touched or used by ",NAMEMOD,LF
@@ -526,6 +528,7 @@ nextitem:
 skipWhite ENDP
 
 ;--- set memory type , but honour "EXCLUDE=" and "INCLUDE=" types
+;--- address: paragraph
 
 SetMemoryType PROC stdcall uses si address:word, mtype:byte
 
@@ -637,48 +640,48 @@ local i:word
 local romsize:word
 local mem:word
 
-	mov	mem,0c000h
+	mov mem,0c000h
 	.repeat
-		mov	es,mem
+		mov es,mem
 		xor si, si
 		.if ( word ptr es:[si] == 0AA55h )
-			mov	al, es:[si+2]
-			sub	ah,ah
-			mov	di,ax
-			and	ax,1
-			cmp	ax,1
-			cmc	
-			sbb	cx,cx
-			and	cx,5
+			mov al, es:[si+2]
+			sub ah,ah
+			mov di,ax
+			and ax,1
+			cmp ax,1
+			cmc
+			sbb cx,cx
+			and cx,5
 			.if bVerbose
-				mov	ax,di
-				shr	ax,1
+				mov ax,di
+				shr ax,1
 				invoke printf, CStr("EPROM at %X, size %u.%u kB", LF), es, ax, cx
 			.endif
-			mov	i,di
-			mov	si,mem
-			mov	romsize,di
+			mov i,di
+			mov si,mem
+			mov romsize,di
 
 			.while i
-				mov	di, 200H
-				mov	bx,si
-				mov	bl,bh
-				sub	bh,bh
+				mov di, 200H
+				mov bx,si
+				mov bl,bh
+				sub bh,bh
 				.if SystemMemory[bx] != 'X'
-					mov	ax, i
+					mov ax, i
 					mov cx, si
 					.if ( cl == 0 || ax == romsize )
 						invoke SetMemoryType, si, 'E'
 						mov cx, si
 						.if IncludeTest && cl == 0
-							mov	di, 1000H
+							mov di, 1000H
 							.if WORD PTR i <= 7
-								mov	di,i
-								shl	di,9
+								mov di,i
+								shl di,9
 							.endif
-							mov	blksiz,di
-							mov	es,si
-							mov	bx,0
+							mov blksiz,di
+							mov es,si
+							mov bx,0
 							mov ah,es:[bx]
 							inc bx
 							.while bx < di
@@ -691,74 +694,81 @@ local mem:word
 						.endif
 					.endif
 				.endif
-				mov	ax,di
-				shr	di,4
-				add	si,di
-				shr	ax,9
-				sub	i,ax
+				mov ax,di
+				shr di,4
+				add si,di
+				shr ax,9
+				sub i,ax
 			.endw
 
-			mov	ax,si
-			mov	bx,si
-			mov	bl,bh
-			sub	bh,bh
+			mov ax,si
+			mov bx,si
+			mov bl,bh
+			sub bh,bh
 			.if SplitTest && al && SystemMemory[bx] == 'E'
-				shr	al,5
-				add	al,'0'
+				shr al,5
+				add al,'0'
 				invoke SetMemoryType, si, al
 			.endif
-			mov	ax, romsize
-			shl	ax,5
-			add	ax, mem
-			add	ax, 07fh
-			and	al, 080h
-			mov	mem,ax
+			mov ax, romsize
+			shl ax,5
+			add ax, mem
+			add ax, 07fh
+			and al, 080h
+			mov mem,ax
 			.continue
 		.endif
 		add	mem,0080H	;add 128 paragraphs (=2 kB)
 	.until mem >= 0F000h
 
-	mov	si, 0C0h
+if 1;?INTEGRATED
+;--- don't scan for RAM if we called Int 15h ax=e820h
+	cmp bI15Used,0
+	jnz @F
+endif
+
+	mov si, 0C0h
 	.repeat
-		lea	ax, mem
+		lea ax, mem
 		invoke TestForSystemRAM, OFFSET SystemMemory, si, ax
-		mov	si,ax
+		mov si,ax
 		.if ax
-			mov	ax,mem
-			add	ax,si
-			dec	ax
+			mov ax,mem
+			add ax,si
+			dec ax
 			invoke printf,CStr("System memory found at %X-%X, region might be in use", LF), si, ax
-			mov	ax,mem
-			add	ax,si
-			mov	al,ah
-			sub	ah,ah
-			mov	si,ax
+			mov ax,mem
+			add ax,si
+			mov al,ah
+			sub ah,ah
+			mov si,ax
 		.endif
 	.until si == 0
+@@:
 
 ;--- X=TEST ?
 	.if ExcludeTest
-		mov	mem, 0a0H
+		mov mem, 0a0H
 		.while mem < 0f0H
-			mov	bx, mem
+			mov bx, mem
 			.if SystemMemory[bx] == 'U'
-				mov	ah,BYTE PTR mem
-				sub	al,al
-				mov	es,ax
-				sub	cx,cx
-				mov	si,cx
+				mov ah,BYTE PTR mem
+				sub al,al
+				mov es,ax
+				sub cx,cx
+				mov si,cx
 				.while cx < 0fffH	;don't check the page's final byte!
-					mov	al, es:[si]
+					mov al, es:[si]
 					.if al != 0 && al != 0ffh
 						mov	bx, mem
 						mov	SystemMemory[bx],'X'
 						.break
 					.endif
-					inc	cx
-					inc	si
+					inc cx
+					inc si
 				.endw
 			.endif
-			inc	mem
+			inc mem
 		.endw
 	.endif
 	ret
@@ -856,8 +866,8 @@ $frameset251:
 	.endif
 
 if ?USEMEMSET
-	mov	ax,offset SystemMemory
-	add	ax,si
+	mov ax,offset SystemMemory
+	add ax,si
 	invoke memset, ax, 'P', 16
 else
 	push ds
@@ -984,28 +994,31 @@ endif
 	ret
 xmscall endp
 
+;--- get status of XMS memory
+;--- sets global variables mem_largest, mem_free
+
 XMSGetMemoryStatus PROC c usev3:word
 
 	.if usev3
 		invoke xmscall, 88h
 		.if BYTE PTR xmsreg._ebx == 0	;BL must be 00
-			mov	eax,xmsreg._eax
-			mov	mem_largest,eax
-			mov	eax,xmsreg._edx
-			mov	mem_free,eax
+			mov eax,xmsreg._eax
+			mov mem_largest,eax
+			mov eax,xmsreg._edx
+			mov mem_free,eax
 			jmp ok
 		.endif
 	.endif
-	mov	xmsreg._bx,0
+	mov xmsreg._bx,0
 	invoke xmscall, 8
 	.if BYTE PTR xmsreg._bx == 0
 		movzx eax, xmsreg._ax
-		mov	mem_largest, eax
-		mov	ax, xmsreg._dx
-		mov	mem_free, eax
-		jmp	ok
+		mov mem_largest, eax
+		mov ax, xmsreg._dx
+		mov mem_free, eax
+		jmp ok
 	.endif
-	xor	ax,ax
+	xor ax,ax
 	ret
 ok:
 	mov ax,1
@@ -1018,74 +1031,72 @@ XMSAllocMemory PROC c uses si di usev3:word, kbneeded:dword
 local kbtotal:dword
 local xmshandle:word
 
-	xor	di,di
-	mov	si,usev3
+	xor di,di
+	mov si,usev3
 	.while (di == 0 )
 		mov eax,jemmini.MinMem16k
 		shl eax, 4
 		add eax,kbneeded
-		mov	kbtotal,eax
+		mov kbtotal,eax
 		.if eax < 10000h
 			mov	xmsreg._dx,ax
 			invoke xmscall, 9
 			.if ax
-				mov	di,xmsreg._dx
+				mov di,xmsreg._dx
 				.break
 			.endif
-			or	si,si
-			jne	$usev3ver303
-			mov	eax, jemmini.MinMem16k
-			shl	eax, 3
-			add	eax, kbneeded
+			or si,si
+			jne $usev3ver303
+			mov eax, jemmini.MinMem16k
+			shl eax, 3
+			add eax, kbneeded
 			mov edx, mem_largest
 			.if edx > eax && edx < kbtotal
-				mov	xmsreg._dx, dx
+				mov xmsreg._dx, dx
 				invoke xmscall, 9
 				.if ax
-					mov	eax, mem_largest
-					sub	eax, kbneeded
-					mov	jemmini.MinMem16k, eax
-					mov	di,xmsreg._dx
+					mov eax, mem_largest
+					sub eax, kbneeded
+					mov jemmini.MinMem16k, eax
+					mov di,xmsreg._dx
 					.break
 				.endif
 			.endif
 		.else
 $usev3ver303:
-			mov	eax, kbtotal
-			mov	xmsreg._edx,eax
+			mov eax, kbtotal
+			mov xmsreg._edx,eax
 			invoke xmscall, 089h
 			.if ax
-				mov	di,xmsreg._dx
+				mov di,xmsreg._dx
 				.break
 			.endif
-			mov	eax, jemmini.MinMem16k
-			shl	eax, 3
-			add	eax, kbneeded
+			mov eax, jemmini.MinMem16k
+			shl eax, 3
+			add eax, kbneeded
 			mov edx, mem_largest
 			.break .if edx <= eax || edx >= kbtotal
 			mov	xmsreg._edx,edx
 			invoke xmscall, 089h
 			.if ax
-				mov	eax, mem_largest
-				sub	eax, kbneeded
-				shr	eax, 4
-				mov	jemmini.MinMem16k,eax
-				mov	di,xmsreg._dx
+				mov eax, mem_largest
+				sub eax, kbneeded
+				shr eax, 4
+				mov jemmini.MinMem16k,eax
+				mov di,xmsreg._dx
 				.break
 			.endif
 		.endif
-		mov	eax,jemmini.MinMem16k
-		shr	eax,1
-		mov	jemmini.MinMem16k,eax
+		mov eax,jemmini.MinMem16k
+		shr eax,1
+		mov jemmini.MinMem16k,eax
 	.endw
-	mov	ax,di
+	mov ax,di
 	ret
 
 XMSAllocMemory ENDP
 
 endif
-
-if ?INTEGRATED
 
 E820MAP struct
 baselow  dd ?
@@ -1104,8 +1115,14 @@ I15GetMemoryStatus proc stdcall uses esi edi FirstOnly:WORD
 local maxvalue:DWORD
 local mmap:E820MAP
 
+if ?INTEGRATED
+	mov eax,mem_free
+	cmp bI15Called, 0
+	jnz _ret
+	inc bI15Called
 	cmp [bNoE820],0    ; NOE820 option set?
 	jne @@e801_check
+endif
 
 	@DbgOutS <"I15GetMemoryStatus: get extended memory with int 15, E820",13,10>,?INITRMDBG
 
@@ -1129,6 +1146,7 @@ local mmap:E820MAP
 	mov [di].E820MAP.type_,eax
 	mov [di].E820MAP.lenlow,eax
 	mov ax,0e820h
+	clc
 	int 15h
 	setc dl 		; keep carry flag status
 	cmp eax,SMAP
@@ -1136,17 +1154,46 @@ local mmap:E820MAP
 	cmp dl,1
 	je @@e820_done ; CF doesn't have to signal fail, can just mean done
 
-	cmp ebx,0
-	je @@e820_done ; finished
 	cmp ecx,sizeof E820MAP	; didn't return all the info needed, assume done
 	jb @@e820_done
 
+	mov bI15Used,1
+	cmp [di].E820MAP.type_,2	; reserved memory ?
+	jne e820_loop1
+	mov eax, [di].E820MAP.baselow
+	cmp eax, 0C0000h
+	jb e820_loop2
+	cmp eax,100000h
+	jnc e820_loop2
+	mov ecx,[di].E820MAP.lenlow
+	shr eax, 4
+	shr ecx, 12
+	push esi
+	mov si,ax
+	.if bVerbose
+		push cx
+		shl cx,2
+		invoke printf, CStr(<"Int15, ax=E820: reserved region=%04X, size=%u kB",LF>), si, cx
+		pop cx
+	.endif
+	.while cx
+		invoke SetMemoryType, si, 'E'
+		add si,100h
+		dec cx
+	.endw
+	pop esi
+	jmp e820_loop2
+e820_loop1:
 	cmp [di].E820MAP.type_,1	; memory available to OS
-	jne @@e820_loop
+	jne e820_loop2
+
+	cmp [di].E820MAP.basehigh,0	;ignore memory beyond 4 GB for now
+	jnz e820_loop2
+
 	mov eax,[di].E820MAP.baselow
 	cmp eax,100000h ; has to live in extended memory
 	setz dl
-	jb @@e820_loop
+	jb e820_loop2
 
 	cmp esi,0
 	jne @@e820_checkhole
@@ -1172,8 +1219,20 @@ local mmap:E820MAP
 
 @@e820_matchcrit:
 	add esi,[di].E820MAP.lenlow
-	jnc @@e820_loop
-	mov esi,-1	; wow, we overflowed a 4G counter, force a limit
+	jc e820_overflow
+e820_loop2:
+	cmp ebx,0		;was this the last entry?
+	jnz @@e820_loop
+if ?INTEGRATED
+	.if bVerbose
+		mov eax,esi
+		shr eax,10
+		invoke printf, CStr(<"Int15, ax=E820: extended memory available=%lu kB",LF>), eax
+	.endif
+endif
+	jmp @@e820_done
+e820_overflow:
+	mov esi,-1		; wow, we overflowed a 4G counter, force a limit
 	jmp @@e820_done
 
 @@e820_bad:
@@ -1185,6 +1244,7 @@ local mmap:E820MAP
 	cmp eax,64		; only use if useful amount
 	ja @@exit
 
+if ?INTEGRATED
 ;--- try 0e801h, but set up the registers to fail status because not
 ;--- all BIOS's properly return the carry flag on failure
 
@@ -1199,6 +1259,7 @@ local mmap:E820MAP
 	mov cx,ax
 	mov dx,ax
 	mov ax,0e801h
+	clc
 	int 15h
 	jc @@try_88h
 	mov ax,cx
@@ -1240,13 +1301,20 @@ local mmap:E820MAP
 	mov eax,edx 			; above max, limit to maximum
 @@:
 	cmp eax, 64
-	jbe @F
+	jbe _ret
 	mov ecx, eax
 	sub ecx, 64
+	mov mem_free,ecx
+	mov mem_largest,ecx
 	call I15SetHandle		; set xms block, size in ECX
-@@:
+else
+@@exit:
+endif
+_ret:
 	ret
 I15GetMemoryStatus endp
+
+if ?INTEGRATED
 
 ;--- get A20 method
 
@@ -1584,24 +1652,26 @@ GetReasonableFixedMemoryAmount PROC
 
 if ?INTEGRATED
 	invoke I15GetMemoryStatus, 0
-	mov	mem_largest,eax
-	or	eax,eax
-	je	$EX312
+	or eax,eax
+	je $EX312
 else
 	invoke XMSGetMemoryStatus, xmsspec3
-	or	ax,ax
-	je	$EX312
+	or ax,ax
+	je $EX312
 endif
 	.if word ptr mem_largest+2 > 0
-		mov	ax, 8000H
+		mov ax, 8000H
 	.else
-		mov	ax,WORD PTR mem_largest+0
-		shr	ax,1
+		mov ax,WORD PTR mem_largest+0
+		shr ax,1
 	.endif
 $EX312:
 	ret
 
 GetReasonableFixedMemoryAmount ENDP
+
+;--- aallocates and initializes extended memory for jemm
+;--- is called after the memory requirements have been calculated
 
 AllocAndInitMem PROC c uses si di kbneeded:dword
 
@@ -1609,8 +1679,8 @@ local ulcalc:dword
 local PotentialEmsVcpiMemory:dword
 local dwMinOriginal:dword
 
-	mov	eax,jemmini.MinMem16k
-	mov	[dwMinOriginal],eax
+	mov eax,jemmini.MinMem16k
+	mov [dwMinOriginal],eax
 
 ;     the DMA buffer must be 64kb aligned. Since EMS pages *must* be
 ;     allocated from memory physically "behind" the DMA buffer, there may
@@ -1620,8 +1690,8 @@ local dwMinOriginal:dword
 		.if jemmini.DMABufferSize > 64
 			mov ax, 32
 		.else
-			mov	ax,jemmini.DMABufferSize
-			shr	ax,1
+			mov ax,jemmini.DMABufferSize
+			shr ax,1
 		.endif
 		movzx eax,ax
 		add kbneeded,eax
@@ -1638,11 +1708,8 @@ $L569:
 		xor ax,ax
 		ret
 	.endif
-	sub	eax,64	;/* dont count HMA and "holes" */
-	mov	mem_free,eax
-	mov	mem_largest,eax
 	.if bVerbose
-		invoke printf, CStr("I15 total memory %lu kB", LF), eax
+		invoke printf, CStr("I15 total memory %lu kB", LF), mem_free
 	.endif
 else
 	invoke XMSGetMemoryStatus, xmsspec3
@@ -2535,6 +2602,7 @@ if ?A20PORTS or ?A20XMS
 	.endif
 endif
 if ?VME
+	mov jemmini.NoVME,1
 	invoke FindCommand, CStr("NOVME")
 	.if ax
 		mov jemmini.NoVME,1
@@ -2769,17 +2837,17 @@ else
 	push ds
 	pop es
 	mov di, offset SystemMemory
-	mov cx,160
-	mov al,'R'
+	mov cx,160	;160*4 = 10*64 = 0000-9FFF
+	mov al,'R'	;RAM
 	rep stosb
-	mov al,'G'
-	mov cl,32
+	mov al,'G'	;graphics
+	mov cl,32	;A000-BFFF
 	rep stosb
-	mov al,'U'
-	mov cl,48
+	mov al,'U'	;possibly UMB
+	mov cl,48	;C000-EFFF
 	rep stosb
-	mov al,'E'
-	mov cl,16
+	mov al,'E'	;ROM
+	mov cl,16	;F000-FFFF
 	rep stosb
 endif
 
@@ -2873,6 +2941,7 @@ $I395:
 		jmp exit1
 	.endif
 	invoke XMSinit
+
 if ?INTEGRATED eq 0
 	.if !ax
 		invoke printf, CStr("%s: no XMM found, required", LF), offset szError
@@ -2884,6 +2953,7 @@ else
 		jmp exit1
 	.endif
 endif
+	invoke I15GetMemoryStatus, 1
 
 	invoke IsDPMI
 	.if ax
@@ -3006,6 +3076,52 @@ endif
 
 	.if bVerbose
 		invoke printf, CStr("XMS memory block for monitor: %lx-%lx, XMS highest=%lx", LF), jemmini.MonitorStart, eax, jemmini.TotalMemory
+	.endif
+
+	.if bVerbose
+		invoke printf, CStr(<"Memory Map: (R=system ram, G=graphics, E=rom/rsvd, P=page frame, U=umb)",LF>)
+		sub sp,64+4
+		mov cx,4
+		mov si,offset SystemMemory
+		.while cx
+			push cx
+			movzx eax,si
+			sub ax,offset SystemMemory
+			shl eax,12
+			invoke printf, CStr(<"%05lX: ">), eax
+			push ss
+			pop es
+			mov al,' '
+			mov di,sp
+			add di,2
+			push di
+			movsd
+			movsd
+			movsd
+			movsd
+			stosb
+			movsd
+			movsd
+			movsd
+			movsd
+			stosb
+			movsd
+			movsd
+			movsd
+			movsd
+			stosb
+			movsd
+			movsd
+			movsd
+			movsd
+			mov al,0
+			stosb
+			pop di
+			invoke printf, CStr(<"%s",LF>), di
+			pop cx
+			dec cx
+		.endw
+		add sp,64+4
 	.endif
 
 	mov ax, ds

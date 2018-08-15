@@ -274,12 +274,14 @@ if ?VCPI
     movzx ecx,al
     cmp [bNoVCPI],0     ; check if VCPI turned off
     jne @@vcpi_inv_call ; yes, return invalid code, flags VCPI not present for 0de00h
-    call [VCPI_Call_Table+ECX*4]
   if ?VCPIDBG
     @DbgOutS <"VCPI rm, in: ax=">,1
     @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EAX>,1
     @DbgOutS <" edx=">,1
     @DbgOutD [ebp].Client_Reg_Struc.Client_EDX,1
+  endif
+    call [VCPI_Call_Table+ECX*4]
+  if ?VCPIDBG
     @DbgOutS <", out: ax=">,1
     @DbgOutW ax,1
     @DbgOutS <" edx=">,1
@@ -298,7 +300,6 @@ endif
     JB @@emm_inv_call
     CMP CL,EMS_MAX
     JAE @@emm_inv_call
-    CALL [EMS_Call_Table+ECX*4]
 if ?EMSDBG
     @DbgOutS <"EMS in: ax=">,1
     @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EAX>,1
@@ -306,6 +307,9 @@ if ?EMSDBG
     @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EBX>,1
     @DbgOutS <" dx=">,1
     @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EDX>,1
+endif
+    CALL [EMS_Call_Table+ECX*4]
+if ?EMSDBG
     @DbgOutS <", out: ax=">,1
     @DbgOutW ax,1
     @DbgOutS <" bx=">,1

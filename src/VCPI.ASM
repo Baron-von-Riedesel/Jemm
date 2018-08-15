@@ -24,6 +24,12 @@
 
 if ?VCPI
 
+if ?VCPIXDBG
+.text$01 segment
+dbgv IRETDV86 <>
+.text$01 ends
+endif
+
 if ?CODEIN2PAGE
     @seg .text$02,<PAGE>
 else
@@ -331,6 +337,21 @@ VCPI_SetMappings ENDP
 
 VCPI_V86toPM    PROC public
 
+if ?VCPIXDBG
+    @DbgOutS <"VCPI rm, ax=DE0C, esi=">,1
+    @DbgOutD esi,1
+    @DbgOutS <" cr3=">,1
+    @DbgOutD dword ptr [esi].V862PM.swCR3
+;    @DbgOutS <" linad IDT=">,1
+;    @DbgOutD dword ptr [esi].V862PM.swIDTOFFS
+;    @DbgOutS <" linad GDT=">,1
+;    @DbgOutD dword ptr [esi].V862PM.swGDTOFFS
+    @DbgOutS <" cs:eip=">,1
+    @DbgOutW word ptr [esi].V862PM.swCSEIP+4
+    @DbgOutS <":">,1
+    @DbgOutD dword ptr [esi].V862PM.swCSEIP
+    @DbgOutS <10>,1
+endif
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX   ;restore client value
     mov ebp,[ebp].Client_Reg_Struc.Client_EBP   ;restore client value
 if ?VCPITMPSS
@@ -392,6 +413,26 @@ endif
     push 23002h         ; set flags VM=1, NT=0, IOPL=3, IF=0, TF=0
     sub esp,2*4
     mov cr3,eax
+if ?VCPIXDBG
+	mov eax,[esp].IRETDV86.vEIP
+	mov [dbgv.vEIP],eax
+	mov eax,[esp].IRETDV86.vCS
+	mov [dbgv.vCS],eax
+	mov eax,[esp].IRETDV86.vEFL
+	mov [dbgv.vEFL],eax
+	mov eax,[esp].IRETDV86.vESP
+	mov [dbgv.vESP],eax
+	mov eax,[esp].IRETDV86.vSS
+	mov [dbgv.vSS],eax
+	mov eax,[esp].IRETDV86.vES
+	mov [dbgv.vES],eax
+	mov eax,[esp].IRETDV86.vDS
+	mov [dbgv.vDS],eax
+	mov eax,[esp].IRETDV86.vFS
+	mov [dbgv.vFS],eax
+	mov eax,[esp].IRETDV86.vGS
+	mov [dbgv.vGS],eax
+endif
     lgdt fword ptr [GDT_PTR]
     xor eax,eax
     and byte ptr [V86GDT+V86_TSS_SEL+5], NOT 2
@@ -400,6 +441,22 @@ endif
     mov al,V86_TSS_SEL
     clts
     ltr ax
+if ?VCPIXDBG
+    mov eax,FLAT_DATA_SEL
+    mov ss,eax
+    mov esp,dwStackCurr
+    @DbgOutS <"VCPI pm, ax=DE0C">,1
+    @DbgOutS <", rm cs:eip=">,1
+    @DbgOutW word ptr dbgv.vCS,1
+    @DbgOutS <":">,1
+    @DbgOutD dbgv.vEIP,1
+    @DbgOutS <", rm ss:esp=">,1
+    @DbgOutW word ptr dbgv.vSS,1
+    @DbgOutS <":">,1
+    @DbgOutD dbgv.vESP,1
+    @DbgOutS <10>,1
+    mov esp, offset dbgv
+endif
     iretd
 
 VCPI_PMtoV86 ENDP

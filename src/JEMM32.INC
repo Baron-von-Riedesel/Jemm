@@ -405,40 +405,40 @@ endif
 ; obsolete, since Jemm386 now runs in a 32bit code segment
 
 @BIG_NOP MACRO
-;;      DB 67h    ;  32-Bit-Prefix
-;;      NOP
-        ENDM
+;;  DB 67h    ;  32-Bit-Prefix
+;;  NOP
+ENDM
 
 @mov_eax_cr4 macro
     db 0fh, 20h, 0E0h
-    endm
+endm
 @mov_ecx_cr4 macro
     db 0fh, 20h, 0E1h
-    endm
+endm
 
 @mov_cr4_eax macro
     db 0fh, 22h, 0E0h
-    endm
+endm
 @mov_cr4_ecx macro
     db 0fh, 22h, 0E1h
-    endm
+endm
 
 @cpuid  macro
 ;   cpuid
     db 0Fh,0A2h
-    endm
+endm
 
 @wrmsr  macro
     db 0Fh,030h
-    endm
+endm
 
 @rdtsc  macro
     db 0Fh,031h
-    endm
+endm
 
 @rdmsr  macro
     db 0Fh,032h
-    endm
+endm
 
 ;--- macro to get a pointer to PTEs
 ;--- reg: register to set
@@ -462,7 +462,7 @@ else
     mov reg, ?PAGEDIR
   endif
 endif
-    endm
+endm
 
 @GETPTE macro reg, ofs, bIsConst
 if 0
@@ -475,7 +475,7 @@ else
       mov reg,[?PAGEDIR+ofs]
     endif
 endif
-    endm
+endm
 
 ;--- macro to convert a a pointer to PTEs in system page table
 ;--- to the according linear address
@@ -485,4 +485,4 @@ endif
     sub     reg, ?SYSLINEAR+?PAGETABSYS
     shl     reg, 10
     add     reg, ?SYSBASE
-    endm
+endm

@@ -76,7 +76,7 @@ JWLINK=1
 !endif
 
 !if $(DEBUG)
-AOPTD=-D_DEBUG
+AOPTD=-D_DEBUG -D?V86DBG=1 -D?EMSDBG=1 -D?VCPIDBG=1 -D?VCPIXDBG=1
 !else
 AOPTD=
 !endif
@@ -84,11 +84,18 @@ AOPTD=
 # list of 32bit modules
 COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\dma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
-COFFDEP1=$(COFFMODS:.\=REL386\)
-COFFDEP2=$(COFFMODS:.\=RELEX\)
-
+!if $(DEBUG)
+OUTD1=DEB386
+OUTD2=DEBEX
+COFFDEP1=$(COFFMODS:.\=DEB386\)
+COFFDEP2=$(COFFMODS:.\=DEBEX\)
+!else
 OUTD1=REL386
 OUTD2=RELEX
+COFFDEP1=$(COFFMODS:.\=REL386\)
+COFFDEP2=$(COFFMODS:.\=RELEX\)
+!endif
+
 
 !if $(JWLINK32)
 LINK321=jwlink format raw bin file {$(COFFDEP1)} name $(OUTD1)\jemm32.bin option offs=0x110000, start=_start, map=$(OUTD1)\jemm32.map, quiet

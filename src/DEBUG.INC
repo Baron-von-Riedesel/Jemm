@@ -1,22 +1,30 @@
 
-?V86DBG equ 0   ;1=enable displays in V86 monitor
-?DMADBG equ 0   ;1=enable DMA related displays
-?VDSDBG equ 0   ;1=enable VDS related displays
-?EMSDBG equ 0   ;1=enable EMS related displays
-?UMBDBG equ 0   ;1=enable UMB related displays
-?A20DBG equ 0   ;1=enable A20 related displays
-?EMBDBG equ 0   ;1=enable EMB related displays (?INTEGRATED only)
-?EMUDBG equ 0   ;1=enable opcode emulation related displays 
-?I15DBG equ 0   ;1=enable INT 15h, AH=87h related displays
-?VCPIDBG equ 0  ;1=enable VCPI related displays
-?EMXDBG equ 0   ;1=enable EMMXXXX0 related displays 
-?POOLDBG equ 0  ;1=enable memory pool related displays
-?INITDBG equ 0  ;1=enable displays in protected-mode initialisation
-?HLTDBG equ 0   ;1=enable displays for true HLT emulation
-?UNLDBG equ 0   ;1=enable display for "unload"
-?RBTDBG equ 0   ;1=enable reboot debug
-?EXCDBG equ 0   ;1=enable displays in exception handler
-?PHYSDBG equ 0  ;1=enable displays in physical memory handling
+@dbgdef macro name_
+ifndef name_
+name_ equ 0
+endif
+endm
+
+@dbgdef ?V86DBG  ;1=enable displays in V86 monitor
+@dbgdef ?V86XDBG ;1=enable more displays in V86 monitor (IRQs!)
+@dbgdef ?DMADBG  ;1=enable DMA related displays
+@dbgdef ?VDSDBG  ;1=enable VDS related displays
+@dbgdef ?EMSDBG  ;1=enable EMS related displays
+@dbgdef ?UMBDBG  ;1=enable UMB related displays
+@dbgdef ?A20DBG  ;1=enable A20 related displays
+@dbgdef ?EMBDBG  ;1=enable EMB related displays (?INTEGRATED only)
+@dbgdef ?EMUDBG  ;1=enable opcode emulation related displays 
+@dbgdef ?I15DBG  ;1=enable INT 15h, AH=87h related displays
+@dbgdef ?VCPIDBG ;1=enable VCPI related displays
+@dbgdef ?VCPIXDBG;1=enable VCPI mode switch displays
+@dbgdef ?EMXDBG  ;1=enable EMMXXXX0 related displays 
+@dbgdef ?POOLDBG ;1=enable memory pool related displays
+@dbgdef ?INITDBG ;1=enable displays in protected-mode initialisation
+@dbgdef ?HLTDBG  ;1=enable displays for true HLT emulation
+@dbgdef ?UNLDBG  ;1=enable display for "unload"
+@dbgdef ?RBTDBG  ;1=enable reboot debug
+@dbgdef ?EXCDBG  ;1=enable displays in exception handler
+@dbgdef ?PHYSDBG ;1=enable displays in physical memory handling
 
 ?BUFFERED equ 0 ;1=buffer output in a XMS memory block
 ?USEMONO equ 0  ;1=use monochrome monitor for dbg displays
@@ -41,7 +49,7 @@ sm1:
         pop     eax
         popfd
 endif
-        endm
+endm
 
 ;--- display string
 
@@ -59,7 +67,7 @@ if bDisp
         db string
         db 0
 endif
-        endm
+endm
 
 ;--- display char
 
@@ -78,7 +86,7 @@ if bDisp
         call VPUTCHR
         pop eax
 endif
-        endm
+endm
 
 ;--- display DWORD
 
@@ -97,7 +105,7 @@ if bDisp
         call VDWORDOUT
         pop eax
 endif
-        endm
+endm
 
 ;--- display WORD
 
@@ -116,7 +124,7 @@ if bDisp
         call VWORDOUT
         pop eax
 endif
-        endm
+endm
 
 ;--- display BYTE
 
@@ -135,17 +143,17 @@ if bDisp
         call VBYTEOUT
         pop eax
 endif
-        endm
+endm
 
 @DebugBreak macro
 ifdef _DEBUG
         int 3
 endif
-        endm
+endm
 
 @CheckBlockIntegrity macro
 if ?POOLDBG
         call CheckBlockIntegrity
 endif
-        endm
+endm
 

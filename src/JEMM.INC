@@ -5,7 +5,7 @@ LF              EQU 0AH
 CR              EQU 0DH
 
 ?VERSIONHIGH    equ 5
-?VERSIONLOW     equ 78
+?VERSIONLOW     equ 79
 
 ifndef ?INTEGRATED
 ?INTEGRATED     EQU 0       ; 1=integrated version (XMS + EMM)
@@ -268,5 +268,5 @@ IRETDV86 ends
 
 @BPOPC macro
     db ?BPOPC
-    endm
+endm
 
