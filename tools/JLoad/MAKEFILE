@@ -36,11 +36,11 @@ MSLINK32=$(MASM)
 
 
 !if $(MASM)
-ASM   = @ml.exe -c -nologo -Fl$* -Fo$* -D?DEBUG=$(DEBUG) -I..\Include
-ASM32 = @ml.exe -c -coff -nologo -Sg $(AOPTD) -I..\Include
+ASM   = @ml.exe -c -nologo -Fl$* -Fo$* -D?DEBUG=$(DEBUG) -I..\..\Include -I..\..\src
+ASM32 = @ml.exe -c -coff -nologo -Sg $(AOPTD) -I..\..\Include -I..\..\src
 !else
-ASM   = @jwasm.exe -c -nologo -Fl$* -Fo$* -D?DEBUG=$(DEBUG) -I..\Include
-ASM32 = @jwasm.exe -c -coff -nologo -Sg $(AOPTD) -I..\Include
+ASM   = @jwasm.exe -c -nologo -Fl$* -Fo$* -D?DEBUG=$(DEBUG) -I..\..\Include -I..\..\src
+ASM32 = @jwasm.exe -c -coff -nologo -Sg $(AOPTD) -I..\..\Include -I..\..\src
 !endif
 
 #LINK16  = @\dm\bin\link.exe
@@ -54,8 +54,8 @@ LINK32=@link.exe /nologo /filealign:0x200 /fixed /driver /subsystem:native /base
 !else
 LINK32=@jwlink.exe format raw bin op offset=0xF8400000, map, start='_start@0'
 !endif
-INC32=jload.inc jload32.inc debug.inc ..\Jemm32.inc ..\Include\jlm.inc
-INC16=jload.inc debug.inc ..\Jemm32.inc ..\Jemm.inc ..\Include\jlm.inc
+INC32=jload.inc jload32.inc debug.inc ..\..\src\Jemm32.inc ..\..\Include\jlm.inc
+INC16=jload.inc debug.inc ..\..\src\Jemm32.inc ..\..\src\Jemm.inc ..\..\Include\jlm.inc
 
 ALL: $(OUTDIR) $(OUTDIR)\$(NAME).EXE
 
