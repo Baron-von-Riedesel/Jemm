@@ -640,6 +640,8 @@ local i:word
 local romsize:word
 local mem:word
 
+;--- check for ROMs (should find VGA-Roms)
+;--- also handles I=TEST
 	mov mem,0c000h
 	.repeat
 		mov es,mem
@@ -760,8 +762,8 @@ endif
 				.while cx < 0fffH	;don't check the page's final byte!
 					mov al, es:[si]
 					.if al != 0 && al != 0ffh
-						mov	bx, mem
-						mov	SystemMemory[bx],'X'
+						mov bx, mem
+						mov SystemMemory[bx],'X'
 						.break
 					.endif
 					inc cx
@@ -1734,9 +1736,9 @@ endif
 		mov ecx, kbneeded
 		mov edx, mem_free
 		.if eax > edx && ecx < edx
-			sub	edx,kbneeded
+			sub edx,kbneeded
 			shr edx, 4
-			mov	jemmini.MinMem16k,edx
+			mov jemmini.MinMem16k,edx
 		.endif
 
 ;--- leave a little extended memory, if possible, for programs that want some XMS
@@ -1761,7 +1763,7 @@ endif
 
 ;--- default is: all memory
 
-	mov	eax,mem_free
+	mov eax,mem_free
 	.if eax > kbneeded
 		sub eax, kbneeded
 	.else
@@ -1770,52 +1772,52 @@ endif
 	mov PotentialEmsVcpiMemory, eax
 
 	.if jemmini.NoPool	;/* Pool sharing off? */
-		mov	eax,jemmini.MinMem16k
-		shl	eax,4
+		mov eax,jemmini.MinMem16k
+		shl eax,4
 		.if eax < mem_free
-			mov	eax,jemmini.MinMem16k
-			shl	eax,4
-			mov	PotentialEmsVcpiMemory, eax
+			mov eax,jemmini.MinMem16k
+			shl eax,4
+			mov PotentialEmsVcpiMemory, eax
 		.endif
 	.endif
 
 ;   /* MIN= has higher priority than MAX= */
-	mov	eax,jemmini.MinMem16k
+	mov eax,jemmini.MinMem16k
 	.if  eax > jemmini.MaxMem16k
 		mov	jemmini.MaxMem16k,eax
 	.endif
 
 ;   /* MaxMem16k may have been set by MAX=, and above the limit */
-	mov	eax,jemmini.MaxMem16k
-	shl	eax,4
+	mov eax,jemmini.MaxMem16k
+	shl eax,4
 	.if eax > [PotentialEmsVcpiMemory]
-		mov	eax,[PotentialEmsVcpiMemory]
-		shr	eax,4
-		mov	jemmini.MaxMem16k,eax
+		mov eax,[PotentialEmsVcpiMemory]
+		shr eax,4
+		mov jemmini.MaxMem16k,eax
 	.endif
 
 ;   /* MaxMem16k may have been set by MAX=, and below 32 MB! */
 ;   /* this is valid, but then adjust max EMS pages as well */
 	movzx eax,jemmini.MaxEMSPages
 	.if  jemmini.MaxMem16k < eax
-		mov	ax,WORD PTR jemmini.MaxMem16k
-		mov	jemmini.MaxEMSPages,ax
+		mov ax,WORD PTR jemmini.MaxMem16k
+		mov jemmini.MaxEMSPages,ax
 	.endif
 
 ;   /* if MIN= has been set adjust max. EMS pages */
 	movzx eax,jemmini.MaxEMSPages
 	.if jemmini.MinMem16k > eax
 		.if jemmini.MinMem16k > MAX_EMS_PAGES_POSSIBLE
-			mov	ax, MAX_EMS_PAGES_POSSIBLE
+			mov ax, MAX_EMS_PAGES_POSSIBLE
 		.else
-			mov	ax, word ptr jemmini.MinMem16k+0
+			mov ax, word ptr jemmini.MinMem16k+0
 		.endif
 		mov jemmini.MaxEMSPages, ax
 	.endif
 
 	.if bVerbose
-		mov	eax,jemmini.MaxMem16k
-		shl	eax,4
+		mov eax,jemmini.MaxMem16k
+		shl eax,4
 		invoke printf, CStr("potential/max. VCPI memory: %lu/%lu kB", LF), PotentialEmsVcpiMemory, eax
 	.endif
 
@@ -1826,21 +1828,21 @@ endif
 ;   if dynamic XMS allocation is on, 128 more items are needed,
 ;   which represent the maximum number of XMS handles
 
-	mov	eax, jemmini.MaxMem16k
-	shl	eax,4
-	mov	ecx,1536	;00000600H
-	xor	edx,edx
-	div	ecx
-	add	eax,2
-	mov	ulcalc,eax
+	mov eax, jemmini.MaxMem16k
+	shl eax,4
+	mov ecx,1536	;00000600H
+	xor edx,edx
+	div ecx
+	add eax,2
+	mov ulcalc,eax
 
 	.if !jemmini.NoPool
-		add	[ulcalc],128
+		add [ulcalc],128
 	.endif
 
-	mov	eax,ulcalc
-	shl	eax,6
-	mov	ulcalc,eax
+	mov eax,ulcalc
+	shl eax,6
+	mov ulcalc,eax
 
 ;   /* 4+1 bytes for each EMS page needed */
 ;   /* 255*4 bytes for EMS handle table */
@@ -1849,16 +1851,16 @@ endif
 
 	movzx eax, jemmini.MaxEMSPages
 	imul eax, 5
-	add	eax,255*4+255*8+64*4
-	add	ulcalc,eax
+	add eax,255*4+255*8+64*4
+	add ulcalc,eax
 
-	mov	eax,ulcalc	;/* convert bytes back to K */
-	add	eax,1023
+	mov eax,ulcalc	;/* convert bytes back to K */
+	add eax,1023
 	shr eax, 10
 
-	add	eax,3	;/* 4k page align */
-	and	al,0FCh
-	mov	ulcalc,eax
+	add eax,3	;/* 4k page align */
+	and al,0FCh
+	mov ulcalc,eax
 
 	.if bVerbose
 		invoke printf, CStr("%lu kB needed for VCPI and EMS handling", LF), eax
@@ -1885,51 +1887,51 @@ if ?INTEGRATED eq 0
 		jmp	$L569
 	.endif
 else
-	mov	eax,jemmini.MinMem16k
+	mov eax,jemmini.MinMem16k
 	shl eax, 4
-	add	eax, kbneeded
+	add eax, kbneeded
 	invoke I15AllocMemory, 0, eax
-	mov	jemmini.XMSControlHandle,ax
+	mov jemmini.XMSControlHandle,ax
 	.if !ax
-		mov	eax,jemmini.MinMem16k
-		shl	eax,4
-		add	eax,kbneeded
+		mov eax,jemmini.MinMem16k
+		shl eax,4
+		add eax,kbneeded
 		invoke printf, CStr("%s: can't allocate enough I15 memory(%lu kB)", LF), offset szError, eax
-		jmp	$L569
+		jmp $L569
 	.endif
 endif
 
-	mov	eax,jemmini.MinMem16k
+	mov eax,jemmini.MinMem16k
 	.if eax < dwMinOriginal
 		shl eax, 4
 		invoke printf, CStr("%s: MIN has been reduced to %lu kB", LF), offset szWarning, eax
 	.endif
 
-	mov	eax,jemmini.MinMem16k
-	shl	eax,4
-	add	eax, kbneeded
-	shl	eax,10
+	mov eax,jemmini.MinMem16k
+	shl eax,4
+	add eax, kbneeded
+	shl eax,10
 	mov dwAllocatedBytes,eax
 
 if ?INTEGRATED eq 0
 
-	mov	ax,xmsreg._bx
-	mov	dx,xmsreg._dx
-	mov	WORD PTR jemmini.MonitorStart+0,ax
-	mov	WORD PTR jemmini.MonitorStart+2,dx
+	mov ax,xmsreg._bx
+	mov dx,xmsreg._dx
+	mov WORD PTR jemmini.MonitorStart+0,ax
+	mov WORD PTR jemmini.MonitorStart+2,dx
 
-	mov	ecx,mem_free
+	mov ecx,mem_free
 	shl ecx, 10
-	add	ecx, jemmini.MonitorStart
-	mov	jemmini.TotalMemory,ecx
+	add ecx, jemmini.MonitorStart
+	mov jemmini.TotalMemory,ecx
 else
-	mov	jemmini.MonitorStart,00110000H
-	mov	eax, mem_free
-	add	eax, 00000440H
-	shl	eax,10
-	mov	jemmini.TotalMemory,eax
+	mov jemmini.MonitorStart,00110000H
+	mov eax, mem_free
+	add eax, 00000440H
+	shl eax,10
+	mov jemmini.TotalMemory,eax
 endif
-	mov	ax,1
+	mov ax,1
 	ret
 
 AllocAndInitMem	ENDP
@@ -2602,7 +2604,7 @@ if ?A20PORTS or ?A20XMS
 	.endif
 endif
 if ?VME
-	mov jemmini.NoVME,1
+;	mov jemmini.NoVME,1
 	invoke FindCommand, CStr("NOVME")
 	.if ax
 		mov jemmini.NoVME,1

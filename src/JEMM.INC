@@ -187,7 +187,7 @@ NoEMS             db 0
 NoFrame           db 0
 NoPool            db 0
 AltBoot           db 0
-NoVME             db 0
+NoVME             db 1
 NoVDS             db 0
 NoPGE             db 1
 NoA20             db 0
