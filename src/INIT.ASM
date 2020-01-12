@@ -1312,17 +1312,20 @@ if ?INTEGRATED
 
 ife ?BUFFERED   ;avoid this if debug output is buffered
 
+;--- this code assumes that first entry in xms handle table is
+;--- the emb allocated for jemmex and the second entry is the emb 
+;--- for the adjacent free memory!
 
     mov ebx,[XMS_Handle_Table.xht_pArray]
     mov ecx, edi
     shr ecx, 10
     mov eax, [ebx+size XMS_HANDLE].XMS_HANDLE.xh_baseK
     sub eax, ecx
-    jbe @@nothingtorelease
+    jbe @F
     sub [ebx].XMS_HANDLE.xh_sizeK, eax
     add [ebx+size XMS_HANDLE].XMS_HANDLE.xh_sizeK, eax
     mov [ebx+size XMS_HANDLE].XMS_HANDLE.xh_baseK, ecx
-@@nothingtorelease:
+@@:
 endif
 
 endif
@@ -1421,15 +1424,18 @@ if ?ADDCONV
 ;--- Don't do any DOS-specific work! This is to be
 ;--- done later by the 16-bit part.
 
-	mov ax, ds:[@MEM_SIZE]	;size in KB (640 kB = 280h)
-	shl ax, 6           ;280h -> A000h
-	cmp ax, [ebx].UMBBLK.wSegm
-	jnz noinc_convmem
-	mov cx, [ebx].UMBBLK.wSize
-	shr cx, 6
-	add ds:[@MEM_SIZE],cx
-	or byte ptr [ebx].UMBBLK.wSize+1, UMB_ALLOCATED
-	add ebx, sizeof UMBBLK
+    mov ax, ds:[@MEM_SIZE]  ;size in KB (640 kB = 280h)
+    shl ax, 6           ;280h -> A000h
+    cmp ax, [ebx].UMBBLK.wSegm
+    jnz noinc_convmem
+    mov cx, [ebx].UMBBLK.wSize
+    shr cx, 6
+    add ds:[@MEM_SIZE],cx
+    @DbgOutS <"BIOS memsize [413h] modified to">,?INITDBG
+    @DbgOutW ds:[@MEM_SIZE],?INITDBG
+    @DbgOutS <10>,?INITDBG
+    or byte ptr [ebx].UMBBLK.wSize+1, UMB_ALLOCATED
+    add ebx, sizeof UMBBLK
 noinc_convmem:
 endif
 

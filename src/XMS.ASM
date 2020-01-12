@@ -52,7 +52,7 @@ endif
 UMBsegments UMBBLK UMB_MAX_BLOCKS dup (<>)
 UMBend  label byte
 
-XMS_Handle_Table    XMS_HANDLETABLE <0,0,0,0>
+XMS_Handle_Table XMS_HANDLETABLE <0,0,0,0>
 
 ife ?INTEGRATED
 XMSCtrlHandle dw 0
@@ -1399,23 +1399,23 @@ ife ?INTEGRATED
     cmp [bNoPool],0
     jne @@noxmsarray
 endif
-    mov ecx, [esi].JEMMINIT.XMSHandleTable
+    mov ecx, [esi].JEMMINIT.XMSHandleTable	;get FAR16 address of XMS handle table
     movzx eax, cx
     shr ecx, 12
     and cl, 0F0h
-    add ecx, eax
+    add ecx, eax	;convert to linear address in ecx
     
-; transfer XMS table info to fixed memory location, assume size 8
+; transfer XMS table info to fixed memory location, assume size 8 (sizeof XMS_HANDLETABLE)
 
-    mov eax,[ecx+0]     ;get 2 bytes and size into HiWord(eax)
+    mov eax,[ecx+0]     ;get sig(byte), hdlsiz(byte) in ax and numhandles(word) into HiWord(eax)
     mov dword ptr [XMS_Handle_Table],eax
 ife ?INTEGRATED
     test eax,0FFFF0000h      ;if size of array is null, disable pooling
     setz [bNoPool]
     jz @@noxmsarray
 endif
-    movzx edx,word ptr [ecx+4]  ;get is the handle array ptr
-    movzx eax,word ptr [ecx+6]
+    movzx edx,word ptr [ecx+4]  ;offset of xht_pArray
+    movzx eax,word ptr [ecx+6]	;segment of xht_pArray
     shl eax,4
     add eax,edx
 ife ?INTEGRATED

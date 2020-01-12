@@ -54,9 +54,9 @@ endif
 
 jemmini JEMMINIT <>
 XMSdriverAddress PF16 0
-dwAllocatedBytes	DD 0
-mem_largest	DD 0
-mem_free	DD 0
+dwAllocatedBytes	DD 0;set by AllocAndInitMem()
+xms_mem_largest	DD 0	;largest free block in kB
+xms_mem_free	DD 0	;total free mem in kB
 
 bVerbose	DB 0
 if ?LOAD
@@ -67,9 +67,8 @@ xms_max	DD 0	;MAXEXT= value
 xms_num_handles	DW 32	;XMSHANDLES= value
 bNoE820	DB 0
 bNoE801	DB 0
-bI15Called db 0
 endif
-bI15Used db 0
+bI15RsvdChk db 0
 
 if ?INTEGRATED eq 0
 xmsspec3	DW 0
@@ -310,6 +309,10 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 	ret
 
 ltob ENDP
+
+;--- little printf() implementation.
+;--- understands type %c, %x, %d, %i, u%, %s 
+;--- and modifier l(ong)
 
 printf PROC c uses si di fmt:ptr byte, args:VARARG
 
@@ -725,7 +728,7 @@ local mem:word
 
 if 1;?INTEGRATED
 ;--- don't scan for RAM if we called Int 15h ax=e820h
-	cmp bI15Used,0
+	cmp bI15RsvdChk,0
 	jnz @F
 endif
 
@@ -997,27 +1000,25 @@ endif
 xmscall endp
 
 ;--- get status of XMS memory
-;--- sets global variables mem_largest, mem_free
+;--- sets global variables xms_mem_largest, xms_mem_free
 
 XMSGetMemoryStatus PROC c usev3:word
 
 	.if usev3
-		invoke xmscall, 88h
-		.if BYTE PTR xmsreg._ebx == 0	;BL must be 00
-			mov eax,xmsreg._eax
-			mov mem_largest,eax
-			mov eax,xmsreg._edx
-			mov mem_free,eax
+		invoke xmscall, 88h	;get total free memory (edx) and largest free block (eax)
+		.if bl == 0	;BL must be 00
+			mov xms_mem_largest, eax
+			mov xms_mem_free, edx
 			jmp ok
 		.endif
 	.endif
 	mov xmsreg._bx,0
-	invoke xmscall, 8
-	.if BYTE PTR xmsreg._bx == 0
-		movzx eax, xmsreg._ax
-		mov mem_largest, eax
-		mov ax, xmsreg._dx
-		mov mem_free, eax
+	invoke xmscall, 8	;get total free memory (dx) and largest free block (ax)
+	.if bl == 0
+		movzx eax, ax
+		movzx edx, dx
+		mov xms_mem_largest, eax
+		mov xms_mem_free, edx
 		jmp ok
 	.endif
 	xor ax,ax
@@ -1028,72 +1029,26 @@ ok:
 
 XMSGetMemoryStatus ENDP
 
-XMSAllocMemory PROC c uses si di usev3:word, kbneeded:dword
+;--- alloc extended memory for monitor and preallocated page pool
+;--- JEMM386 only
 
-local kbtotal:dword
+XMSAllocMemory PROC c usev3:word, dwSizeKB:dword
+
 local xmshandle:word
 
-	xor di,di
-	mov si,usev3
-	.while (di == 0 )
-		mov eax,jemmini.MinMem16k
-		shl eax, 4
-		add eax,kbneeded
-		mov kbtotal,eax
-		.if eax < 10000h
-			mov	xmsreg._dx,ax
-			invoke xmscall, 9
-			.if ax
-				mov di,xmsreg._dx
-				.break
-			.endif
-			or si,si
-			jne $usev3ver303
-			mov eax, jemmini.MinMem16k
-			shl eax, 3
-			add eax, kbneeded
-			mov edx, mem_largest
-			.if edx > eax && edx < kbtotal
-				mov xmsreg._dx, dx
-				invoke xmscall, 9
-				.if ax
-					mov eax, mem_largest
-					sub eax, kbneeded
-					mov jemmini.MinMem16k, eax
-					mov di,xmsreg._dx
-					.break
-				.endif
-			.endif
-		.else
-$usev3ver303:
-			mov eax, kbtotal
-			mov xmsreg._edx,eax
-			invoke xmscall, 089h
-			.if ax
-				mov di,xmsreg._dx
-				.break
-			.endif
-			mov eax, jemmini.MinMem16k
-			shl eax, 3
-			add eax, kbneeded
-			mov edx, mem_largest
-			.break .if edx <= eax || edx >= kbtotal
-			mov	xmsreg._edx,edx
-			invoke xmscall, 089h
-			.if ax
-				mov eax, mem_largest
-				sub eax, kbneeded
-				shr eax, 4
-				mov jemmini.MinMem16k,eax
-				mov di,xmsreg._dx
-				.break
-			.endif
-		.endif
-		mov eax,jemmini.MinMem16k
-		shr eax,1
-		mov jemmini.MinMem16k,eax
-	.endw
-	mov ax,di
+	mov eax, dwSizeKB
+	mov xmsreg._edx, eax
+	.if eax >= 10000h || usev3
+		invoke xmscall, 089h	;allocate ext. mem block
+	.else
+		invoke xmscall, 9		;allocate ext. mem block
+	.endif
+	.if ax
+		mov ax, xmsreg._dx
+	.endif
+	@DbgOutS <"XMSAllocMemory: exit, ax=">,?INITRMDBG
+	@DbgOutW ax,?INITRMDBG
+	@DbgOutS <13,10>,?INITRMDBG
 	ret
 
 XMSAllocMemory ENDP
@@ -1110,21 +1065,75 @@ E820MAP ends
 
 SMAP equ 534d4150h
 
-;--- return size of free extended memory block in EAX
+I15CheckRsvdRegion proc uses si di
+local mmap:E820MAP
+	@DbgOutS <"I15CheckRsvdRegion: enter",13,10>,?INITRMDBG
+nextitem:
+	push ss
+	pop es
+	mov edx,SMAP
+	mov ecx, sizeof E820MAP
+	lea di,mmap
+	xor eax,eax
+	mov mmap.baselow,eax   ; insurance against buggy BIOS
+	mov mmap.type_,eax
+	mov mmap.lenlow,eax
+	mov ax,0e820h
+	int 15h
+	cmp eax,SMAP
+	jne done
 
-I15GetMemoryStatus proc stdcall uses esi edi FirstOnly:WORD
+	cmp ecx,sizeof E820MAP	; didn't return all the info needed, assume done
+	jb done
+
+	cmp mmap.type_,2	; reserved memory ?
+	jne itemdone
+	mov eax, mmap.baselow
+	cmp eax, 0C0000h
+	jb itemdone
+	cmp eax,100000h
+	jnc itemdone
+	mov ecx, mmap.lenlow
+	shr eax, 4
+	shr ecx, 12
+	mov si,ax
+	.if bVerbose
+		push cx
+		push bx
+		shl cx,2
+		invoke printf, CStr(<"Int15, ax=E820: reserved region=%04X, size=%u kB",LF>), si, cx
+		pop bx
+		pop cx
+	.endif
+	.while cx
+		invoke SetMemoryType, si, 'E'
+		add si,100h
+		dec cx
+	.endw
+itemdone:
+	cmp ebx,0		;was this the last entry?
+	jnz nextitem
+	mov bI15RsvdChk,1
+done:
+	ret
+I15CheckRsvdRegion endp
+
+if ?INTEGRATED
+
+;--- return size of free extended memory block in EAX
+;--- may set global variables xms_mem_largest, xms_mem_free
+;--- returns free memory in kB in EAX.
+;--- called by:
+;---   GetReasonableFixedMemoryAmount()
+;---   AllocAndInitMem()
+
+I15GetMemoryStatus proc stdcall uses esi di
 
 local maxvalue:DWORD
 local mmap:E820MAP
 
-if ?INTEGRATED
-	mov eax,mem_free
-	cmp bI15Called, 0
-	jnz _ret
-	inc bI15Called
 	cmp [bNoE820],0    ; NOE820 option set?
 	jne @@e801_check
-endif
 
 	@DbgOutS <"I15GetMemoryStatus: get extended memory with int 15, E820",13,10>,?INITRMDBG
 
@@ -1134,7 +1143,7 @@ endif
 	mov esi,ebx
 	mov maxvalue,ebx
 
-@@e820_loop:
+e820_nextitem:
 
 ;--- ebx offset is updated with each successive int 15h
 
@@ -1144,113 +1153,62 @@ endif
 	mov ecx, sizeof E820MAP
 	lea di,mmap
 	xor eax,eax
-	mov [di].E820MAP.baselow,eax   ; insurance against buggy BIOS
-	mov [di].E820MAP.type_,eax
-	mov [di].E820MAP.lenlow,eax
+	mov mmap.baselow,eax   ; insurance against buggy BIOS
+	mov mmap.type_,eax
+	mov mmap.lenlow,eax
 	mov ax,0e820h
 	clc
 	int 15h
 	setc dl 		; keep carry flag status
 	cmp eax,SMAP
-	jne @@e820_bad	; failure
+	jne e820_bad	; failure
 	cmp dl,1
-	je @@e820_done ; CF doesn't have to signal fail, can just mean done
+	je e820_done	; CF doesn't have to signal fail, can just mean done
 
 	cmp ecx,sizeof E820MAP	; didn't return all the info needed, assume done
-	jb @@e820_done
+	jb e820_done
 
-	mov bI15Used,1
-	cmp [di].E820MAP.type_,2	; reserved memory ?
-	jne e820_loop1
-	mov eax, [di].E820MAP.baselow
-	cmp eax, 0C0000h
-	jb e820_loop2
-	cmp eax,100000h
-	jnc e820_loop2
-	mov ecx,[di].E820MAP.lenlow
-	shr eax, 4
-	shr ecx, 12
-	push esi
-	mov si,ax
-	.if bVerbose
-		push cx
-		shl cx,2
-		invoke printf, CStr(<"Int15, ax=E820: reserved region=%04X, size=%u kB",LF>), si, cx
-		pop cx
-	.endif
-	.while cx
-		invoke SetMemoryType, si, 'E'
-		add si,100h
-		dec cx
-	.endw
-	pop esi
-	jmp e820_loop2
-e820_loop1:
-	cmp [di].E820MAP.type_,1	; memory available to OS
-	jne e820_loop2
+	cmp mmap.type_,1	; memory available to OS?
+	jne e820_itemdone
 
-	cmp [di].E820MAP.basehigh,0	;ignore memory beyond 4 GB for now
-	jnz e820_loop2
+	cmp mmap.basehigh, 0;ignore memory beyond 4 GB for now
+	jnz e820_itemdone
 
-	mov eax,[di].E820MAP.baselow
-	cmp eax,100000h ; has to live in extended memory
-	setz dl
-	jb e820_loop2
+	mov eax, mmap.baselow
+	cmp eax, 100000h ; has to live in extended memory
+	jb e820_itemdone
 
-	cmp esi,0
-	jne @@e820_checkhole
+	@DbgOutS <"I15GetMemoryStatus: available memory found at ">,?INITRMDBG
+	@DbgOutD eax,?INITRMDBG
+	@DbgOutS <13,10>,?INITRMDBG
 
-;--- we're not able to handle extended base start not exactly at 100000h
-;--- not big deal to add support later (does this happen, though?)
-
-	cmp dl,1
-	jne @@e820_done
-	mov maxvalue, eax
-	jmp @@e820_matchcrit
-
-;--- check that there isn't a hole in memory, stop at the hole if detected
-;--- this presumes the map will return contiguous addresses rather than a spray
-
-@@e820_checkhole:
-	mov eax, maxvalue
-	add eax,esi
-	cmp eax,[di].E820MAP.baselow
-	jne @@e820_done ; current base plus memory length not equal to this base
-
-;--- matched all the criteria, add to the memory count
-
-@@e820_matchcrit:
-	add esi,[di].E820MAP.lenlow
-	jc e820_overflow
-e820_loop2:
+	mov ecx, mmap.lenlow
+	cmp ecx, maxvalue
+	jb e820_itemdone
+	mov maxvalue, ecx
+	mov esi, eax
+e820_itemdone:
 	cmp ebx,0		;was this the last entry?
-	jnz @@e820_loop
-if ?INTEGRATED
-	.if bVerbose
-		mov eax,esi
+	jnz e820_nextitem
+
+e820_bad:
+e820_done:
+	mov eax, maxvalue
+	.if eax
 		shr eax,10
-		invoke printf, CStr(<"Int15, ax=E820: extended memory available=%lu kB",LF>), eax
+		push eax
+		.if bVerbose
+			invoke printf, CStr(<"Int15, ax=E820: largest memory block available at %lX, %lu kB",LF>), esi, eax
+		.endif
+		pop eax
+		jmp @@exit
 	.endif
-endif
-	jmp @@e820_done
-e820_overflow:
-	mov esi,-1		; wow, we overflowed a 4G counter, force a limit
-	jmp @@e820_done
 
-@@e820_bad:
-	xor esi,esi 	; force failure
-
-@@e820_done:
-	mov eax,esi
-	shr eax,10		; convert from bytes to 1K blocks
-	cmp eax,64		; only use if useful amount
-	ja @@exit
-
-if ?INTEGRATED
 ;--- try 0e801h, but set up the registers to fail status because not
 ;--- all BIOS's properly return the carry flag on failure
 
 @@e801_check:
+	mov esi, 100000h
 	cmp [bNoE801],0 ;NOE801 option set?
 	jne @@try_88h
 
@@ -1295,28 +1253,30 @@ if ?INTEGRATED
 	jnc @@exit
 	xor ax,ax
 @@exit:
-	mov edx,[xms_max]
+	mov edx, xms_max
 	or edx,edx
 	je @F
 	cmp eax,edx
 	jbe @F
-	mov eax,edx 			; above max, limit to maximum
+	mov eax,edx 		; above max, limit to maximum
 @@:
-	cmp eax, 64
-	jbe _ret
 	mov ecx, eax
-	sub ecx, 64
-	mov mem_free,ecx
-	mov mem_largest,ecx
-	call I15SetHandle		; set xms block, size in ECX
-else
-@@exit:
-endif
+	shr esi,10
+	cmp esi,1024		;does the block start at 0x100000?
+	jnz @F
+	add esi,64			;then exclude the first 64 kB for HMA
+	sub eax,64
+	jc _ret
+@@:
+	mov xms_mem_free, eax
+	mov xms_mem_largest, eax
+	call I15SetHandle		; set xms block, sizeK in ECX, baseK in ESI
 _ret:
+	@DbgOutS <"I15GetMemoryStatus: exit, xms_mem_free=">,?INITRMDBG
+	@DbgOutD xms_mem_free,?INITRMDBG
+	@DbgOutS <13,10>,?INITRMDBG
 	ret
 I15GetMemoryStatus endp
-
-if ?INTEGRATED
 
 ;--- get A20 method
 
@@ -1650,10 +1610,14 @@ InitA20 endp
 
 endif
 
+;--- get preallocated memory size in AX (kB)
+;--- this is called only if memory pooling is disabled (option NODYN)
+;--- or if XMS handle table isn't given (JEMM386 only)
+
 GetReasonableFixedMemoryAmount PROC
 
 if ?INTEGRATED
-	invoke I15GetMemoryStatus, 0
+	invoke I15GetMemoryStatus
 	or eax,eax
 	je $EX312
 else
@@ -1661,10 +1625,10 @@ else
 	or ax,ax
 	je $EX312
 endif
-	.if word ptr mem_largest+2 > 0
-		mov ax, 8000H
+	.if word ptr xms_mem_largest+2 > 0	;more than 64 MB?
+		mov ax, 8000H				;then use 32 MB
 	.else
-		mov ax,WORD PTR mem_largest+0
+		mov ax,WORD PTR xms_mem_largest+0
 		shr ax,1
 	.endif
 $EX312:
@@ -1672,17 +1636,19 @@ $EX312:
 
 GetReasonableFixedMemoryAmount ENDP
 
-;--- aallocates and initializes extended memory for jemm
-;--- is called after the memory requirements have been calculated
+;--- allocates and initializes extended memory for jemm;
+;--- is called after the memory requirements have been calculated.
+;--- will set jemmini values Monitorstart, TotalMemory, XMSControlHandle.
 
-AllocAndInitMem PROC c uses si di kbneeded:dword
+AllocAndInitMem PROC c uses esi di kbneeded:dword
 
 local ulcalc:dword
 local PotentialEmsVcpiMemory:dword
 local dwMinOriginal:dword
 
-	mov eax,jemmini.MinMem16k
-	mov [dwMinOriginal],eax
+	@DbgOutS <"AllocAndInitMem: enter",13,10>,?INITRMDBG
+	mov eax, jemmini.MinMem16k
+	mov dwMinOriginal, eax
 
 ;     the DMA buffer must be 64kb aligned. Since EMS pages *must* be
 ;     allocated from memory physically "behind" the DMA buffer, there may
@@ -1703,15 +1669,12 @@ local dwMinOriginal:dword
 	.endif
 
 if ?INTEGRATED
-	invoke I15GetMemoryStatus, 1
+	invoke I15GetMemoryStatus
 	.if !eax
 		invoke printf, CStr("%s: can't get I15 memory status", LF), offset szError
 $L569:
 		xor ax,ax
 		ret
-	.endif
-	.if bVerbose
-		invoke printf, CStr("I15 total memory %lu kB", LF), mem_free
 	.endif
 else
 	invoke XMSGetMemoryStatus, xmsspec3
@@ -1721,10 +1684,14 @@ $L569:
 		xor ax,ax
 		ret
 	.endif
-	.if bVerbose
-		invoke printf, CStr("XMS largest free block %lu kB, XMS free mem %lu kB", LF), mem_largest, mem_free
-	.endif
 endif
+	.if bVerbose
+if ?INTEGRATED
+		invoke printf, CStr("I15 largest free block %lU kB, I15 free mem %lu kB", LF), xms_mem_largest, xms_mem_free
+else
+		invoke printf, CStr("XMS largest free block %lu kB, XMS free mem %lu kB", LF), xms_mem_largest, xms_mem_free
+endif
+	.endif
 
 ;--- reality check to throttle requests far beyond available XMS, later actual
 ;--- adjustments are small and need not be compensated for here
@@ -1734,7 +1701,7 @@ endif
 		shl eax,4
 		add eax,[kbneeded]
 		mov ecx, kbneeded
-		mov edx, mem_free
+		mov edx, xms_mem_largest
 		.if eax > edx && ecx < edx
 			sub edx,kbneeded
 			shr edx, 4
@@ -1743,7 +1710,7 @@ endif
 
 ;--- leave a little extended memory, if possible, for programs that want some XMS
 
-		mov edx, mem_largest
+		mov edx, xms_mem_largest
 		mov eax, kbneeded
 		add eax, 384
 
@@ -1753,7 +1720,7 @@ endif
 		add ecx, kbneeded
 
 		.if edx > eax && edx < ecx
-			mov eax, mem_largest
+			mov eax, xms_mem_largest
 			sub eax, [kbneeded]
 			sub eax,384
 			shr eax,4
@@ -1763,7 +1730,7 @@ endif
 
 ;--- default is: all memory
 
-	mov eax,mem_free
+	mov eax, xms_mem_free
 	.if eax > kbneeded
 		sub eax, kbneeded
 	.else
@@ -1772,19 +1739,19 @@ endif
 	mov PotentialEmsVcpiMemory, eax
 
 	.if jemmini.NoPool	;/* Pool sharing off? */
-		mov eax,jemmini.MinMem16k
-		shl eax,4
-		.if eax < mem_free
-			mov eax,jemmini.MinMem16k
-			shl eax,4
+		mov eax, jemmini.MinMem16k
+		shl eax, 4
+		.if eax < xms_mem_free
+			mov eax, jemmini.MinMem16k
+			shl eax, 4
 			mov PotentialEmsVcpiMemory, eax
 		.endif
 	.endif
 
 ;   /* MIN= has higher priority than MAX= */
-	mov eax,jemmini.MinMem16k
+	mov eax, jemmini.MinMem16k
 	.if  eax > jemmini.MaxMem16k
-		mov	jemmini.MaxMem16k,eax
+		mov jemmini.MaxMem16k,eax
 	.endif
 
 ;   /* MaxMem16k may have been set by MAX=, and above the limit */
@@ -1869,72 +1836,73 @@ endif
 	mov eax, ulcalc
 	add kbneeded, eax
 
-if ?INTEGRATED eq 0
-;   /* allocate memory from XMS */
-	invoke XMSAllocMemory, xmsspec3, kbneeded
-	.if !ax
-		invoke printf, CStr("%s: can't allocate enough XMS memory(%lu kB)", LF), offset szError, kbneeded
-		jmp	$L569
-	.endif
-	mov jemmini.XMSControlHandle,ax
-
-;    /* lock handle to make a linear adress */
-	mov	xmsreg._dx,ax
-	invoke xmscall, 12
-	.if !ax
-		invoke printf, CStr("%s: can't lock XMS memory", LF), offset szError
-		invoke xmscall, 10
-		jmp	$L569
-	.endif
-else
 	mov eax,jemmini.MinMem16k
 	shl eax, 4
 	add eax, kbneeded
-	invoke I15AllocMemory, 0, eax
-	mov jemmini.XMSControlHandle,ax
+	mov esi, eax
+if ?INTEGRATED eq 0
+	invoke XMSAllocMemory, xmsspec3, eax
 	.if !ax
-		mov eax,jemmini.MinMem16k
-		shl eax,4
-		add eax,kbneeded
-		invoke printf, CStr("%s: can't allocate enough I15 memory(%lu kB)", LF), offset szError, eax
-		jmp $L569
+		invoke printf, CStr("%s: can't allocate enough XMS memory(%lu kB)", LF), offset szError, esi
+		jmp $L569	;exit with error
 	.endif
-endif
+	mov jemmini.XMSControlHandle, ax
 
+	mov xmsreg._dx, ax
+	invoke xmscall, 12	;lock extended memory block (returns phys address)
+	.if !ax
+		invoke printf, CStr("%s: can't lock XMS memory", LF), offset szError
+		invoke xmscall, 10	;free memory block
+		jmp $L569	;exit with error
+	.endif
+
+else
+	invoke I15AllocMemory, 0, esi
+	.if !ax
+		invoke printf, CStr("%s: can't allocate enough I15 memory(%lu kB)", LF), offset szError, esi
+		jmp $L569	;exit with error
+	.endif
+	mov jemmini.XMSControlHandle, ax
+endif
 	mov eax,jemmini.MinMem16k
 	.if eax < dwMinOriginal
 		shl eax, 4
 		invoke printf, CStr("%s: MIN has been reduced to %lu kB", LF), offset szWarning, eax
 	.endif
 
-	mov eax,jemmini.MinMem16k
-	shl eax,4
-	add eax, kbneeded
-	shl eax,10
-	mov dwAllocatedBytes,eax
+	mov eax, esi
+	shl eax, 10
+	mov dwAllocatedBytes, eax
 
 if ?INTEGRATED eq 0
 
+;--- xmsreg contains the locked physical address
 	mov ax,xmsreg._bx
 	mov dx,xmsreg._dx
 	mov WORD PTR jemmini.MonitorStart+0,ax
 	mov WORD PTR jemmini.MonitorStart+2,dx
-
-	mov ecx,mem_free
-	shl ecx, 10
-	add ecx, jemmini.MonitorStart
-	mov jemmini.TotalMemory,ecx
 else
-	mov jemmini.MonitorStart,00110000H
-	mov eax, mem_free
-	add eax, 00000440H
-	shl eax,10
-	mov jemmini.TotalMemory,eax
+	invoke GetEMBBase, jemmini.XMSControlHandle
+	mov jemmini.MonitorStart, eax
+;	mov eax, xms_mem_free
+;	add eax, 1024+64
+;	shl eax,10
+;	mov jemmini.TotalMemory, eax
 endif
+	mov ecx, xms_mem_free
+	shl ecx, 10				;convert kB to bytes
+	add ecx, jemmini.MonitorStart
+	mov jemmini.TotalMemory, ecx
+
 	mov ax,1
+	@DbgOutS <"AllocAndInitMem: exit, MonitorStart=">
+	@DbgOutD jemmini.MonitorStart,?INITRMDBG
+	@DbgOutS <", Totalmemory=">,?INITRMDBG
+	@DbgOutD jemmini.TotalMemory,?INITRMDBG
+	@DbgOutS <13,10>,?INITRMDBG
 	ret
 
-AllocAndInitMem	ENDP
+AllocAndInitMem ENDP
 
 ;--- toupper(char) returns uppercase character
 
@@ -2830,6 +2798,12 @@ endif
 		mov jemmini.Border,ax
 	.endif
 
+;--- initialize conventional memory map
+;--- 0000-9FFF: R(am)
+;--- A000-BFFF: G(raphics)
+;--- C000-EFFF: U(MB)
+;--- F000-FFFF: E(PROM)
+
 if ?USEMEMSET
 	invoke memset, addr SystemMemory+000h, 'R', 160
 	invoke memset, addr SystemMemory+0A0h, 'G', 32
@@ -2852,6 +2826,7 @@ else
 	mov cl,16	;F000-FFFF
 	rep stosb
 endif
+	invoke I15CheckRsvdRegion
 
 	invoke VMwareDetect
 	.if ax
@@ -2955,7 +2930,6 @@ else
 		jmp exit1
 	.endif
 endif
-	invoke I15GetMemoryStatus, 1
 
 	invoke IsDPMI
 	.if ax
@@ -2980,11 +2954,11 @@ if ?INTEGRATED
 	mov ah,ENABLE_A20
 	call A20procs[bx]
 else
-	invoke xmscall, 0
+	invoke xmscall, 0	;get version
 	.if ax && xmsreg._ax >= 0300h
 		mov xmsspec3,1
 	.endif
-	invoke xmscall, 5
+	invoke xmscall, 5	;enable A20
 	.if !ax
 		invoke printf, CStr("%s: enable A20 failed", LF), offset szError
 		jmp exit1
@@ -3008,12 +2982,12 @@ if ?INTEGRATED eq 0
 	.endif
 endif
 	.if jemmini.NoPool && (!MinRequest)
-		invoke GetReasonableFixedMemoryAmount
-		shr	ax,4
+		invoke GetReasonableFixedMemoryAmount	;get mem in kB to be preallocated
+		shr ax,4
 		movzx eax,ax
-		mov	jemmini.MinMem16k,eax
+		mov jemmini.MinMem16k,eax
 		.if bVerbose
-			invoke printf, CStr("default preallocated memory=%lu", LF), jemmini.MinMem16k
+			invoke printf, CStr("default preallocated memory=%lu 16k-pages", LF), jemmini.MinMem16k
 		.endif
 	.endif
 

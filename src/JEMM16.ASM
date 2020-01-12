@@ -352,19 +352,19 @@ VPRINTSTR ENDP
 ;--- display word in AX
 ;--- preserves registers and flags
 
-VDWORDOUT proc near
+VDWORDOUT proc public
 	push eax
 	shr eax,16
 	call VWORDOUT
 	pop eax
 VDWORDOUT endp
-VWORDOUT proc near
+VWORDOUT proc public
 	push ax
 	mov al,ah
 	call VBYTEOUT
 	pop ax
 VWORDOUT endp
-VBYTEOUT proc near
+VBYTEOUT proc public
 	pushf
 	push ax
 	mov ah,al
@@ -919,11 +919,15 @@ if 0; ?A20PORTS 	;this info is unreliable, don't activate!
 endif
 
 if ?INTEGRATED
+
+;--- the xms handle table must be located in the resident conventional memory
+;--- part of jemmex
+
 	mov cx, xms_num_handles		;is at least 8
 	mov [xms_handle_table.xht_numhandles], cx
 	mov ax,size XMS_HANDLE
 	mul cx
-	add ax,offset xms_handle_array + 15
+	add ax,offset xms_handle_array + 15	;adjust to paragraph
 	and al,0F0h
 	mov [_brptab.wSizeRes],ax
 endif
@@ -1286,9 +1290,11 @@ XMSinit endp
 
 if ?INTEGRATED
 
+;--- set first entry in XMS handle array, sizeK in ecx, baseK in esi
+
 I15SetHandle proc c public
 	mov [xms_handle_array.xh_flags], XMSF_FREE
-	mov [xms_handle_array.xh_baseK], 1024+64	;means 0x110000
+	mov [xms_handle_array.xh_baseK], esi
 	mov [xms_handle_array.xh_sizeK], ecx
 	ret
 I15SetHandle endp
@@ -1322,6 +1328,13 @@ I15AllocMemory proc stdcall public dummy:WORD, kbneeded:DWORD
 	pop ds
 	ret
 I15AllocMemory endp
+
+GetEMBBase proc stdcall public wHdl:word
+;--- to be fixed: use the wHdl parameter
+	mov eax, xms_handle_array.xh_baseK
+	shl eax, 10
+	ret
+GetEMBBase endp
 
 endif
 

@@ -59,7 +59,7 @@ XMS_HANDLETABLE struct
 xht_sig         DB  ?
 xht_sizeof      DB  ?
 xht_numhandles  DW  ?
-xht_pArray      DD  ?   ;converted to linear address!
+xht_pArray      DD  ?   ;converted to linear address for 32bit code!
 XMS_HANDLETABLE ends
 
 if ?INTEGRATED
