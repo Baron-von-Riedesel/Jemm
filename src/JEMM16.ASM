@@ -397,13 +397,13 @@ if ?INTEGRATED
 	align 2
 
 if ?BUFFERED	;buffered output in XMS memory block?
-?USEDXMSHDL equ 3
+?NUMXMSHDL equ 11
 else
-?USEDXMSHDL equ 2	;just 2 handles, first holds used mem, second free mem
+?NUMXMSHDL equ 10
 endif
 
-xms_handle_table XMS_HANDLETABLE <01, size XMS_HANDLE, 2, xms_handle_array>
-xms_handle_array XMS_HANDLE ?USEDXMSHDL dup (<XMSF_INPOOL,0,0,0>)        
+xms_handle_table XMS_HANDLETABLE <01, size XMS_HANDLE, 0, xms_handle_array>
+xms_handle_array XMS_HANDLE ?NUMXMSHDL dup (<XMSF_INPOOL,0,0,0>)        
 
 endif
 	align 16
@@ -1103,18 +1103,27 @@ GetRes endp
 endinit proc
 
 if ?INTEGRATED
-	mov di, offset xms_handle_array + size XMS_HANDLE * ?USEDXMSHDL
-	mov cx, xms_num_handles
-	sub cx, ?USEDXMSHDL
+
+;--- initialize XMS handles which haven't been set yet
+
 	call GetRes
 	mov es,ax
-@@nexthandle:
-	mov ax, XMSF_INPOOL
-	stosw
-	xor eax, eax
-	stosd
-	stosd
-	loop @@nexthandle
+	mov di, offset xms_handle_array
+	mov cx, xms_num_handles
+	mov ax, sizeof XMS_HANDLE
+	mul cx
+	add ax,di
+	mov cx,ax
+	.while es:[di].XMS_HANDLE.xh_flags != XMSF_INPOOL 
+		add di, sizeof XMS_HANDLE
+	.endw
+	.while di < cx
+		mov ax, XMSF_INPOOL
+		stosw
+		xor eax, eax
+		stosd
+		stosd
+	.endw
 	mov ax, di
 	add ax, 16-1
 	and al, 0F0h
@@ -1290,44 +1299,55 @@ XMSinit endp
 
 if ?INTEGRATED
 
-;--- set first entry in XMS handle array, sizeK in ecx, baseK in esi
+;--- set entry in XMS handle array, sizeK in ecx, baseK in edx
 
-I15SetHandle proc c public
-	mov [xms_handle_array.xh_flags], XMSF_FREE
-	mov [xms_handle_array.xh_baseK], esi
-	mov [xms_handle_array.xh_sizeK], ecx
+I15SetHandle proc c public uses ds bx
+	push cs
+	pop ds
+	mov bx, offset xms_handle_array
+	.while [bx].XMS_HANDLE.xh_flags != XMSF_INPOOL
+		add bx, sizeof XMS_HANDLE
+	.endw
+	mov [bx].XMS_HANDLE.xh_flags, XMSF_FREE
+	mov [bx].XMS_HANDLE.xh_baseK, edx
+	mov [bx].XMS_HANDLE.xh_sizeK, ecx
 	ret
 I15SetHandle endp
 
 ;--- I15AllocMemory(int dummy, long kbneeded);
-;--- this code expects that array item[0] contains XMS unused memory
-;--- and array item[1] is free!
 
-I15AllocMemory proc stdcall public dummy:WORD, kbneeded:DWORD
+I15AllocMemory proc stdcall public uses ds si dummy:WORD, kbneeded:DWORD
 
-	push ds
-	xor ax,ax
 	push cs
 	pop ds
-	mov bx,offset xms_handle_array
-	cmp [bx].XMS_HANDLE.xh_flags,XMSF_FREE
-	jnz @@fail
 	mov ecx, kbneeded
-	mov edx, [bx].XMS_HANDLE.xh_sizeK
-	sub edx,ecx
-	jb @@fail
-	mov [bx].XMS_HANDLE.xh_sizeK, ecx
-	mov [bx].XMS_HANDLE.xh_locks, 1
-	mov [bx].XMS_HANDLE.xh_flags, XMSF_USED
-	add ecx, [bx].XMS_HANDLE.xh_baseK
-	mov [bx + size XMS_HANDLE].XMS_HANDLE.xh_flags, XMSF_FREE
-	mov [bx + size XMS_HANDLE].XMS_HANDLE.xh_sizeK, edx
-	mov [bx + size XMS_HANDLE].XMS_HANDLE.xh_baseK, ecx
-	mov ax,bx
-@@fail:
-	pop ds
+	xor si, si
+	mov bx, offset xms_handle_array
+	.while [bx].XMS_HANDLE.xh_flags != XMSF_INPOOL
+		.if si == 0 && \
+			[bx].XMS_HANDLE.xh_flags == XMSF_FREE && \
+			ecx <= [bx].XMS_HANDLE.xh_sizeK
+			mov si,bx
+		.endif
+		add bx,sizeof XMS_HANDLE
+	.endw
+	mov ax, si
+	.if si
+		mov eax, [si].XMS_HANDLE.xh_sizeK
+		sub eax, ecx
+		mov [si].XMS_HANDLE.xh_sizeK, ecx
+		mov [si].XMS_HANDLE.xh_locks, 1
+		mov [si].XMS_HANDLE.xh_flags, XMSF_USED
+		add ecx, [si].XMS_HANDLE.xh_baseK
+		mov [bx].XMS_HANDLE.xh_flags, XMSF_FREE
+		mov [bx].XMS_HANDLE.xh_sizeK, eax
+		mov [bx].XMS_HANDLE.xh_baseK, ecx
+		mov ax, si
+	.endif
 	ret
 I15AllocMemory endp
+
+;--- get the base of a XMS handle
 
 GetEMBBase proc stdcall public wHdl:word
 ;--- to be fixed: use the wHdl parameter

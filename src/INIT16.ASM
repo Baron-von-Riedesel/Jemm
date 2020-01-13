@@ -1123,11 +1123,11 @@ if ?INTEGRATED
 ;--- return size of free extended memory block in EAX
 ;--- may set global variables xms_mem_largest, xms_mem_free
 ;--- returns free memory in kB in EAX.
-;--- called by:
-;---   GetReasonableFixedMemoryAmount()
-;---   AllocAndInitMem()
+;--- called by AllocAndInitMem()
 
-I15GetMemoryStatus proc stdcall uses esi di
+?MAXBLOCKS equ 8	;max blocks to use from int 15h, ax=e820h
+
+I15GetMemoryStatus proc stdcall uses si di
 
 local maxvalue:DWORD
 local mmap:E820MAP
@@ -1139,9 +1139,9 @@ local mmap:E820MAP
 
 ;--- try 0e820h first
 
-	xor ebx,ebx
-	mov esi,ebx
-	mov maxvalue,ebx
+	xor ebx, ebx
+	mov si, 0
+	mov maxvalue, ebx
 
 e820_nextitem:
 
@@ -1174,41 +1174,50 @@ e820_nextitem:
 	cmp mmap.basehigh, 0;ignore memory beyond 4 GB for now
 	jnz e820_itemdone
 
-	mov eax, mmap.baselow
-	cmp eax, 100000h ; has to live in extended memory
+	mov edx, mmap.baselow
+	cmp edx, 100000h ; has to live in extended memory
 	jb e820_itemdone
 
 	@DbgOutS <"I15GetMemoryStatus: available memory found at ">,?INITRMDBG
-	@DbgOutD eax,?INITRMDBG
+	@DbgOutD edx,?INITRMDBG
 	@DbgOutS <13,10>,?INITRMDBG
 
 	mov ecx, mmap.lenlow
-	cmp ecx, maxvalue
-	jb e820_itemdone
-	mov maxvalue, ecx
-	mov esi, eax
+	shr ecx, 10
+	cmp ecx, xms_mem_largest
+	jb @F
+	mov xms_mem_largest, ecx
+@@:
+	shr edx,10
+	cmp edx,1024		;does the block start at 0x100000?
+	jnz @F
+	add edx,64			;then exclude the first 64 kB for HMA
+	sub ecx,64
+	jc e820_itemdone
+@@:
+	add xms_mem_free, ecx
+	call I15SetHandle	;set xms block, sizeK in ECX, baseK in EDX
+	inc si
+	cmp si,?MAXBLOCKS
+	jz e820_done
 e820_itemdone:
 	cmp ebx,0		;was this the last entry?
 	jnz e820_nextitem
 
 e820_bad:
 e820_done:
-	mov eax, maxvalue
-	.if eax
-		shr eax,10
-		push eax
+	.if xms_mem_free
 		.if bVerbose
-			invoke printf, CStr(<"Int15, ax=E820: largest memory block available at %lX, %lu kB",LF>), esi, eax
+			invoke printf, CStr(<"Int15, ax=E820: free memory=%lu kB, largest block=%lu kB",LF>), xms_mem_free, xms_mem_largest
 		.endif
-		pop eax
-		jmp @@exit
+		mov eax, xms_mem_largest
+		jmp _ret
 	.endif
 
 ;--- try 0e801h, but set up the registers to fail status because not
 ;--- all BIOS's properly return the carry flag on failure
 
 @@e801_check:
-	mov esi, 100000h
 	cmp [bNoE801],0 ;NOE801 option set?
 	jne @@try_88h
 
@@ -1260,17 +1269,12 @@ e820_done:
 	jbe @F
 	mov eax,edx 		; above max, limit to maximum
 @@:
-	mov ecx, eax
-	shr esi,10
-	cmp esi,1024		;does the block start at 0x100000?
-	jnz @F
-	add esi,64			;then exclude the first 64 kB for HMA
-	sub eax,64
-	jc _ret
-@@:
+	sub eax, 64
 	mov xms_mem_free, eax
 	mov xms_mem_largest, eax
-	call I15SetHandle		; set xms block, sizeK in ECX, baseK in ESI
+	mov ecx, eax
+	mov edx, 1024+64
+	call I15SetHandle		; set xms block, sizeK in ECX, baseK in EDX
 _ret:
 	@DbgOutS <"I15GetMemoryStatus: exit, xms_mem_free=">,?INITRMDBG
 	@DbgOutD xms_mem_free,?INITRMDBG
@@ -1610,32 +1614,6 @@ InitA20 endp
 
 endif
 
-;--- get preallocated memory size in AX (kB)
-;--- this is called only if memory pooling is disabled (option NODYN)
-;--- or if XMS handle table isn't given (JEMM386 only)
-
-GetReasonableFixedMemoryAmount PROC
-
-if ?INTEGRATED
-	invoke I15GetMemoryStatus
-	or eax,eax
-	je $EX312
-else
-	invoke XMSGetMemoryStatus, xmsspec3
-	or ax,ax
-	je $EX312
-endif
-	.if word ptr xms_mem_largest+2 > 0	;more than 64 MB?
-		mov ax, 8000H				;then use 32 MB
-	.else
-		mov ax,WORD PTR xms_mem_largest+0
-		shr ax,1
-	.endif
-$EX312:
-	ret
-
-GetReasonableFixedMemoryAmount ENDP
-
 ;--- allocates and initializes extended memory for jemm;
 ;--- is called after the memory requirements have been calculated.
 ;--- will set jemmini values Monitorstart, TotalMemory, XMSControlHandle.
@@ -1691,6 +1669,25 @@ if ?INTEGRATED
 else
 		invoke printf, CStr("XMS largest free block %lu kB, XMS free mem %lu kB", LF), xms_mem_largest, xms_mem_free
 endif
+	.endif
+
+;--- if pool sharing is disabled (option NODYN ;no XMS handle table for jemm386)
+;--- AND option MIN= is not given:
+;--- calculate a value for MIN= which will be preallocated.
+
+	.if jemmini.NoPool && (!MinRequest)
+		.if word ptr xms_mem_largest+2 > 0	;more than 64 MB?
+			mov ax, 8000H				;then use 32 MB
+		.else
+			mov ax,WORD PTR xms_mem_largest+0
+			shr ax,1
+		.endif
+		shr ax,4
+		movzx eax,ax
+		mov jemmini.MinMem16k,eax
+		.if bVerbose
+			invoke printf, CStr("default preallocated memory=%lu 16k-pages", LF), jemmini.MinMem16k
+		.endif
 	.endif
 
 ;--- reality check to throttle requests far beyond available XMS, later actual
@@ -1884,10 +1881,6 @@ if ?INTEGRATED eq 0
 else
 	invoke GetEMBBase, jemmini.XMSControlHandle
 	mov jemmini.MonitorStart, eax
-;	mov eax, xms_mem_free
-;	add eax, 1024+64
-;	shl eax,10
-;	mov jemmini.TotalMemory, eax
 endif
 	mov ecx, xms_mem_free
 	shl ecx, 10				;convert kB to bytes
@@ -1895,7 +1888,7 @@ endif
 	mov jemmini.TotalMemory, ecx
 
 	mov ax,1
-	@DbgOutS <"AllocAndInitMem: exit, MonitorStart=">
+	@DbgOutS <"AllocAndInitMem: exit, MonitorStart=">,?INITRMDBG
 	@DbgOutD jemmini.MonitorStart,?INITRMDBG
 	@DbgOutS <", Totalmemory=">,?INITRMDBG
 	@DbgOutD jemmini.TotalMemory,?INITRMDBG
@@ -2981,15 +2974,6 @@ if ?INTEGRATED eq 0
 		invoke printf, CStr("%s: XMS host doesn''t provide handle array, dynamic memory allocation off!", LF), offset szWarning
 	.endif
 endif
-	.if jemmini.NoPool && (!MinRequest)
-		invoke GetReasonableFixedMemoryAmount	;get mem in kB to be preallocated
-		shr ax,4
-		movzx eax,ax
-		mov jemmini.MinMem16k,eax
-		.if bVerbose
-			invoke printf, CStr("default preallocated memory=%lu 16k-pages", LF), jemmini.MinMem16k
-		.endif
-	.endif
 
 	invoke ScanSystemMemory	;/* build up system memory map */
 
