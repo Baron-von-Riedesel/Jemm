@@ -35,6 +35,8 @@ XMSF_FREEB  equ 1   ;free block
 XMSF_USEDB  equ 2   ;used block
 XMSF_FREEH  equ 4   ;free handle
 
+printf proto c :ptr byte, :vararg
+
 ;--- define a string constant
 
 CStr macro string
@@ -44,28 +46,6 @@ xxx db string
 	db 0
 	.code
 	exitm <offset xxx>
-	endm
-
-;--- display word decimal
-
-@wordout_d macro number,format
-	mov cl,format
-	ifidni <number>,<ax>
-	else
-	  mov ax,number
-	endif
-	call _wordout_d
-	endm
-
-;--- display dword decimal
-
-@dwordout_d macro number,format
-	ifnb <number>
-		mov ax,word ptr number+0
-		mov dx,word ptr number+2
-	endif
-	mov cl, format
-	call _dwordout_d
 	endm
 
 	.data
@@ -85,124 +65,12 @@ FL_FREEHANDLES  equ 8
 
 	assume DS:DGROUP
 
-_putchr proc stdcall char:word
-	push dx
-	push ax
-	mov dx,char
-	mov ah,2
-	int 21h
-	pop ax
-	pop dx
-	ret
-_putchr endp
-
-;--- display word in AX decimal
-;--- min. number of chars in CL
-
-_wordout_d proc
-	xor dx,dx
-;	jmp _dwordout_d
-_wordout_d endp ;fall thru!
-
-;--- display dword in DX:AX decimal
-;--- min. number of chars in CL
-
-_dwordout_d proc c
-
-	pusha
-	mov bl,cl
-	mov si,offset tab1
-	mov bh,00
-	mov ch,10			;max cnt of digits
-nextdigit:
-	mov cl,'0' - 1
-@@:
-	inc cl
-	sub ax,cs:[si + 0]
-	sbb dx,cs:[si + 2]
-	jnc @B
-	add ax,cs:[si + 0]
-	adc dx,cs:[si + 2]
-	add si,4
-	cmp cl,'0'			;current digit
-	jnz @F
-	cmp ch,1			;format
-	jz @F
-	cmp bh,00			;number of digits displayed
-	jz skipdigit
-@@:
-	and bh,bh
-	jnz prefdone
-	sub bl,ch
-	jna prefdone
-@@:
-	invoke _putchr, ' '
-	dec bl
-	jnz @B
-prefdone:
-	invoke _putchr, cx
-	inc bh
-skipdigit:
-	dec ch
-	jnz nextdigit
-	popa
-	ret
-
-	align 2
-tab1 dd 1000000000,100000000,10000000,1000000,100000,10000,1000,100,10,1
-
-_dwordout_d endp
-
-;--- display DWORD/WORD/BYTE in EAX/AX/AL hexadecimal
-
-_dwordout:
-	push eax
-	shr eax,16
-	call _wordout
-	pop eax
-_wordout:
-	push ax
-	mov al,ah
-	call _byteout
-	pop ax
-_byteout:
-	push ax
-	shr al,4
-	call _nibout
-	pop ax
-_nibout:
-	and al,0Fh
-	add al,'0'
-	cmp al,'9'
-	jbe @F
-	add al,7
-@@:
-	invoke _putchr, ax
-	ret
-
-;--- display a string constant
-
-_cputs proc stdcall uses si pText:ptr
-	mov si,pText
-nextitem:
-	lodsb
-	and al,al
-	jz exit
-	cmp al,10
-	jnz @F
-	invoke _putchr, 13
-	mov al,10
-@@:
-	invoke _putchr, ax
-	jmp nextitem
-exit:
-	ret
-_cputs endp
+	include printf.inc
 
 ;--- display a EOL
 
 _crout proc
-	invoke _cputs, CStr(<lf>)
+	invoke printf, CStr(<lf>)
 	ret
 _crout endp
 
@@ -237,12 +105,12 @@ getparm_1:
 @@:
 	cmp ax,'-?'
 	jnz getparm_3
-	invoke _cputs, CStr(<"XMSSTAT v1.0, Public Domain",lf>)
-	invoke _cputs, CStr(<"usage: XMSSTAT [ -options ]",lf>)
-	invoke _cputs, CStr(<"  -a: skip free memory blocks",lf>)
-	invoke _cputs, CStr(<"  -b: also display unused handles",lf>)
-	invoke _cputs, CStr(<"  -c: skip memory blocks with size 0",lf>)
-	invoke _cputs, CStr(<"  -f: skip used memory blocks",lf>)
+	invoke printf, CStr(<"XMSSTAT v1.0, Public Domain",lf>)
+	invoke printf, CStr(<"usage: XMSSTAT [ -options ]",lf>)
+	invoke printf, CStr(<"  -a: skip free memory blocks",lf>)
+	invoke printf, CStr(<"  -b: also display unused handles",lf>)
+	invoke printf, CStr(<"  -c: skip memory blocks with size 0",lf>)
+	invoke printf, CStr(<"  -f: skip used memory blocks",lf>)
 	jmp getparm_er
 getparm_3:
 	cmp al,'/'
@@ -286,21 +154,25 @@ checkflags endp
 
 ;--- display XMS handle flags
 
-flagsout proc
+getflags proc
 	test al,1
 	jz @F
-	invoke _cputs, CStr(<" free">)
+	mov cx,CStr("free")
+	ret
 @@:
 	test al,2
 	jz @F
-	invoke _cputs, CStr(<" used">)
+	mov cx,CStr(<"used">)
+	ret
 @@:
 	test al,4
 	jz @F
-	invoke _cputs, CStr(<" unused">)
-@@:
+	mov cx,CStr(<"unused">)
 	ret
-flagsout endp
+@@:
+	mov cx,CStr(" ")
+	ret
+getflags endp
 
 ;--- display 1 XMS handle
 ;--- ES:BX -> handle
@@ -318,37 +190,25 @@ hdlout proc
 	jnz @F
 	ret
 @@:
-	@wordout_d si, 3
-	invoke _putchr, ' '
+	invoke printf, CStr("%3u %4X"), si, bx
 	mov eax,es:[bx].XMSH.dwSize
 	add [dwTotal],eax
-	mov ax,bx
-	call _wordout
-	invoke _cputs, CStr("   ")
 	mov eax,es:[bx].XMSH.dwAddr
-	shl eax,10
-	call _dwordout
-	invoke _putchr, '-'
-	mov eax,es:[bx].XMSH.dwAddr
+	shl eax, 10
+	mov edx,es:[bx].XMSH.dwAddr
 	mov ecx,es:[bx].XMSH.dwSize
-	add eax,ecx
-	shl eax,10
+	add edx,ecx
+	shl edx,10
 	jecxz @F
-	dec eax
+	dec edx
 @@:
-	call _dwordout
-	invoke _putchr, ' '
-	@dwordout_d es:[bx].XMSH.dwSize, 8
-	invoke _putchr, ' '
-	mov al, es:[bx].XMSH.bLocks
-	mov ah, 00
-	@wordout_d ax,5
-	invoke _putchr, ' '
+	mov cl, es:[bx].XMSH.bLocks
+	mov ch, 00
+	invoke printf, CStr("   %08lx-%08lx %8lu %5u "), eax, edx, es:[bx].XMSH.dwSize, cx
 	mov al, es:[bx].XMSH.bFlags
-	call _byteout
-	mov al, es:[bx].XMSH.bFlags
-	call flagsout
-	call _crout
+	call getflags
+	movzx ax,al
+	invoke printf, CStr(<"%2X %s",lf>), ax, cx
 	ret
 
 hdlout endp
@@ -366,8 +226,8 @@ hdlarray proc stdcall pArray:DWORD
 	les bx,es:[bx].XMSHT.dwArray
 	jcxz exit
 	call _crout
-	invoke _cputs, CStr(<" no handle region            size(kB) locks flags",lf>)
-	invoke _cputs, CStr(<"--------------------------------------------------------",lf>)
+	invoke printf, CStr(<" no handle region            size(kB) locks  flags",lf>)
+	invoke printf, CStr(<"--------------------------------------------------------",lf>)
 	mov si,1                    ;start with 1
 nextitem:
 	pusha
@@ -376,14 +236,10 @@ nextitem:
 	add bx,dx
 	inc si
 	loop nextitem
-	invoke _cputs, CStr(<"--------------------------------------------------------",lf>)
-	invoke _cputs, CStr(<"                            ">)
-	@dwordout_d dwTotal,9
-	call _crout
+	invoke printf, CStr(<"--------------------------------------------------------",lf>)
+	invoke printf, CStr(<"                            %9lu",lf>), dwTotal
 exit:
-	invoke _cputs, CStr(<"free handles: ">)
-	@wordout_d freehdls,1
-	call _crout
+	invoke printf, CStr(<"free handles: %u",lf>),freehdls
 	mov ah,6					;disable A20
 	call [xmsadr]
 	ret
@@ -398,36 +254,19 @@ hdlinfo proc near
 	int 2Fh
 	cmp al,43h
 	jnz nohandletab
-	invoke _cputs, CStr(<"XMS handle table at ">)
-	mov ax,es
-	call _wordout
-	invoke _putchr, ':'
-	mov ax,bx
-	call _wordout
-	invoke _cputs, CStr(<", handle cnt/size=">)
-	mov ax,es:[bx].XMSHT.wHdls	;number of total handles
-	@wordout_d ax,1
-	invoke _putchr,  '/'
 	mov al,es:[bx].XMSHT.bSize	;size of element
 	mov ah,00
-	@wordout_d ax,1
-	call _crout
-	invoke _cputs, CStr(<"XMS handle array at ">)
-	mov ax,word ptr es:[bx].XMSHT.dwArray+2
-	call _wordout
-	invoke _putchr, ':'
-	mov ax,word ptr es:[bx].XMSHT.dwArray+0
-	call _wordout
-	call _crout
+	invoke printf, CStr(<"XMS handle table at %X:%X, handle cnt/size=%u/%u",lf>), es, bx, es:[bx].XMSHT.wHdls, ax
+	invoke printf, CStr(<"XMS handle array at %X:%X",lf>), word ptr es:[bx].XMSHT.dwArray+2, word ptr es:[bx].XMSHT.dwArray+0
 	cmp es:[bx].XMSHT.bSize, sizeof XMSH
 	jnz invalhdlsize
 	invoke hdlarray, es::bx
 	ret
 nohandletab:
-	invoke _cputs, CStr(<"Int 2Fh, ax=4309h failed!",lf>)
+	invoke printf, CStr(<"Int 2Fh, ax=4309h failed!",lf>)
 	ret
 invalhdlsize:
-	invoke _cputs, CStr(<"XMS handle size isn't 10!",lf>)
+	invoke printf, CStr(<"XMS handle size isn't 10!",lf>)
 	ret
 hdlinfo endp
 
@@ -443,42 +282,31 @@ umbinfo  proc near
 	jz umbchk1
 	cmp bl,80h
 	jnz umbchk2
-	invoke _cputs, CStr(<"no UMB handler installed",lf>)
+	invoke printf, CStr(<"no UMB handler installed",lf>)
 	jmp exit
 umbchk2:
 	cmp bl,0B1h
 	jnz @F
-	invoke _cputs, CStr(<"no free UMBs available",lf>)
+	invoke printf, CStr(<"no free UMBs available",lf>)
 	jmp exit
 @@:
-	push bx
-	invoke _cputs, CStr("request for UMB returned RC:")
-	pop ax
-	call _byteout
-	call _crout
+	movzx ax,bl
+	invoke printf, CStr(<"request for UMB returned RC=%X",lf>),ax
 	jmp exit
 umbchk1:
 	push bx 	 ;save UMB address
 	push dx 	 ;save size largest
-	push bx
-	invoke _cputs, CStr(<"segment of largest UMB:">)
+	invoke printf, CStr(<"segment of largest UMB: %X",lf>), bx
 	pop ax
-	call _wordout
-	call _crout
-	invoke _cputs, CStr(<"size of largest UMB (paragraphs):">)
-	pop ax
-	call _wordout
-	call _crout
+	invoke printf, CStr(<"size of largest UMB (paragraphs): %X",lf>), ax
 	pop dx
 	mov ah,11h				;free UMB again
 	call dword ptr [xmsadr]
 	cmp ax,1
 	jz exit
-	push bx
-	invoke _cputs, CStr(<"calling free UMB failed, BL=">)
-	pop ax
-	call _byteout
-	call _crout
+	mov ax,bx
+	mov ah,0
+	invoke printf, CStr(<"calling free UMB failed, BL=%X",lf>),ax
 exit:
 	ret
 umbinfo  endp
@@ -491,18 +319,10 @@ freememinfo2 proc
 	call [xmsadr]
 	cmp bl,0
 	jnz failed
-	push dx
-	push ax
-	invoke _cputs, CStr(<"largest free memory block (v2) in kB: ">)
-	pop ax
-	@wordout_d ax,1
-	invoke _cputs, CStr(<", total free: ">)
-	pop ax
-	@wordout_d ax,1
-	call _crout
+	invoke printf, CStr(<"v2 free memory largest/total (kB): %u/%u",lf>), ax, dx
 	ret
 failed:
-	invoke _cputs, CStr(<"XMS call AH=08 failed",lf>)
+	invoke printf, CStr(<"XMS call AH=08 failed",lf>)
 	ret
 freememinfo2 endp
 
@@ -514,20 +334,10 @@ freememinfo3 proc
 	call [xmsadr]
 	cmp bl,0
 	jnz failed
-	push edx
-	push eax
-	invoke _cputs, CStr(<"largest free memory block (v3) in kB: ">)
-	pop ax
-	pop dx
-	@dwordout_d ,1
-	invoke	_cputs, CStr(<", total free: ">)
-	pop ax
-	pop dx
-	@dwordout_d ,1
-	call _crout
+	invoke printf, CStr(<"v3 free memory largest/total (kB): %lu/%lu, highest addr: %lX",lf>), eax, edx, ecx
 	ret
 failed:
-	invoke _cputs, CStr(<"XMS call AH=88h failed",lf>)
+	invoke printf, CStr(<"XMS call AH=88h failed",lf>)
 	ret
 freememinfo3 endp
 
@@ -536,17 +346,13 @@ versioninfo proc
 	call [xmsadr]
 	mov [wVersion],ax
 	push dx
-	invoke _cputs, CStr(<"XMS version: ">)
 	movzx ax,byte ptr [wVersion+1]
-	@wordout_d ax,1
-	invoke _putchr, '.'
-	movzx ax,byte ptr [wVersion+0]
-	@wordout_d ax,1
-	call _crout
+	movzx dx,byte ptr [wVersion+0]
+	invoke printf, CStr(<"XMS version: %u.%u",lf>), ax, dx
 	pop dx
 	test dx,1
 	jz nohma
-	invoke _cputs, CStr(<"HMA handled by XMS host, HMA is ">)
+	invoke printf, CStr(<"HMA handled by XMS host, HMA is ">)
 	mov ah,01h				;try to reserve HMA
 	mov dx,-1
 	call [xmsadr]
@@ -554,13 +360,13 @@ versioninfo proc
 	jnz hma_used
 	mov ah,02h				;release HMA
 	call [xmsadr]
-	invoke _cputs, CStr(<"free",lf>)
+	invoke printf, CStr(<"free",lf>)
 	ret
 hma_used:
-	invoke _cputs, CStr(<"allocated",lf>)
+	invoke printf, CStr(<"allocated",lf>)
 	ret
 nohma:
-	invoke _cputs, CStr(<"HMA NOT handled by XMS host",lf>)
+	invoke printf, CStr(<"HMA NOT handled by XMS host",lf>)
 	ret
 versioninfo endp
 
@@ -574,20 +380,14 @@ main    proc c
 	int 2fh
 	test al,80h 		 ;xms host found?
 	jnz main1
-	invoke _cputs, CStr(<"no XMS host found",lf>)
+	invoke printf, CStr(<"no XMS host found",lf>)
 	jmp exit
 main1:
 	mov ax,4310h		;get XMS call address
 	int 2fh
 	mov word ptr xmsadr+0,bx
 	mov word ptr xmsadr+2,es
-	invoke _cputs, CStr(<"XMS call address: ">)
-	mov ax,word ptr [xmsadr+2]
-	call _wordout
-	invoke _putchr, ':'
-	mov ax, word ptr [xmsadr+0]
-	call _wordout
-	call _crout
+	invoke printf, CStr(<"XMS call address: %X:%X",lf>), word ptr [xmsadr+2], word ptr [xmsadr+0]
 
 	call versioninfo
 	call freememinfo2
@@ -621,9 +421,18 @@ start   proc
 	js no386			;bit 15 set? then its a 8086/80186
 	jnz is386
 no386:
-	invoke _cputs, CStr(<"a 80386 is needed",lf>)
+	invoke printf, CStr(<"a 80386 is needed",lf>)
 	jmp done
 is386:
+	mov ax,@data
+	mov ds,ax
+	mov bx,ss
+	mov cx,ds
+	sub bx,cx
+	shl bx,4
+	add bx,sp
+	mov ss,ax
+	mov sp,bx
 	call main
 done:
 	mov ah,4Ch
