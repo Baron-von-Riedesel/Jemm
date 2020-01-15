@@ -1323,6 +1323,13 @@ I15SetHandle proc c public uses ds bx
 	jb @F
 	mov xms_mem_largest, ecx
 @@:
+	mov eax, edx
+	add eax, ecx
+	shl eax, 10
+	cmp eax, xms_mem_highest
+	jb @F
+	mov xms_mem_highest, eax
+@@:
 	push cs
 	pop ds
 	mov bx, offset xms_handle_array

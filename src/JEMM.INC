@@ -168,7 +168,7 @@ MINMEM16K_DEFAULT equ 0 ;/* MIN= default (in 16 kB units) */
 JEMMINIT struct 4
 MonitorStart      dd 0    ;memory block start address (XMS/I15)
 MonitorEnd        dd 0    ;memory block end address (XMS/I15)
-TotalMemory       dd 0    ;highest physical memory address (XMS/I15)
+MaxPhysMem        dd 0    ;highest physical memory address (XMS/I15)
 MaxMem16k         dd -1   ;MAX mem in 16 kB units (default 7680)
 MinMem16k         dd MINMEM16K_DEFAULT    ;MIN mem in 16 kB units (default 0)
 XMSHandleTable    dd 0    ;XMS handle table (FAR16)

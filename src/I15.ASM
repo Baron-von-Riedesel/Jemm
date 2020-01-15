@@ -119,9 +119,9 @@ endif
 
     lea eax, [esi+ecx]
     lea edx, [edi+ecx]
-    cmp eax, [dwTotalMemory]
+    cmp eax, [dwMaxPhysMem]
     jae @@fail
-    cmp edx, [dwTotalMemory]
+    cmp edx, [dwMaxPhysMem]
     jae @@fail
 
 @@memcheck:

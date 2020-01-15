@@ -61,4 +61,5 @@ externdef c xms_num_handles:WORD
 externdef c xms_max:dword
 externdef c xms_mem_free:dword
 externdef c xms_mem_largest:dword
+externdef c xms_mem_highest:dword
 endif

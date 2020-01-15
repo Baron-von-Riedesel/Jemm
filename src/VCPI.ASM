@@ -130,7 +130,7 @@ VCPI_GetInterface   ENDP
 ;  return edx == physical address of highest 4K page available
 ;
 VCPI_GetMax PROC
-    mov edx,[dwTotalMemory]
+    mov edx,[dwMaxPhysMem]
 if ?EMX
     test bV86Flags, V86F_EMX;the EMX DOS extender fails if too much memory
     jz @@noemx              ;is available!

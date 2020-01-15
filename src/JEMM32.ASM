@@ -115,7 +115,7 @@ dwStackR0       dd 0        ; current R0 stack to compare
 if ?DYNTRAPP60
 dwTSS           dd 0
 endif
-dwTotalMemory   dd 0        ; XMS highest address (r/o)
+dwMaxPhysMem    dd 0        ; XMS highest address (r/o)
 bpstart         dd 0        ; linear address start of bp table
 PageMapHeap     dd ?SYSLINEAR+?PAGETABSYS+6*4
 pSmallHeap      label dword ; used during Init only

@@ -57,6 +57,7 @@ XMSdriverAddress PF16 0
 dwAllocatedBytes	DD 0;set by AllocAndInitMem()
 xms_mem_largest	DD 0	;largest free block in kB
 xms_mem_free	DD 0	;total free mem in kB
+xms_mem_highest	dd 0	;highest physical address
 
 bVerbose	DB 0
 if ?LOAD
@@ -1009,6 +1010,7 @@ XMSGetMemoryStatus PROC c usev3:word
 		.if bl == 0	;BL must be 00
 			mov xms_mem_largest, eax
 			mov xms_mem_free, edx
+			mov xms_mem_highest, ecx
 			jmp ok
 		.endif
 	.endif
@@ -1589,7 +1591,7 @@ endif
 
 ;--- allocates and initializes extended memory for jemm;
 ;--- is called after the memory requirements have been calculated.
-;--- will set jemmini values Monitorstart, TotalMemory, XMSControlHandle.
+;--- will set jemmini values Monitorstart, MaxPhysMem, XMSControlHandle.
 
 AllocAndInitMem PROC c uses esi di kbneeded:dword
 
@@ -1855,16 +1857,21 @@ else
 	invoke GetEMBBase, jemmini.XMSControlHandle
 	mov jemmini.MonitorStart, eax
 endif
+if 0
 	mov ecx, xms_mem_free
 	shl ecx, 10				;convert kB to bytes
 	add ecx, jemmini.MonitorStart
-	mov jemmini.TotalMemory, ecx
+	mov jemmini.MaxPhysMem, ecx
+else
+	mov eax, xms_mem_highest
+	mov jemmini.MaxPhysMem, eax
+endif
 
 	mov ax,1
 	@DbgOutS <"AllocAndInitMem: exit, MonitorStart=">,?INITRMDBG
 	@DbgOutD jemmini.MonitorStart,?INITRMDBG
-	@DbgOutS <", Totalmemory=">,?INITRMDBG
-	@DbgOutD jemmini.TotalMemory,?INITRMDBG
+	@DbgOutS <", MaxPhysMem=">,?INITRMDBG
+	@DbgOutD jemmini.MaxPhysMem,?INITRMDBG
 	@DbgOutS <13,10>,?INITRMDBG
 	ret
 
@@ -3008,7 +3015,7 @@ endif
 	mov jemmini.MonitorEnd,eax
 
 	.if bVerbose
-		invoke printf, CStr("XMS memory block for monitor: %lx-%lx, XMS highest=%lx", LF), jemmini.MonitorStart, eax, jemmini.TotalMemory
+		invoke printf, CStr("XMS memory block for monitor: %lx-%lx, XMS highest=%lx", LF), jemmini.MonitorStart, eax, jemmini.MaxPhysMem
 	.endif
 
 	.if bVerbose

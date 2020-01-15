@@ -14,7 +14,7 @@ externdef dwStackCurr:dword
 if ?DYNTRAPP60
 externdef dwTSS:dword
 endif
-externdef dwTotalMemory:dword
+externdef dwMaxPhysMem:dword
 externdef PageMapHeap:dword
 externdef dwMaxMem4K:dword
 externdef dwUsedMem4K:dword

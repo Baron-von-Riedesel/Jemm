@@ -254,7 +254,7 @@ SetIDTEntry endp
 ;---  MonitorStart      : start of EMB for the monitor
 ;---  MonitorEnd        : end of EMB for monitor
 ;---  MaxMem16k         : MAX=xxxx cmdline option given, or 1E00 (120 MB)
-;---  TotalMemory       : total size of physical memory
+;---  MaxPhysMem        : highest physical address + 1
 ;---  XMS_Handle_Table  : returned by int 2f, ax=4309h
 ;---  MaxEMSPages       : maximum EMS 16k pages, default 32 MB
 ;---  XMS_Control_Handle: XMS handle for monitor extended memory block
@@ -608,8 +608,8 @@ endif
 
     mov esi, jemmini
 
-    mov eax, [esi].JEMMINIT.TotalMemory
-    mov [dwTotalMemory],eax
+    mov eax, [esi].JEMMINIT.MaxPhysMem
+    mov [dwMaxPhysMem],eax
     mov eax, [esi].JEMMINIT.MaxMem16k
     shl eax, 2
     mov [dwMaxMem4K],eax
