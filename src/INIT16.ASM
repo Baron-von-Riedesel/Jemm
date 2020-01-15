@@ -63,7 +63,7 @@ if ?LOAD
 bLoad	DB 0
 endif
 if ?INTEGRATED
-xms_max	DD 0	;MAXEXT= value
+xms_max	DD 4095*1024	;MAXEXT= value
 xms_num_handles	DW 32	;XMSHANDLES= value
 bNoE820	DB 0
 bNoE801	DB 0
@@ -1125,8 +1125,6 @@ if ?INTEGRATED
 ;--- returns free memory in kB in EAX.
 ;--- called by AllocAndInitMem()
 
-?MAXBLOCKS equ 8	;max blocks to use from int 15h, ax=e820h
-
 I15GetMemoryStatus proc stdcall uses si di
 
 local maxvalue:DWORD
@@ -1184,21 +1182,10 @@ e820_nextitem:
 
 	mov ecx, mmap.lenlow
 	shr ecx, 10
-	cmp ecx, xms_mem_largest
-	jb @F
-	mov xms_mem_largest, ecx
-@@:
-	shr edx,10
-	cmp edx,1024		;does the block start at 0x100000?
-	jnz @F
-	add edx,64			;then exclude the first 64 kB for HMA
-	sub ecx,64
-	jc e820_itemdone
-@@:
-	add xms_mem_free, ecx
+	shr edx, 10
 	call I15SetHandle	;set xms block, sizeK in ECX, baseK in EDX
 	inc si
-	cmp si,?MAXBLOCKS
+	cmp si,?PREDEFXMSHDLS	;reached max capacity of the static handle array?
 	jz e820_done
 e820_itemdone:
 	cmp ebx,0		;was this the last entry?
@@ -1206,13 +1193,9 @@ e820_itemdone:
 
 e820_bad:
 e820_done:
-	.if xms_mem_free
-		.if bVerbose
-			invoke printf, CStr(<"Int15, ax=E820: free memory=%lu kB, largest block=%lu kB",LF>), xms_mem_free, xms_mem_largest
-		.endif
-		mov eax, xms_mem_largest
-		jmp _ret
-	.endif
+	mov eax, xms_mem_largest
+	and eax, eax
+	jnz _ret
 
 ;--- try 0e801h, but set up the registers to fail status because not
 ;--- all BIOS's properly return the carry flag on failure
@@ -1262,18 +1245,8 @@ e820_done:
 	jnc @@exit
 	xor ax,ax
 @@exit:
-	mov edx, xms_max
-	or edx,edx
-	je @F
-	cmp eax,edx
-	jbe @F
-	mov eax,edx 		; above max, limit to maximum
-@@:
-	sub eax, 64
-	mov xms_mem_free, eax
-	mov xms_mem_largest, eax
 	mov ecx, eax
-	mov edx, 1024+64
+	mov edx, 1024
 	call I15SetHandle		; set xms block, sizeK in ECX, baseK in EDX
 _ret:
 	@DbgOutS <"I15GetMemoryStatus: exit, xms_mem_free=">,?INITRMDBG
@@ -1665,9 +1638,9 @@ $L569:
 endif
 	.if bVerbose
 if ?INTEGRATED
-		invoke printf, CStr("I15 largest free block %lU kB, I15 free mem %lu kB", LF), xms_mem_largest, xms_mem_free
+		invoke printf, CStr("I15: largest free block %lu kB, free memory %lu kB", LF), xms_mem_largest, xms_mem_free
 else
-		invoke printf, CStr("XMS largest free block %lu kB, XMS free mem %lu kB", LF), xms_mem_largest, xms_mem_free
+		invoke printf, CStr("XMS: largest free block %lu kB, free memory %lu kB", LF), xms_mem_largest, xms_mem_free
 endif
 	.endif
 
@@ -3039,7 +3012,7 @@ endif
 	.endif
 
 	.if bVerbose
-		invoke printf, CStr(<"Memory Map: (R=system ram, G=graphics, E=rom/rsvd, P=page frame, U=umb)",LF>)
+		invoke printf, CStr(<"Memory Map: (R=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb)",LF>)
 		sub sp,64+4
 		mov cx,4
 		mov si,offset SystemMemory

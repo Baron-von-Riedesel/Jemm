@@ -39,6 +39,7 @@ VDWORDOUT proto
 VWORDOUT  proto
 endif
 if ?INTEGRATED
+?PREDEFXMSHDLS equ 8	;free xms handles to be used for int 15h, ax=e820h
 I15SetHandle proto c
 I15AllocMemory proto stdcall :WORD, :DWORD
 GetEMBBase proto stdcall: word
@@ -57,4 +58,7 @@ externdef c sig2:BYTE
 
 if ?INTEGRATED
 externdef c xms_num_handles:WORD
+externdef c xms_max:dword
+externdef c xms_mem_free:dword
+externdef c xms_mem_largest:dword
 endif

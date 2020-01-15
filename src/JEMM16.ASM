@@ -397,13 +397,14 @@ if ?INTEGRATED
 	align 2
 
 if ?BUFFERED	;buffered output in XMS memory block?
-?NUMXMSHDL equ 11
+?EXTRAHDL equ 1
 else
-?NUMXMSHDL equ 10
+?EXTRAHDL equ 0
 endif
 
 xms_handle_table XMS_HANDLETABLE <01, size XMS_HANDLE, 0, xms_handle_array>
-xms_handle_array XMS_HANDLE ?NUMXMSHDL dup (<XMSF_INPOOL,0,0,0>)        
+xms_handle_array XMS_HANDLE ?PREDEFXMSHDLS+1+?EXTRAHDL dup (<XMSF_INPOOL,0,0,0>)
+	db XMSF_INPOOL
 
 endif
 	align 16
@@ -1302,6 +1303,26 @@ if ?INTEGRATED
 ;--- set entry in XMS handle array, sizeK in ecx, baseK in edx
 
 I15SetHandle proc c public uses ds bx
+
+;--- first, do a few checks
+	cmp edx, 1024		;does the block start at 0x100000?
+	jnz @F
+	add edx, 64			;then exclude the first 64 kB for HMA
+	sub ecx, 64
+	jc exit
+@@:
+	sub xms_max, ecx	;MAXEXT option set?
+	jnc @F
+	add ecx, xms_max	;limit to maximum
+	mov xms_max,0
+	jecxz exit
+@@:
+;--- adjust xms_mem_free and xms_mem_largest fields, if needed
+	add xms_mem_free, ecx
+	cmp ecx, xms_mem_largest
+	jb @F
+	mov xms_mem_largest, ecx
+@@:
 	push cs
 	pop ds
 	mov bx, offset xms_handle_array
@@ -1311,6 +1332,7 @@ I15SetHandle proc c public uses ds bx
 	mov [bx].XMS_HANDLE.xh_flags, XMSF_FREE
 	mov [bx].XMS_HANDLE.xh_baseK, edx
 	mov [bx].XMS_HANDLE.xh_sizeK, ecx
+exit:
 	ret
 I15SetHandle endp
 
@@ -1323,6 +1345,8 @@ I15AllocMemory proc stdcall public uses ds si dummy:WORD, kbneeded:DWORD
 	mov ecx, kbneeded
 	xor si, si
 	mov bx, offset xms_handle_array
+
+;--- scan handle table for a free block that is large enough
 	.while [bx].XMS_HANDLE.xh_flags != XMSF_INPOOL
 		.if si == 0 && \
 			[bx].XMS_HANDLE.xh_flags == XMSF_FREE && \
@@ -1333,15 +1357,22 @@ I15AllocMemory proc stdcall public uses ds si dummy:WORD, kbneeded:DWORD
 	.endw
 	mov ax, si
 	.if si
+;--- a block with sufficient size has been found, and
+;--- bx points to a free handle now, which will hold
+;--- the remaining memory of the block
 		mov eax, [si].XMS_HANDLE.xh_sizeK
 		sub eax, ecx
 		mov [si].XMS_HANDLE.xh_sizeK, ecx
 		mov [si].XMS_HANDLE.xh_locks, 1
 		mov [si].XMS_HANDLE.xh_flags, XMSF_USED
 		add ecx, [si].XMS_HANDLE.xh_baseK
+;--- if eax (=size) is zero, no new handle is needed
+		and eax, eax
+		jz @F
 		mov [bx].XMS_HANDLE.xh_flags, XMSF_FREE
 		mov [bx].XMS_HANDLE.xh_sizeK, eax
 		mov [bx].XMS_HANDLE.xh_baseK, ecx
+@@:
 		mov ax, si
 	.endif
 	ret

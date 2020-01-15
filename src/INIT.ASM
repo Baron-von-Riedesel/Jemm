@@ -1315,25 +1315,23 @@ ife ?BUFFERED   ;avoid this if debug output is buffered
 ;--- this code assumes that first entry in xms handle table is
 ;--- the emb allocated for jemmex.
 
-    mov ebx,[XMS_Handle_Table.xht_pArray]
-    mov ecx, edi
-    shr ecx, 10
+	mov ebx,[XMS_Handle_Table.xht_pArray]
+	mov ecx, edi
+	shr ecx, 10
 ;--- search the handle for the adjacent free memory
 	lea edx, [ebx+sizeof XMS_HANDLE]
 	mov eax, [ebx].XMS_HANDLE.xh_baseK
 	add eax, [ebx].XMS_HANDLE.xh_sizeK
-	.while [edx].XMS_HANDLE.xh_flags == XMSF_FREE
-		.if eax == [edx].XMS_HANDLE.xh_baseK
-		    sub eax, ecx
-		    jbe @F
-		    sub [ebx].XMS_HANDLE.xh_sizeK, eax
-		    add [edx].XMS_HANDLE.xh_sizeK, eax
-		    mov [edx].XMS_HANDLE.xh_baseK, ecx
-@@:
-			.break
-		.endif
+	.while [edx].XMS_HANDLE.xh_flags != XMSF_INPOOL && \
+			eax != [edx].XMS_HANDLE.xh_baseK
 		add edx,sizeof XMS_HANDLE
 	.endw
+	sub eax, ecx
+	jbe @F
+	sub [ebx].XMS_HANDLE.xh_sizeK, eax
+	add [edx].XMS_HANDLE.xh_sizeK, eax
+	mov [edx].XMS_HANDLE.xh_baseK, ecx
+@@:
 endif
 
 endif
