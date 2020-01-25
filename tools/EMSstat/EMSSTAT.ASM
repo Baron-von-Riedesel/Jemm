@@ -22,28 +22,6 @@ CONST ends
 	exitm <offset xxx>
 	endm
 
-;--- display word decimal
-
-@wordout_d macro number,format
-	mov cl,format
-	ifidni <number>,<ax>
-	else
-	  mov ax,number
-	endif
-	call _wordout_d
-	endm
-
-;--- display dword decimal
-
-@dwordout_d macro number,format
-	ifnb <number>
-		mov ax,word ptr number+0
-		mov dx,word ptr number+2
-	endif
-	mov cl, format
-	call _dwordout_d
-	endm
-
 	.dosseg
 	.stack 1024 
 
@@ -73,126 +51,7 @@ buffer	db 4096h dup (?)
 
 	.code
 
-_putchr proc stdcall char:word
-	push dx
-	push ax
-	mov dx,char
-	mov ah,2
-	int 21h
-	pop ax
-	pop dx
-	ret
-_putchr endp
-
-;--- display a string constant
-
-_strout proc stdcall uses si pText:ptr
-	mov si,pText
-nextitem:
-	lodsb
-	and al,al
-	jz exit
-	cmp al,10
-	jnz @F
-	invoke _putchr, 13
-	mov al,10
-@@:
-	invoke _putchr, ax
-	jmp nextitem
-exit:
-	ret
-_strout endp
-
-;--- display a EOL
-
-_crout proc
-	invoke _strout, CStr(<lf>)
-	ret
-_crout endp
-
-;--- display word in AX decimal
-;--- min. number of chars in CL
-
-_wordout_d proc
-	xor dx,dx
-;	jmp _dwordout_d
-_wordout_d endp ;fall thru!
-
-;--- display dword in DX:AX decimal
-;--- min. number of chars in CL
-
-_dwordout_d proc c
-
-	pusha
-	mov bl,cl
-	mov si,offset tab1
-	mov bh,00
-	mov ch,10			;max cnt of digits
-nextdigit:
-	mov cl,'0' - 1
-@@:
-	inc cl
-	sub ax,cs:[si + 0]
-	sbb dx,cs:[si + 2]
-	jnc @B
-	add ax,cs:[si + 0]
-	adc dx,cs:[si + 2]
-	add si,4
-	cmp cl,'0'			;current digit
-	jnz @F
-	cmp ch,1			;format
-	jz @F
-	cmp bh,00			;number of digits displayed
-	jz skipdigit
-@@:
-	and bh,bh
-	jnz prefdone
-	sub bl,ch
-	jna prefdone
-@@:
-	invoke _putchr, ' '
-	dec bl
-	jnz @B
-prefdone:
-	invoke _putchr, cx
-	inc bh
-skipdigit:
-	dec ch
-	jnz nextdigit
-	popa
-	ret
-
-	align 2
-tab1 dd 1000000000,100000000,10000000,1000000,100000,10000,1000,100,10,1
-
-_dwordout_d endp
-
-;--- display DWORD/WORD/BYTE in EAX/AX/AL hexadecimal
-
-_dwordout:
-	push eax
-	shr eax,16
-	call _wordout
-	pop eax
-_wordout:
-	push ax
-	mov al,ah
-	call _byteout
-	pop ax
-_byteout:
-	push ax
-	shr al,4
-	call _nibout
-	pop ax
-_nibout:
-	and al,0Fh
-	add al,'0'
-	cmp al,'9'
-	jbe @F
-	add al,7
-@@:
-	invoke _putchr, ax
-	ret
+	include printf.inc
 
 ;--- test if EMM is installed
 ;--- out: ax=0 if no EMM found
@@ -225,15 +84,17 @@ EMScheck proc uses es si di
 found:
 	and dx,dx
 	jnz isems
-	invoke _strout, CStr(<"EMM installed, but NOEMS, device name=">)
+	invoke printf, CStr(<"EMM installed, but NOEMS, device name=">)
 	mov bx,10
 	mov cx,8
 @@:
 	mov al,es:[bx]
-	invoke _putchr,ax
+	push cx
+	invoke printf, CStr("%c"),ax
+	pop cx
 	inc bx
 	loop @B
-	invoke _crout
+	invoke printf, CStr(lf)
 isems:
 	mov ax,1
 exit:
@@ -298,18 +159,18 @@ getp1:
 	clc
 	ret
 parerr:
-	invoke _strout, CStr(<"usage: EMSSTAT [ options ]",lf>)
-	invoke _strout, CStr(<"options are:",lf>)
-	invoke _strout, CStr(<"    -p: display physical pages",lf>)
-	invoke _strout, CStr(<"    -v: display VCPI info",lf>)
-	invoke _strout, CStr(<"    -d: try to open devices EMMXXXX0 or EMMQXXX0",lf>)
+	invoke printf, CStr(<"usage: EMSSTAT [ options ]",lf>)
+	invoke printf, CStr(<"options are:",lf>)
+	invoke printf, CStr(<"    -p: display physical pages",lf>)
+	invoke printf, CStr(<"    -v: display VCPI info",lf>)
+	invoke printf, CStr(<"    -d: try to open devices EMMXXXX0 or EMMQXXX0",lf>)
 	stc
 	ret
 getpar endp
 
 ;--- ES=PSP
 
-main	proc c
+main proc c
 
 	call getpar
 	jc exit
@@ -317,7 +178,7 @@ main	proc c
 	call EMScheck
 	and ax,ax
 	jnz @F
-	invoke _strout, CStr(<"EMM not found",lf>)
+	invoke printf, CStr(<"EMM not found",lf>)
 	mov al,01
 	jmp nointapi
 @@:
@@ -374,38 +235,25 @@ readd proc near
 	call intrt
 	mov [si + 17],cx	;num mappable physical pages
 
-	invoke _strout, CStr(<"EMS version: ">)
-	mov ax,[si+2]
-	call _byteout
-	call _crout
-	invoke _strout, CStr(<'16 kB pages total/free: '>)
+	mov al,[si+2]
+	mov ah,0
+	shl ax,4
+	mov cl,ah
+	shr al,4
+	mov ah,0
+	mov ch,0
+	invoke printf, CStr(<"EMS version: %u.%u",lf>), cx, ax
 	mov ax,[si+3]
-	@wordout_d ax,1
-	invoke _putchr, '/'
-	mov ax,[si+5]
-	@wordout_d ax,1
-	invoke _strout, CStr(<" ",28h>)
-	mov ax,[si+11]
-	mov dx,[si+13]
-	@dwordout_d ,1
-	invoke	_putchr, '/'
-	mov ax,[si+19]
-	mov dx,[si+21]
-	@dwordout_d ,1
-	invoke _strout, CStr(<" kB",29h>)
-	call _crout
-	invoke _strout, CStr(<'EMS page frame: '>)
+	mov cx,[si+5]
+	mov edx,[si+11]
+	mov ebx,[si+19]
+	invoke printf, CStr(<'16 kB pages total/free: %u/%u (%lu/%lu kB)',lf>),ax,cx,edx,ebx
 	mov ax,  [si+0]
-	call _wordout
-	call _crout
-	invoke _strout, CStr(<'Active handles: '>)
+	invoke printf, CStr(<'EMS page frame: %04X',lf>),ax
 	mov ax,  [si+7]
-	@wordout_d ax,1
-	call _crout
-	invoke _strout, CStr(<'physical pages: '>)
+	invoke printf, CStr(<'Active handles: %u',lf>),ax
 	mov ax,  [si+17]
-	@wordout_d ax,1
-	call _crout
+	invoke printf, CStr(<'physical pages: %u',lf>),ax
 
 	mov ax,5900h
 	lea di,[si+23]
@@ -414,29 +262,20 @@ readd proc near
 	int 67h
 	and ah,ah
 	jz ems59
-	invoke _strout, CStr(<"int 67h, ax=5900h (get EM hardware information) failed, status=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=5900h (get EM hardware information) failed, status=%X",lf>),ax
 	jmp ems59done
 ems59:
-	invoke _strout, CStr(<'Raw pages size: '>)
 	mov ax, [si+23]
 	shl ax, 4
-	@wordout_d ax,1
-	call _crout
-	invoke _strout, CStr(<'Alternate map register sets: '>)
+	invoke printf, CStr(<'Raw pages size: %u',lf>),ax
 	mov ax, [si+25]
-	@wordout_d ax,1
-	call _crout
-	invoke _strout, CStr(<'Mapping context size: '>)
+	invoke printf, CStr(<'Alternate map register sets: %u',lf>),ax
 	mov ax, [si+27]
-	@wordout_d ax,1
-	call _crout
-	invoke _strout, CStr(<'DMA register sets: '>)
+	invoke printf, CStr(<'Mapping context size: %u',lf>),ax
 	mov ax, [si+29]
-	@wordout_d ax,1
-	call _crout
+	invoke printf, CStr(<'DMA register sets: %u',lf>),ax
 ems59done:
 	ret
 readd endp
@@ -448,15 +287,7 @@ rpages proc
 	int 67h
 	cmp ah,0
 	jnz exit
-	push bx
-	push dx
-	invoke _strout, CStr(<"raw pages total/free: ">)
-	pop ax
-	@wordout_d ax,1
-	invoke _strout, CStr(<"/">)
-	pop ax
-	@wordout_d ax,1
-	call _crout
+	invoke printf, CStr(<"raw pages total/free: %u/%u",lf>),dx,bx
 exit:
 	ret
 rpages endp
@@ -471,15 +302,12 @@ local	wHandles:WORD
 	int 67h
 	and ah,ah
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=5402h (get number of handles) failed, status=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=5402h (get number of handles) failed, status=%X",lf>),ax
 	jmp done
 @@:
-	invoke _strout, CStr(<"(max) size of handle table: ">)
-	@wordout_d bx,1
-	call _crout
+	invoke printf, CStr(<"(max) size of handle table: %u",lf>),bx
 
 	push ds
 	pop es
@@ -488,25 +316,22 @@ local	wHandles:WORD
 	int 67h
 	and ah,ah
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=5400h (get handle directory) failed, status=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=5400h (get handle directory) failed, status=%X",lf>),ax
 	jmp done
 @@:
 	movzx ax,al
 	mov wHandles,ax
 	and ax, ax
 	jz done
-	invoke _strout, CStr(<"Handle Name     Pages     KB",lf>)
-	invoke _strout, CStr(<"-----------------------------",lf>)
+	invoke printf, CStr(<"Handle Name     Pages     KB",lf>)
+	invoke printf, CStr(<"-----------------------------",lf>)
 	mov cx,wHandles
 nexthdl:						;<------
 	push cx
 	mov ax,[di]
-	@wordout_d ax,6
-	invoke _putchr, ' '
-
+	invoke printf, CStr("%6u "), ax
 	lea si,[di+2]
 	mov cx,8
 nextchar:
@@ -525,13 +350,13 @@ nextchar:
 	int 67h
 	and ah,ah
 	jz @F
-	invoke _strout, CStr(<"    ?      ?",lf>)
+	invoke printf, CStr(<"    ?      ?",lf>)
 	jmp invalhdl
 @@:
 	movzx ebx,bx
 	add [totalpg],ebx
 	push bx
-	@wordout_d bx,5
+	invoke printf, CStr("%5u"), bx
 	pop bx
 	mov ax,16
 	mul bx
@@ -539,21 +364,15 @@ nextchar:
 	push ax
 	pop eax
 	add [totalkb],eax
-	@dwordout_d ,8
-	call _crout
+	invoke printf, CStr(<"%8lu",lf>), eax
 invalhdl:
 	pop cx
 	add di,10
 	loop nexthdl
-	invoke _strout, CStr(<"-----------------------------",lf>)
-	invoke _strout, CStr(<"               ">)
-	mov ax,word ptr [totalpg+0]
-	mov dx,word ptr [totalpg+2]
-	@dwordout_d ,5
-	mov ax,word ptr [totalkb+0]
-	mov dx,word ptr [totalkb+2]
-	@dwordout_d ,8
-	call _crout
+	invoke printf, CStr(<"-----------------------------",lf>)
+	mov eax,dword ptr [totalpg+0]
+	mov edx,dword ptr [totalkb+0]
+	invoke printf, CStr(<"               %5lu%8lu",lf>), eax, edx
 done:
 	ret
 xvhandle endp
@@ -583,13 +402,13 @@ local	numpgs:word
 	int 67h
 	cmp ah,00
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=5801h (get mappable pages) failed, status=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=5801h (get mappable pages) failed, status=%X",lf>),ax
 	jmp exit
 @@:
-	jcxz nopages
+	and cx,cx
+	jz nopages
 	mov numpgs,cx
 	mov count,0
 	mov di,offset buffer
@@ -599,42 +418,39 @@ local	numpgs:word
 	int 67h
 	cmp ah,00
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=5800h (get mappable pages) failed, status=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=5800h (get mappable pages) failed, status=%X",lf>),ax
 	jmp exit
 @@:
-	call _crout
-	invoke _strout, CStr(<"Segm:Pg Segm:Pg Segm:Pg Segm:Pg",lf>)
-	invoke _strout, CStr(<"-------------------------------",lf>)
+	invoke printf, CStr(<"Segm:Pg Segm:Pg Segm:Pg Segm:Pg",lf>)
+	invoke printf, CStr(<"-------------------------------",lf>)
 	xor si,si
 ppage3:
 	mov ax,si
-	call _wordout
-	invoke _putchr, ':'
+	invoke printf,CStr("%04X:"),ax
 	mov cx,numpgs
 	call searchpage
 	jc @F
-	@wordout_d ax,2
+	invoke printf,CStr("%2u"),ax
 	jmp ppage4
 @@:
-	invoke _strout, CStr(<"--">)
+	invoke printf, CStr(<"--">)
 ppage4:
 
-	invoke _putchr, ' '
+	invoke printf,CStr(" ")
 	inc count
 	test byte ptr count,3
 	jnz @F
-	call _crout
+	invoke printf, CStr(lf)
 @@:
 	add si,400h
 	jnz ppage3
-	call _crout
+	invoke printf, CStr(lf)
 exit:
 	ret
 nopages:
-	invoke _strout, CStr(<"no mappable pages",lf>)
+	invoke printf, CStr(<"no mappable pages",lf>)
 	ret
 ppages endp
 
@@ -644,15 +460,10 @@ intrt proc near
 	and ah,ah
 	jz intrt1
 	push ax
-	invoke _strout, CStr(<"function:">)
-	mov ax,fc
-	call _wordout
-	invoke _strout, CStr(<" - RC:">)
-	pop ax
-	push ax
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	mov cx,fc
+	invoke printf, CStr(<"function:%X - RC:%X",lf>),cx,ax
 	pop ax
 	mov bx,0000
 intrt1:
@@ -662,16 +473,11 @@ intrt endp
 descout proc near
 	mov ah,[di+7]		;base bits 31..24
 	mov al,[di+4]		;base bits 23..16
-	call _wordout
-	mov ax,[di+2]		;base bits 15..0
-	call _wordout
-	invoke _putchr, ':'
+	mov cx,[di+2]		;base bits 15..0
+	invoke printf, CStr("%08lX:"), ax::cx
 	mov ax,[di+0]		;limit bits 15..0
-	call _wordout
-	invoke _putchr, ','
-	mov ax,[di+5]
-	call _wordout
-	call _crout
+	mov cx,[di+5]
+	invoke printf, CStr(<"%04X,%04X",lf>),ax,cx
 	add di,8
 	stc
 	ret
@@ -690,13 +496,13 @@ vcpi proc near
 	int 67h
 	cmp ah,00
 	jz @F
-	invoke _strout, CStr(<"VCPI not supported",lf>)
+	invoke printf, CStr(<"VCPI not supported",lf>)
 	jmp exit
 @@:
-	invoke _strout, CStr(<"VCPI version: ">)
-	mov ax,bx
-	call _wordout
-	call _crout
+	mov al,bh
+	mov ah,0
+	mov bh,0
+	invoke printf, CStr(<"VCPI version: %u.%u",lf>),ax,bx
 
 	push ds
 	pop es
@@ -705,86 +511,56 @@ vcpi proc near
 	mov ax,0DE01h			;get protected mode interface
 	int 67h
 	.if (ah == 0)
-		push di
-		push ebx
-		invoke _strout, CStr(<"offset for protected-mode switch:">)
-		pop eax
-		call _dwordout
-		call	_crout
-		invoke _strout, CStr(<"Start free address space: ">)
-		pop di
+		invoke printf, CStr(<"offset for protected-mode switch:%08lX",lf>), ebx
 		sub di,offset buffer
 		movzx edi,di
 		shl edi, 10 	;440h -> 110000
 		mov eax, edi
-		call _dwordout
-		call	_crout
+		invoke printf, CStr(<"Start free address space: %lX",lf>), eax
 		mov di,offset gdttab
-		invoke _strout, CStr(<'1. VCPI descriptor: '>)
+		invoke printf, CStr(<'1. VCPI descriptor: '>)
 		call descout
-		invoke _strout, CStr(<'2. VCPI descriptor: '>)
+		invoke printf, CStr(<'2. VCPI descriptor: '>)
 		call descout
-		invoke _strout, CStr(<'3. VCPI descriptor: '>)
+		invoke printf, CStr(<'3. VCPI descriptor: '>)
 		call descout
 	.else
-		invoke _strout, CStr(<"int 67h, ax=DE01 failed, ah=">)
 		mov al,ah
-		call _byteout
-		call _crout
+		mov ah,0
+		invoke printf, CStr(<"int 67h, ax=DE01 failed, ah=%X",lf>),ax
 	.endif
 	mov ax,0DE03h		;num free 4K pages
 	int 67h
 	cmp ah,00
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=DE03 failed, ah=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=DE03 failed, ah=%X",lf>),ax
 	jmp _de02
 @@:
-	push edx
-	invoke _strout, CStr(<"free 4K pages: ">)
-	pop ax
-	pop dx
-	@dwordout_d ,1
-	call _crout
+	invoke printf, CStr(<"free 4K pages: %lu",lf>),edx
 _de02:
 	mov ax,0DE02h		;maxAddr of a 4K page
 	int 67h
 	cmp ah,0
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=DE02 failed, ah=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=DE02 failed, ah=%X",lf>),ax
 	jmp _de0a
 @@:
-	push edx
-	invoke _strout, CStr(<"highest address of pages:">)
-	pop edx
-	mov eax,edx
-	call _dwordout
-	call _crout
+	invoke printf, CStr(<"highest address of pages: %lX",lf>),edx
 _de0a:
 	mov ax,0DE0Ah		;get interrupt vector mappings
 	int 67h
 	cmp ah,0
 	jz @F
-	invoke _strout, CStr(<"int 67h, ax=DE0A failed, ah=">)
 	mov al,ah
-	call _byteout
-	call _crout
+	mov ah,0
+	invoke printf, CStr(<"int 67h, ax=DE0A failed, ah=%X",lf>)
 	jmp exit
 @@:
-	push cx
-	push bx
-	invoke _strout, CStr(<"master/slave PIC base: ">)
-	pop ax
-	call _wordout
-	invoke _putchr, '/'
-	pop ax
-	call _wordout
-	call _crout
+	invoke printf, CStr(<"master/slave PIC base: %02X/%02X",lf>),bx,cx
 exit:
 	mov dx,[handle]
 	cmp dx,0000
@@ -800,21 +576,20 @@ vcpi endp
 
 read0 proc
 	push cx
-	invoke _strout, CStr(<"read IOCTL device [">)
+	invoke printf, CStr(<"read IOCTL device [">)
 	mov al, [buffer]
-	call _byteout
-	invoke _strout, CStr(<"]=">)
+	mov ah,0
+	invoke printf, CStr("%X"),ax
+	invoke printf, CStr(<"]=">)
 	pop cx
 	mov dx, offset buffer
 	mov ax,4402h
 	int 21h
 	.if (CARRY?)
-		invoke _strout, CStr(<" failed",lf>)
+		invoke printf, CStr(<" failed",lf>)
 		stc
 	.else
-		invoke _strout, CStr(<" ok ",28h,"AX=">)
-		call _wordout
-		invoke _strout, CStr(<29h,": ">)
+		invoke printf, CStr(<" ok (AX=%X):">),ax
 		clc
 	.endif
 	ret
@@ -827,27 +602,27 @@ deviceinfo proc
 	mov ax,3D00h
 	int 21h
 	.if (CARRY?)
-		invoke _strout, CStr(<"open device EMMXXXX0 failed",lf>)
+		invoke printf, CStr(<"open device EMMXXXX0 failed",lf>)
 		mov dx,offset emsstr2
 		mov ax,3D00h
 		int 21h
 		.if (CARRY?)
-			invoke _strout, CStr(<"open device EMMQXXX0 failed",lf>)
+			invoke printf, CStr(<"open device EMMQXXX0 failed",lf>)
 			mov dx,offset emsstr3
 			mov ax,3D00h
 			int 21h
 			.if (CARRY?)
-				invoke _strout, CStr(<"open device EMMXXXQ0 failed",lf>)
+				invoke printf, CStr(<"open device EMMXXXQ0 failed",lf>)
 				jmp exit
 			.endif
 		.endif
 	.endif
 	push ax
 	push dx
-	invoke _strout, CStr(<"open device ">)
+	invoke printf, CStr(<"open device ">)
 	pop ax
-	invoke _strout, ax
-	invoke _strout, CStr(<" ok",lf>)
+	invoke printf, ax
+	invoke printf, CStr(<" ok",lf>)
 	pop bx
 	mov byte ptr [buffer+0], 0
 	mov byte ptr [buffer+1], -1
@@ -856,14 +631,9 @@ deviceinfo proc
 	call read0
 	.if (!CARRY?)
 		mov ax, word ptr [buffer+0]
-		call _wordout
-		invoke	_putchr, ' '
-		mov ax, word ptr [buffer+2]
-		call _wordout
-		invoke	_putchr, ' '
-		mov ax, word ptr [buffer+4]
-		call _wordout
-		call _crout
+		mov cx, word ptr [buffer+2]
+		mov dx, word ptr [buffer+4]
+		invoke printf, CStr(<"%X %X %X",lf>),ax,cx,dx
 	.endif
 	mov byte ptr [buffer+0], 2
 	mov byte ptr [buffer+1], -1
@@ -871,11 +641,8 @@ deviceinfo proc
 	call read0
 	.if (!CARRY?)
 		movzx ax, [buffer+0]
-		@wordout_d ax,1
-		invoke	_putchr, '.'
-		movzx ax, [buffer+1]
-		@wordout_d ax,1
-		call _crout
+		movzx cx, [buffer+1]
+		invoke printf, CStr(<"%u.%u",lf>),ax,cx
 	.endif
 	mov ah, 3Eh
 	int 21h
