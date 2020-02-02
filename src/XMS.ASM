@@ -193,11 +193,13 @@ xms_query_a20 proc
     align 4
 xms_query_a20 endp
 
+;--- check if handle in DX is valid
 ;--- let ESI point to handle
+;--- this function does NOT return if handle is invalid
 
 xms_check_handle_ex:
     mov esi,edx
-xms_check_handle proc
+xms_check_handle proc	;<--- check handle in SI
     push edx
     push eax
 
@@ -237,6 +239,9 @@ xms_check_handle proc
     align 4
 
 xms_check_handle endp
+
+;--- allocate an unused handle in EBX
+;--- C if no handle available
 
 xms_alloc_handle proc
     movzx ecx,[XMS_Handle_Table.xht_numhandles]    ; check all handles
@@ -288,7 +293,7 @@ xms_ext_alloc_emb::
     ret
 @@nullhandle:
     push ebx
-    call xms_alloc_handle    ; get a free handle in BX
+    call xms_alloc_handle    ; get a free handle in EBX
     mov edi,ebx
     pop ebx
     mov bl,XMS_NO_HANDLE_LEFT
@@ -420,7 +425,7 @@ xms_free_emb proc
     @DbgOutW dx,?EMBDBG
     @DbgOutS <10>,?EMBDBG
 
-    call xms_check_handle_ex     ; check if dx holds a "used" handle
+    call xms_check_handle_ex     ; check if DX holds a "used" handle, set ESI
     mov bl,XMS_BLOCK_LOCKED
     xor ax,ax
     cmp [esi].XMS_HANDLE.xh_locks,0     ; is the block locked?
@@ -433,14 +438,16 @@ xms_free_emb proc
     mov eax,[esi].XMS_HANDLE.xh_baseK   ; get base address
     mov edx,[esi].XMS_HANDLE.xh_sizeK
     mov edi, eax
-    add eax, edx                    ; calculate end-address
+    add eax, edx                    ; calculate end-address in EAX
     mov cl, XMSF_FREE
     and edx, edx
-    jnz @@usefree
+    jnz @F
     mov cl, XMSF_INPOOL
-@@usefree:
-    mov [esi].XMS_HANDLE.xh_flags,cl
+@@:
+    mov [esi].XMS_HANDLE.xh_flags,cl;mark this block as free (or inpool if size is 0)
     jz @@done
+
+;--- now scan the handle table for successor
 
     movzx ecx,[XMS_Handle_Table.xht_numhandles]
     mov ebx,[XMS_Handle_Table.xht_pArray] 
@@ -453,7 +460,7 @@ xms_free_emb proc
     cmp eax, edx                    ; is successor also free?
     je @@adjacent_1
     add edx,[ebx].XMS_HANDLE.xh_sizeK
-    cmp edi, edx
+    cmp edi, edx                    ; is predecessor free?
     je @@adjacent_2
 @@skipitem:
     add ebx,size XMS_HANDLE   ; skip to next handle
@@ -494,7 +501,7 @@ xms_lock_emb proc
     @DbgOutW dx,?EMBDBG
     @DbgOutS <10>,?EMBDBG
 
-    call xms_check_handle_ex    ; check if dx holds "used" handle
+    call xms_check_handle_ex    ; check if DX holds "used" handle
     xor ax,ax                   ; flag error 
     inc [esi].XMS_HANDLE.xh_locks   ; increase lock counter
     jz @@lock_error
@@ -516,7 +523,7 @@ xms_lock_emb endp
 xms_unlock_emb proc
 
     @DbgOutS <"xms_unlock_emb enter",10>,?EMBDBG
-    call xms_check_handle_ex       ; check if dx holds "used" handle
+    call xms_check_handle_ex       ; check if DX holds "used" handle
     xor ax,ax
     cmp [esi].XMS_HANDLE.xh_locks,al; check if block is locked
     jz @@is_notlocked
@@ -538,7 +545,7 @@ xms_ext_get_handle_info proc
     @DbgOutW dx,?EMBDBG
     @DbgOutS <10>,?EMBDBG
 
-    call xms_check_handle_ex; check handle validity (dx== "used" handle?)
+    call xms_check_handle_ex; check if handle in DX is valid (="used")
     xor cx,cx               ; reset free handle counter
     xor ax,ax
     movzx edx,[XMS_Handle_Table.xht_numhandles]
@@ -683,19 +690,28 @@ xms_ext_realloc_emb proc
     xor ax,ax
     ret
 
+;--- shrink a memory block
+;--- esi = handle data
+;--- edx,ebx = new size
+
 @@ext_shrink_it:
     mov edi,[esi].XMS_HANDLE.xh_sizeK    ; get old size
     mov [esi].XMS_HANDLE.xh_sizeK, edx
-    sub edi,edx                      ; calculate what's left over
+    mov eax, edi
+    sub edi, edx                     ; calculate what's left over
     jz @@ext_dont_need_handle        ; jump if we don't need another handle
     add edx,[esi].XMS_HANDLE.xh_baseK    ; calculate new base address
     push ebx
-    call xms_alloc_handle            ; alloc a handle in BX, size EDI
-    jc @@ext_no_xms_handles_left     ; return if there's an error
+    call xms_alloc_handle            ; alloc a handle in EBX
+    jnc @F
+    mov [esi].XMS_HANDLE.xh_sizeK, eax
+    jmp @@ext_no_xms_handles_left    ; return if there's an error
+@@:
     mov word ptr [ebx].XMS_HANDLE.xh_flags,XMSF_USED
     mov [ebx].XMS_HANDLE.xh_baseK,edx
     mov [ebx].XMS_HANDLE.xh_sizeK,edi
     mov edx,ebx                      ; and FREE it again -
+    sub edx,[dwRes]                  ;!!! 2.2.2020: line added for v5.79
     pop ebx
     call xms_free_emb                ; to merge it with free block list
 
@@ -752,7 +768,7 @@ xms_get_move_addr proc
     ret
 
 @@is_emb:               ; it's a handle:offset pair
-    call xms_check_handle   ;check if si holds a "used" handle
+    call xms_check_handle   ;check if SI holds a "used" handle
 
     mov eax,ecx         ; contains length
     add eax,edx         ; assert length + offset < size    

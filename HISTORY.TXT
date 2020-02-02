@@ -1,0 +1,516 @@
+
+ History
+
+ 02/02/2020: v5.79
+ - if physical address of DMA buffer was beyond 16M, its size was reset
+   to zero. This is no longer done.
+ - default linker is now JWlink.
+ - debug displays added for mode switch calls.
+ - Jemm will now use info returned by Int 15h, ax=E820h to mark regions
+   in the upper memory area as reserved.
+ - VME (virtual mode extensions) is now off by default; there exist CPUs
+   that claim to support VME but actually don't.
+ - JemmEx's built-in XMS host will now use up to 8 memory blocks listed
+   by ACPI (int 0x15, ax=0xe820). Previously it could just use the one
+   with base address 0x100000. 
+ - fixed: shrinking an EMB didn't work correctly.
+
+ 07/15/2012: v5.78
+
+ - bugfix: if SPLIT option was set and there were 2 ROMs to be split on
+   adjacent 4K-pages, the latter one may have been overwritten with zeros
+   (problem found in Qemu v0.15.1).
+ - bugfix: MOVEXBDA didn't restore the XBDA at reboot. This may have been
+   a problem if the FASTBOOT option was active.
+ - a warning is displayed if the page frame isn't set to a segment address
+   divisible by 0x400 without remainder ( i.e, FRAME=DF00 will trigger the
+   warning ).
+ - MEMSTAT additionally displays location and size of XBDA.
+ - source package only: extrsect.exe replaced by bin2inc.exe; bin2inc.exe
+   is needed only if Masm is used to assemble the source.
+
+ 06/20/2012: v5.77
+
+ - commandline option I=A000-B7FF didn't increase DOS low memory, the
+   region became just the first UMB.
+ - tool MOVEXBDA added.
+
+ 05/25/2012: v5.76
+
+ - an 64kB EMS page frame may now be located inside address space included
+   with 'I=XXXX'.
+
+ 05/21/2012: v5.75a
+
+ - no changes in JemmEx/Jemm386, just bugfixes in XDMA32.DLL and 
+   XCDROM32.DLL.
+
+ 05/31/2011: v5.75
+
+ - bugfix: when Jemm detected Ctrl-Alt-Del, it didn't reset the keyboard
+   status. This may have caused a locked keyboard if FASTBOOT was set.
+
+ 04/14/2011: v5.74
+
+ - tool MEMSTAT added, which will display the size of the reserved 
+   BIOS-ROM region.
+ - Make process simplified, all sources are assembly now.
+
+ 12/02/2010: v5.73
+
+ - bugfix: int 67h, ah=51h didn't complain if handle was invalid in 
+   v5.61-5.72.
+ - tool CPUSTAT added.
+ - for emulation of Int 15h, AH=87h (extended memory block move), the
+   region 100000h-10FFFFh is now handled similar to the rest of extended
+   memory. Previously it was handled as "real-mode" memory, which means
+   that access did depend on the A20 state. This new behavior matches
+   more closely the BIOS implementation of this interrupt.
+ - option V86EXC0D added.
+
+ 03/13/2008: v5.72
+
+ - source has been made compatible with JWasm; OTOH, TASM compatibility
+   has been abandoned.
+
+ 02/25/2008: v5.71
+
+ - bugfix: DMA buffer size of 0 (D=0) didn't work in v5.70.
+ - bugfix: JLOAD v5.70 made wrong assumptions about Jemm's TSS location,
+   which caused JLM sample JCLOCK2 to fail.
+ - some minor changes to make it compatible with JWasm.
+ 
+ 01/30/2008: v5.70
+
+ - bugfix: the "copy memory" routine wasn't reentrant, making an XMS
+   "block move" or a call of Int 15h, ah=87h from within an ISR slightly
+   unsafe.
+ - bugfix: int 67h, ah=57h returned error 8Ah instead of 93h when a 
+   region exceeded the size of the EMS handle.
+ - bugfix: int 67h, ah=57h accepted any region type (just 00 and 01 are
+   valid ones).
+ - bugfix: int 67h, ax=5701h accepted overlapping EMS regions. Now status
+   97h is returned.
+ - bugfix: since v5.61 (support for mappable pages in conventional memory)
+   option NODYN often failed to make all memory available which was 
+   requested with the MIN=x option.
+ - bugfix: exception 11h in v86-mode caused a loop in Jemm's exception
+   handler.
+ - bugfix: due to an alignment problem the low byte of max. free memory
+   block for XMS v2 (X2MIN) was 0, as a result the default block size was
+   65280 (0xFF00) instead of 65535 kB (JemmEx only, bug since v5.64).
+ - int 67h,ax=5701h, "memory exchange" is now also done with interrupts
+   enabled if client's interrupt flag is set.
+ - port 60h access is now trapped only if the keyboard controller's output
+   port is accessed.
+ - tool XMSSTAT and source of EMSSTAT added.
+
+ 01/07/2008: v5.69
+
+ - descriptions/changelogs for XDMA32 and XCDROM32 extracted from this
+   readme into separate files XDMA32.TXT and XCDROM32.TXT.
+ - memory block copies are now done with interrupts enabled - if client's
+   interrupt flag is set. This avoids interrupt latency and makes the
+   previously implemented "interrupt windows" obsolete. It also avoids
+   problems with Jemm's HLT emulation causing IRQs to be misinterpreted
+   as exceptions (08, 09, 74, ...) on some cpus.
+ - bugfix: VDS scatter/gather lock with region size 0 returned 0 entries,
+   but 1 entry must be returned in any case (MS Emm386 does as well).
+ - bugfix: there was a risk that a ROM located contiguously behind another
+   ROM in address space wasn't detected.
+ - bugfix: if SPLIT option was set and a split ROM page followed an UMB
+   page (which is possible if ROM size is < 4 kB), the ROM part of this
+   page was added to the UMB.
+ - bugfix: synchronization of VCPI and EMS free memory count did work
+   for VCPI only, that is, allocating all VCPI memory didn't reduce free
+   EMS memory to zero.
+ - bugfix: the last XMS memory block allocated for EMS/VCPI memory was
+   likely to be too large, thus wasting XMS memory.
+ - VCPI/EMS memory alloc/release speed-up.
+ - EMSSTAT -v displays more VCPI infos.
+ - v86 exceptions >= 8 are routed to v86 interrupt 06h only if this vector
+   has been changed by another program.
+ - exception 10h (floating point) is now detected and displayed, thus avoiding
+   the hazardous call of video interrupt 10h (MS Emm386 also detects
+   exception 10h, but just allows to reboot then).
+
+ 12/03/2007: v5.68
+
+ - bugfix: JLOAD's "Lock DMA" function ignored flag to check for 64 kB
+   border crossing.
+ - NMIs occuring inside the monitor are now silently routed to v86-mode.
+   Previous Jemm versions displayed an exception dump.
+ - XDMA32 v1.0 added.
+ - XCDROM32 changed to v1.1.
+
+ 10/13/2007: v5.67
+
+ - bugfix: I=TEST always scanned 4 kB chunks, although the last page
+   of a ROM might be smaller (512, 1024, ... bytes).
+ - bugfix: if I=TEST found an "unused" page in a ROM, v5.64-5.66 messed
+   up an internal counter. As a result, there was a small risk that the
+   begin of another ROM following this one in the address space wasn't
+   detected.
+ - error code displayed in exception dump.
+ - selected A20 method now displayed in "verbose" mode only.
+ - tool EMSSTAT added.
+
+ 08/24/2007: v5.66
+
+ - bugfix: GDT, which has been moved to nonshared space in v5.6, moved
+   to shared space again. Required by applications written for the Phar
+   Lab TNT DOS extender.
+
+ 08/19/2007: v5.65
+
+ - Standard reboot handler made fully MS Emm386 compatible. The ALTBOOT
+   option is now a dummy.
+ - auto-scanning for a page frame will now ensure that the frame begins
+   on a 16 kB boundary. This is MS Emm386 compatible.
+
+ 07/12/2007: v5.64
+
+ - bugfix: for FASTBOOT, IVT vectors 78h-7Fh should be reset to 0000:0000.
+   This wasn't done.
+ - SPLIT option added.
+
+ 06/22/2007: v5.63
+
+ - bugfix: NOEMS didn't disable EMS in v5.62
+ - bugfix [JemmEx only]: MAXEXT option wasn't displayed in help screen.
+
+ 06/19/2007: v5.62
+
+ - bugfix: int 67h, ah=5301h (set handle name) didn't check if this name
+   was already assigned (and return status A1h if yes).
+ - bugfix: using I=TEST might have reduced amount of UMBs by 4 kB.
+ - bugfix: in v5.61, Int 67h, ax=5900h still returned 8 as mapping context
+   size, which usually is too small now (# of physical pages are > 4).
+ - bugfix: in v5.61, if Jemm was loaded from the command line and 
+   remained in low memory, it didn't hook into the driver chain.
+ - bugfix: in v5.61, there was a risk that Jemm386 didn't install an
+   UMB handler (and then the UMBs were "lost").
+ - int 67h, ah=5Bh implemented (alternate map register sets).
+ - the EMS system handle is now populated with the mappable pages below
+   A000h, as described in EMS 4.0 docs (and also done by MS Emm386).
+
+ 06/04/2007: v5.61
+
+ - bugfix: Int 67h, ah=51h (EMS reallocate) might have failed to increase
+   the handle's pages although there were enough free pages available.
+   This was a design flaw. Now for each EMS handle a linked lists of
+   allocated pages is maintained.
+ - bugfix: trying to release the NULL handle will now reallocate it with
+   size 0. This is the behavior specified in the EMS docs.
+ - bugfix: there was a chance that 4 VCPI pages got lost. They could be
+   allocated, but weren't found anymore when trying to release them.
+ - bugfix: memory for UMBs is no longer contained in EMS system handle 0.
+   This handle should only contain pages which "backfill" conventional
+   memory (segment addresses below A000h).
+ - bugfix: int 67h, ah=56h (alter page map and call) ignored the "old"
+   member in the "map_and_call" parameter.
+ - value of GDTR, IDTR and TR exposed by Jemm. This allows JLoad to avoid
+   usage of opcodes SGDT/SIDT, which caused problems with most virtualizers.
+ - allocating a 4kB page with VCPI is now significantly faster.
+ - B=xxxx parameter supported. Pages 4000-9FFF are mappable by default.
+
+ 05/24/2007: v5.6
+
+ - bugfix: if Jemm had to emulate an IRET in v86-mode and the copy of the
+   flag register onto the stack was "invalid" (IOPL != 3), a GPF occured
+   at the next IO-sensitive instruction in v86-mode.
+ - bugfix [JemmEx only]: NODYN option caused a GPF on initialization.
+ - dword and string I/O now simulated correctly for trapped port access.
+ - GDT and IDT moved to nonshared memory.
+ - the ring 0 stack has been increased to 4 kB and moved to nonshared space.
+   This allows "nested execution" without using the client's v86-stack.
+ - JLOAD.EXE added. Jemm splitted in 2 packages: binaries and source.
+   Some sample JLMs added (XCDROM32, KEYBGR, ...).
+ - new EMMXXXX0 function exposes some of Jemm's internal call tables,
+   thus allowing external modules (JLOAD) to implement a 32bit ring 0 API.
+ - switched to a table-oriented IO-port trapping implementation, which
+   allows external modules (JLOAD) to hook/take over port trapping.
+
+ 05/04/2007: v5.52
+
+ - bugfix: a bug introduced in v5.5 caused garbage to be displayed if
+   option I=B000-B7FF was used.
+
+ 05/03/2007: v5.51
+
+ - bugfix [JemmEx only]: XMS memory realloc function (ah=0Fh) caused the
+   stack not to be dword-aligned, which slows things down and might cause
+   troubles if an interrupt occurs during a memory block move.
+ - JemmEx: EMS block moves (int 67h, ah=57h) now also done with interrupt
+   window if client's IF is set.
+
+ 04/29/2007: v5.5
+
+ - bugfix: if Ctrl-Alt-Del was pressed with FASTBOOT active and an event
+   proc for the PS/2 mouse was set, a crash might have occured. Now the
+   PS/2 mouse is reset by Jemm before rebooting.
+ - bugfix: S=XXXX was ignored if it was the only region to be added as UMBs.
+ - in v5.46, FASTBOOT only worked by pressing Ctrl-Alt-Del. Now
+   it should work as well if int 19h is called.
+ - in v5.46, FASTBOOT always needed ALTBOOT to be set and therefore has set
+   this option internally. This is no longer done.
+ - JEMMEX.EXE added.
+ - JemmEx opens interrupt window in block moves (int 15h, ah=87h and
+   XMS function ah=0Bh) each 8 kB if client's IF is set.
+
+ 03/27/2007: v5.46
+
+ - bugfix: free EMS pages not always reported correctly.
+ - bugfix: translation DMA for 16-bit controller (channels 4-7) didn't work.
+ - bugfix: Jemm always displayed "can't continue, please reboot" on
+   invalid opcode exceptions in v5.45.
+ - MIN= no longer restricted to a maximum of 512 MB (EMS pages still are).
+ - FASTBOOT option implemented, JEMFBHLP.EXE added.
+
+ 03/02/2007: v5.45
+
+ - bugfix: in v5.40, if no option was entered when installing Jemm, it
+   might have displayed some garbage.
+ - bugfix: invalid opcode generated by Jemm if running on a cpu < 80386.
+ - bugfix: XMS function 11h (free UMB) always returned an error.
+ - option UNLOAD added.
+ - option RAM/NORAM implemented.
+ - valid range for page frame set with FRAME=xxxx now 8000-E000.
+ - the MAX= prefix can be omitted now. Makes the cmdline more MS Emm386
+   compatible.
+ - memory required for UMBs will no longer reduce the memory available for
+   EMS. This is similiar to what MS Emm386 does.
+ - installing Jemm from the command line now prohibited if a DPMI host
+   is detected.
+
+ 02/20/2007: v5.4
+
+ - some minor bugfixes.
+ - Jemm now moves its resident part to the first UMB which it supplies.
+ - NOHI option implemented.
+ - Jemm now uses the true (=zero-based) flat memory model.
+
+ 01/11/2007: v5.34
+
+ - bugfix: Jemm always hooked int 15h, ah=4Fh, thus always acting as
+   if option ALTBOOT was set (bug introduced in v5.25).
+
+ 01/06/2007: v5.33
+
+ - bugfix: Jemm erroneously might have disabled EMS
+ - reboot code slightly changed, there were still some machines (old 80486?)
+   were Ctrl-Alt-Del didn't work.
+
+ 11/13/2006: v5.32
+
+ - removed an optimisation which PKZIP didn't like.
+
+ 11/09/2006: v5.31
+
+ - some minor bugfixes in function int 67h, ah=57h.
+ - bugfix: wrong register contents were displayed in v5.30 for exceptions
+   occuring in protected-mode.
+ - v86-mode int 06 handler moved to protected-mode, thus further reducing
+   Jemm's conventional memory usage.
+
+ 10/27/2006: v5.30
+
+ - bugfix: int 67h, ah=57h (move/exchange memory region) didn't always
+   invalidate the TLB cache for the EMS memory to copy/exchange.
+ - bugfix: int 67h, ax=4F01h didn't work.
+ - int 67h, ah=55h/56h implemented.
+ - int 67h, ah=57h now works with overlapping memory regions. Furthermore
+   it is now ensured that all EMS pages involved in the copy operation are
+   valid before copy actually begins.
+
+ 10/24/2006: v5.29
+
+ - bugfix: the error msg when the EMS call to map UMBs failed contained
+   garbage as "function".
+ - int 67h, AH=58h will now return success even with NOEMS.
+ - now error code 80h, not 91h is returned if functions int 67h,
+   ah=41h or 47h or 48h are called and no page frame is defined.
+ - NOINVLPG option added.
+ - I=TEST is now a bit less restrictive and will increase compatibility
+   with MS-Emm386.
+ - help text displayed by Jemm adjusted where it was wrong or unclear.
+
+ 10/13/2006: v5.28
+
+ - bugfix, VDS function scatter/gather lock (int 4Bh, ax=8105h): if lower
+   12 bits of offset in EDDS were <> 000h, this function always returned 
+   the first page as a separate region.
+ - bugfix, VDS function scatter/gather lock: if this function failed with
+   AL=9, it did not always set the correct value for items required to
+   describe the full region.
+ - bugfix: int 67h, ah=53h (get/set handle name) and ah=54h (get handle
+   directory) wrongly assumed that they won't be called with handles other
+   than 0000 if NOEMS is set.
+ - bugfix: int 67h, ah=57h (move/exchange memory region) didn't work without
+   a page frame (NOEMS or FRAME=NONE).
+
+ 10/07/2006: v5.27
+
+ - bugfix: allocating a EMS block with zero pages (int 67h, ah=5Ah, bx=0)
+   returned with AH=0, but did not return a valid handle in DX.
+ - bugfix: calling int 67h, AH=51h modified AL register.
+
+ 09/30/2006: v5.26
+
+ - bugfix: VDS functions 03, 04, 07 and 08 may have failed if bit 1 of DX
+   was set (request to copy in/out of DMA buffer) and registers BX,CX
+   were <> 0.
+ - bugfix: 1 kB of DMA buffer may have been inaccessible.
+ - bugfix: releasing a DMA buffer with size > 0 and < 1 kB always failed.
+
+ 09/22/2006: v5.25
+
+ - bugfix: if option ALTBOOT is set and Ctrl-Alt-Del being pressed has
+   been detected, then the real-mode int 15h chain is called first before
+   rebooting. This gives other hookers (SmartDrv) a chance to cleanup.
+
+ 09/19/2006: v5.24
+
+ - bugfix: int 67h, ax=5001h (implemented in v5.2) didn't work.
+ - bugfix: setting Jemm options from the command line did reset
+   the options which were not explicitely entered.
+ - PGE/NOPGE options added.
+
+ 09/14/2006: v5.23
+
+ - bugfix: if the amount of preallocated EMS memory (MIN=xxxx) was
+   not below largest XMS memory block - 384 kB, the amount of free/
+   available EMS pages reported by Jemm was up to 384 kB too large.
+ - implemented VDS function 05 (scatter lock) returning PTEs instead of
+   "regions". This makes Jemm fully support the VDS API.
+ - some message texts adjusted to make it clear what is an error, a
+   warning or just informational.
+ - warning about detected system memory region now displays all such
+   regions, start and size.
+ - if wanted EMS memory has to be reduced, a warning is displayed.
+ - UMBM.EXE added.
+ - EMX option added.
+
+ 09/09/2006: v5.22 
+
+ - bugfix: the DMA buffer 64kb alignment may cause up to 32 kB to be lost
+   for EMS/VCPI memory. This wasn't taken into account, and may have
+   resulted in Jemm unable to alloc UMBs if options NODYN and
+   MIN=<value below size of UMBs+32> were set.
+ - bugfix: in displayed text "wanted preallocated EMS memory <nnn> kB"
+   <nnn> was always blank.
+ - space for UMBs now rounded up to next 16 kB boundary (previously it
+   was rounded to 32 kB).
+
+ 09/07/2006: v5.21 
+
+ - bugfix: in v5.2 if an invalid command line parameter was entered, the
+   program displayed garbage.
+ - bugfix: in v5.2 options setting both options NOEMS and NOVCPI might
+   have caused Jemm to run out of memory for UMBs.
+ - XMS dynamic memory allocation was automatically disabled if NOEMS and
+   NOVCPI options were set, but this is no longer useful since option NODYN
+   exists and VCPI can be dynamically set/reset from the command line.
+ - DMA buffer size now always rounded up to a full 4 kB boundary.
+ - LOAD option added which allows to install Jemm from the command line.
+
+ 09/06/2006: v5.2 
+
+ - bugfix: writing to "ROM" page FF000 if ALTBOOT wasn't set caused a crash.
+ - bugfix: if XMS handle array was in HMA and A20 got disabled results may
+   have been "unexpected".
+ - bugfix: "disable A20 local" emulation did not return an error code if
+   count was already 0.
+ - there was slightly more XMS memory allocated than required.
+ - support for Int 67h, ax=5001h implemented.
+ - option MIN= no longer deactivates XMS dynamic memory allocation.
+   option NODYN added, option EMM= discarded.
+ - If XMS memory must be preallocated (because XMS host doesn't export its
+   handle table) and MIN= option is not set, Jemm allocates half of
+   extended memory (but not more than 32 MB) for EMS/VCPI memory.
+ - Assembler: MASM may be used instead of TASM.
+ - Compiler: Open Watcom WCC or MS VC 1.5 may be used instead of TC.
+ - Linker: Digital Mars OPTLINK may be used instead of TLINK.
+ - protected-mode code switched to 32-bit.
+ - port trapping added to the A20 enable/disable emulation. XMS hook is
+   still required due to the "A20 always on" case, which causes most XMS
+   hosts not to touch the ports at all.
+
+ 08/30/2006: v5.1
+
+ - bugfix: the DMA master mask register was read, which doesn't work
+   on all machines and may have caused an "illegal instruction exception"
+   if the floppy disk was accessed. This bug was introduced in v5.00.
+ - bugfix in EMS function 4Eh.
+ - bugfix: A20 emulation works now if no UMB handler has been installed.
+ - DMA buffer size may be set by commandline option. 
+ - VDS functions 07/08 (request/release DMA buffer) and 09/0A (copy
+   into/out of DMA buffer) implemented. VDS functions 03/04 (lock/unlock
+   region) extended so that they call functions 07/08 if needed.
+ - NOVCPI does no longer require NOEMS.
+ - ALTBOOT (re)implemented, it hooks int 15h, ah=4Fh now.
+ - VME mode may now be set/reset with VME/NOVME options. 
+ - LIBM.LIB no longer needed to create the JEMM386.EXE binary.
+
+ 08/25/2006: v5.01
+
+ - bugfix: "A20 enabled"-count was 0 on startup, should have been 1.
+ - bugfix: unsupported VDS functions caused a debug display, which didn't
+   work and may have caused corruption of monitor data. Debug displays
+   removed.
+ - bugfix: original int 4Bh vector may have been 0000:0000 - if this is
+   true, it must never be chained to of course. Instead carry flag is set.
+ - VDS functions 0Bh and 0Ch (disable/enable translation) implemented.
+
+ 08/23/2006: v5.00
+
+ - EMMXXXX0 device communication implemented
+ - bugfix: DMA buffer is ensured to begin on a 64 kB physical address
+   boundary.
+ - bugfix: XMS handles which are no longer used now get the "in pool" flag
+   set, not the "free" flag.
+ - Pentium+ VME extensions supported. 
+ - A20 disable emulation activated.
+
+ 08/17/2006: v5.00pre 
+
+ - bugfix: in VCPI protected mode entry switch to host stack before
+   context is switched.
+ - command line option S=xxxx added.
+ - option NOALTBOOT deleted.
+ - the full physical memory is no longer mapped in the address space.
+   This reduces extended memory usage a lot on machines with large amounts
+   or RAM, since no page tables are needed.
+ - VDS code moved to extended memory, reducing conventional memory usage
+   by about 1 kB.
+
+---------------------------------------------------------------------
+
+  c't/Harald Albrecht: created the v86 monitor part and EMS functions
+  1990
+
+  tom ehlert: implemented UMB support,
+  2001-2004   reboot hooks (keyboard ctrl-alt-del, BIOS FFFF:0000)
+              int 15h ext memory copy,
+              VDS lock function,
+              introduced english comments.
+
+  michael devore: implemented support for VCPI, VDS (partially), dynamic
+  2004-2006           XMS memory allocation, EMS v4.0 (partially)
+  - Modified for >64M and VCPI support
+  - Updated for EMS 4.0, some extended API returns unsupported, this will
+    change as requested or needed by other software requirements
+  - Documented EMS 4.0 only supports up to 32M (0x800 pages), but some EMS
+    drivers allow more than 32M.      The EMS 4.0 spec could be extended to 1G-32K
+    (map value of 0xFFFF means unmap) without breaking the spec API,
+    but unfortunately breaking unsophisticated programs which get confused.
+    I have arbitrarily decided to allow up to 32M of EMS allocations,
+    leaving the high bit of page allocation alone since specific drivers
+    may make use of high bit values other than 0xFFFF for their own purposes,
+    or may only check high bit for unmap -- as FreeDOS EMM386 does.
+      - Minor English corrections where useful for comprehension
+
+    Michael Devore's changes are not copyrighted and are released
+    to the public domain.
+    This does not affect copyright on the rest of the code.
+
