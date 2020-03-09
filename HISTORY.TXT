@@ -1,13 +1,23 @@
 
  History
 
+ __/__/2020: v5.80
+ - for exceptions other than page faults, the monitor will display register
+   CR4 instead of CR2, if it exists.
+ - Jemm might have reduced last MCB by 16 byte when loaded while UMBs
+   where already available and used by DOS.
+ - Jemm does again scan the region C000-EFFF for RAM. This avoids
+   a system crash if upper memory has been supplied by UMBPCI and is
+   used by DOS.
+
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset
    to zero. This is no longer done.
  - default linker is now JWlink.
  - debug displays added for mode switch calls.
  - Jemm will now use info returned by Int 15h, ax=E820h to mark regions
-   in the upper memory area as reserved.
+   in the upper memory area as reserved. If the call was successful,
+   Jemm won't scan the memory region C000-EFFF for RAM.
  - VME (virtual mode extensions) is now off by default; there exist CPUs
    that claim to support VME but actually don't.
  - JemmEx's built-in XMS host will now use up to 8 memory blocks listed

@@ -800,6 +800,17 @@ endif
     mov eax, cr0
     push eax                     ; ebp-12
     mov eax, cr2
+if 1 ;v5.80: display cr4 instead of cr2 if no page fault
+;--- CR4 exists only if cpuid is supported
+	cmp [dwFeatures],0
+	jz @F
+	mov exc_cr2-2,'2'
+    cmp byte ptr [ebp].Client_Reg_Struc.Client_Int, 0Eh
+    jz @F
+	mov exc_cr2-2,'4'
+    @mov_eax_cr4
+@@:
+endif
     push eax                     ; ebp-16
 
     push offset exc_format

@@ -5,7 +5,7 @@ LF              EQU 0AH
 CR              EQU 0DH
 
 ?VERSIONHIGH    equ 5
-?VERSIONLOW     equ 79
+?VERSIONLOW     equ 80
 
 ifndef ?INTEGRATED
 ?INTEGRATED     EQU 0       ; 1=integrated version (XMS + EMM)
@@ -27,7 +27,7 @@ endif
 ?SPLIT          EQU 1       ; 1=support SPLIT option
 ?HOOK13         EQU 1       ; 1=hook int 13h/40h for DMA access trapping
 ?V86EXC0D       EQU 1       ; 1=support V86EXC0D option
-?ADDCONV        EQU 1       ; 1=add A000f to conv memory if I=A000-XXXX
+?ADDCONV        EQU 1       ; 1=add A000h to conv memory if I=A000-XXXX
 
 ?STKSIZE        EQU 200H    ; Size monitor stack for non-reentrant execution
 ?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI

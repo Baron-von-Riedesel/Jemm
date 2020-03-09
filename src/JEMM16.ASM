@@ -1139,7 +1139,7 @@ psp dw ?
 blsiz dw ?
 MCB ends
 
-;--- if conventional memory has been increased,
+;--- if conventional memory has been increased (i.e. by I=A000-AFFF),
 ;--- increase last DOS MCB
 	mov ah,52h
 	int 21h
@@ -1159,7 +1159,12 @@ nextitem:
 	pop ds
 	mov ax,ds:[13h]
 	pop ds
-	shl ax,6
+	shl ax,6	;kB to paragraphs
+
+;--- v5.80: do jmp even if ax = dx+1
+;--- this might be the case if UMBs are already included
+	inc dx
+
 	cmp ax,dx
 	jbe noconv_increased	;do nothing if BIOS mem is lower or equal
 	sub ax, si

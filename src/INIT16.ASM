@@ -727,7 +727,7 @@ local mem:word
 		add	mem,0080H	;add 128 paragraphs (=2 kB)
 	.until mem >= 0F000h
 
-if 1;?INTEGRATED
+if 0;1;?INTEGRATED
 ;--- don't scan for RAM if we called Int 15h ax=e820h
 	cmp bI15RsvdChk,0
 	jnz @F
