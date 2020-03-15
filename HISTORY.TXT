@@ -9,6 +9,9 @@
  - Jemm does again scan the region C000-EFFF for RAM. This avoids
    a system crash if upper memory has been supplied by UMBPCI and is
    used by DOS.
+ - UMBM no longer requires the /I parameter; it will scan for blocks with
+   the UMBPCI signature.
+ - new option /XBDA for UMBM implemented.
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset

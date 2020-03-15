@@ -16,6 +16,7 @@
 ;***   and therefore a small risk remains. 
 
 ?MOVEINUMB equ 1        ;move in 1. umb
+?MOVEXBDA  equ 1        ;move XBDA
 
 	.286
 	.MODEL SMALL
@@ -72,7 +73,7 @@ xxxx db xx,0
 	dw 8000h				;attribute
 	dw offset devstrat		;device strategy
 	dw offset devint		;device interrupt
-devname db 'UMBXXXX0'			;device name
+devname db 'UMBXXXX0'		;device name
 
 befptr  dd 1 dup (?)
 
@@ -83,31 +84,31 @@ memtab  label word
 	dw 3 dup (0)
 	dw 0000
 
-umbrou  proc far                  ;XMS hook routine
-	jmp short umbr1 		  ;must have this format
+umbrou  proc far        ;XMS hook routine
+	jmp umbr1 			;must have this format
 	nop
 	nop
 	nop
 umbr1:
-	cmp ah,10h			  ;request umb?
+	cmp ah,10h			;request umb?
 	jz umb1
-	cmp ah,11h			  ;release umb?
+	cmp ah,11h			;release umb?
 	jz umb2
 	db 0EAh
-oldvec	dd 0					  ;chain to previous handler
+oldvec	dd 0			;chain to previous handler
 
-umb1:									;request umb
+umb1:					;request umb
 	mov bx,offset memtab
 	mov ax,0000
-umb1b:									;<==== check next block
-	cmp dx,cs:[bx+2]			;request block (DX=size in paras)
+umb1b:						;<==== check next block
+	cmp dx,cs:[bx+2]		;request block (DX=size in paras)
 	ja short umb1a 			;jmp if block too small
 	cmp word ptr cs:[bx+2],0000
 	jz umb1a3
-	mov ax,cs:[bx+4]			;original size
-	sub ax,cs:[bx+2]			;subtract rest size
-	add ax,cs:[bx+0]			;+ start address => new start address
-	sub cs:[bx+2],dx			;size of block in DX
+	mov ax,cs:[bx+4]		;original size
+	sub ax,cs:[bx+2]		;subtract rest size
+	add ax,cs:[bx+0]		;+ start address => new start address
+	sub cs:[bx+2],dx		;size of block in DX
 if ?MOVEINUMB
 	jnz umb1c
 	call deakt
@@ -215,7 +216,7 @@ devint proc far
 	mov word ptr [bx.IODAT.status],100h
 	mov al,[bx.IODAT.cmd]
 	cmp al,00			;init?
-	jnz short devi1
+	jnz devi1
 	push bx
 	push ds
 	call ignname 		;skip device driver name
@@ -224,7 +225,7 @@ devint proc far
 	pop bx
 	mov word ptr [bx.IODAT.trans+0],0000
 	mov word ptr [bx.IODAT.trans+2],ax
-	jmp short devi2
+	jmp devi2
 devi1:
 devi2:
 	pop es
@@ -249,8 +250,7 @@ ignn2:
 	ret
 ignname endp
 
-_strout proc pascal pStr:word
-	push si
+_strout proc stdcall uses si pStr:word
 	mov si,pStr
 nextitem:
 	lodsb
@@ -261,11 +261,10 @@ nextitem:
 	int 21h
 	jmp nextitem
 done:
-	pop si
 	ret
 _strout endp
 
-_wordout proc pascal wValue:word
+_wordout proc stdcall wValue:word
 
 	mov ax,wValue
 	push ax
@@ -292,10 +291,14 @@ nibout:
 	retn
 _wordout endp
 
+;--- es:si = cmdline
+
 getpar proc
 nextitem:
 	mov al,es:[si]
 	cmp al,cr
+	jz exit
+	cmp al,lf
 	jz exit
 	cmp al,20h
 	jz getpar_1
@@ -364,14 +367,18 @@ gethex1:
 	ret
 gethexnumber endp
 
-;--- inp: es:[si] ->
-;--- ds:[di] ->
+;--- inp: es:[si] -> cmdline
+;--- ds:[di] -> memtab
 
-getregion proc uses bp
+getregion proc uses bx
 	cmp byte ptr es:[si],'/'	;allow the "/I=" prefix
 	jnz @F
-	mov al,es:[si+1]
-	or al,20h
+	mov eax,es:[si+1]
+	or eax,20202020h
+if ?MOVEXBDA
+	cmp eax,'adbx'
+	jz is_xbda
+endif
 	cmp al,'i'
 	jnz @F
 	cmp byte ptr es:[si+2],'='
@@ -382,7 +389,7 @@ getregion proc uses bp
 	jc getregion_er
 	cmp al,00h
 	jnz getregion_er
-	mov bp,ax
+	mov bx,ax
 	mov al,es:[si]
 	cmp al,'-'
 	jnz getregion_er
@@ -392,69 +399,145 @@ getregion proc uses bp
 	inc ax
 	cmp al,00h
 	jnz getregion_er
-	sub ax,bp
+	sub ax,bx
 	jbe getregion_er
-	mov [di+0],bp
+	mov [di+0],bx
 	mov [di+2],ax
 	mov [di+4],ax
 	add di,6
 	clc
 	ret
+if ?MOVEXBDA
+is_xbda:
+	inc bp
+	add si,5
+	clc
+	ret
+endif
 getregion_er:
 	stc
 	ret
 getregion endp
 
-;--- hook into the int 2Fh chain
+;--- search for UMBPCI blocks in upper memory
+;--- DI->memtab
 
-installsmallxms proc
+MCB struct
+sig   db ?
+psp   dw ?
+_size dw ?
+MCB ends
 
-	mov ax,352Fh
-	int 21h
-	mov word ptr oldint2f+0,bx
-	mov word ptr oldint2f+2,es
-	mov dx,offset myint2f
-	push ds
-if ?MOVEINUMB
-	mov ds,[memtab]
-else
-	push cs
-	pop ds
-endif
-	mov ax,252fh
-	int 21h
-	pop ds
-	mov word ptr [oldvec+0],offset _iret
-if ?MOVEINUMB
-	mov ax,[memtab]
-else
-	mov ax,cs
-endif
-	mov word ptr [oldvec+2],ax
+searchumbpciblocks proc
+	mov si,0C800h
+	.while si < 0F000h
+		mov es,si
+		cmp dword ptr es:[0],"BMU$"
+		jnz noblock
+		cmp dword ptr es:[4],"!lbT"
+		jnz noblock
+		mov ax,es:[8] ;start of block
+		mov [di+0],ax
+		mov ax,es:[10];size of block in paras
+		mov [di+2],ax
+		mov [di+4],ax
+		add di,3*2
+		cmp di,offset memtab+4*3*2
+		jz done
+		add si,ax
+		.continue
+noblock:
+		add si,100h
+	.endw
+done:
 	ret
-installsmallxms endp
+searchumbpciblocks endp
+
+if ?MOVEXBDA
+movexbda proc
+	push 40h
+	pop es
+	mov es,es:[000Eh]
+	movzx ax,byte ptr es:[0]	;size of xbda in kb
+	shl ax,6		;size in paras
+	cmp ax,memtab+2
+	ja done
+	mov dx,memtab+0
+	add memtab+0,ax
+	sub memtab+2,ax
+	sub memtab+4,ax
+	push ds
+	push es
+	pop ds
+	mov es,dx
+	mov cx,ax
+	shl cx,3
+	xor si,si
+	xor di,di
+	rep movsw
+	mov di,ax
+	push 40h
+	pop es
+	mov es:[000eh],dx
+	mov ax,ds
+	pop ds
+
+;--- increase the last DOS MCB
+
+	mov ah,52h
+	int 21h
+	mov si,es:[bx-2]
+nextitem:
+	mov es, si
+	mov dx, es:[MCB._size]	;get size of MCB
+	inc dx
+	add dx, si		;dx = next block
+	cmp byte ptr es:[MCB.sig], 'M'
+	jnz @F
+	mov si, dx
+	jmp nextitem
+@@:
+	add es:[MCB._size],di
+
+;--- increase bios conv memory size
+
+	push 40h
+	pop es
+	shr di,6
+	add es:[0013h],di
+
+	@stroutc <"UMBM: XBDA moved to ">
+	@wordout word ptr es:[000Eh]
+	@stroutc <cr,lf>
+done:
+	ret
+movexbda endp
+endif
 
 ;--- called as device driver
 ;--- check cmdline and get the regions to add as UMBs
 ;--- test each region if it really contains RAM
+;--- es:di = cmdline
 
 main proc near
 
 	push cs
 	pop ds
 
+	xor bp,bp
 	mov di,offset memtab
 	call getpar
-	jnc @F
-	call explain
-	jnc mainex
+	jc mainex
+	cmp memtab,0  ;any valid /I= option given?
+	jnz @F
+	call searchumbpciblocks
 @@:
 	mov bx,offset memtab
 	mov ax,[bx]
 	and ax,ax
 	jz mainex
 	@stroutc <"UMBM: Upper Memory Blocks: ">
-mn1:						   ;<----
+mn1:						;<----
 	@wordout [bx]
 	@putchr '-'
 	mov ax,[bx]
@@ -494,20 +577,37 @@ testdone:
 	jnz mn1
 	@stroutc <cr,lf>
 
+if ?MOVEXBDA
+	and bp,bp
+	jz @F
+	call movexbda
+@@:
+endif
+
 	mov ax,4300h
 	int 2fh
+	xor bp,bp
 	test al,80h			;does xms host exist?
 	jnz @F
-							;if not, install ÊXMS
-	@stroutc <"UMBM: XMS host not found, installing ÊXMS",cr,lf>
-	call installsmallxms
+	mov ax,352Fh
+	int 21h
+	mov word ptr oldint2f+0,bx
+	mov word ptr oldint2f+2,es
+	mov word ptr [oldvec+0],offset _iret
+if ?MOVEINUMB
+	mov ax,[memtab]
+else
+	mov ax,cs
+endif
+	mov word ptr [oldvec+2],ax
+	dec bp
 	jmp main_1
 @@:
 	mov ax,4310h		;get XMS call address
 	int 2fh
 	mov ax,es:[bx]
 	cmp ax,03ebh		;should begin with a jmp short $+5
-	jz short @F
+	jz  @F
 	@stroutc <"UMBM: cannot hook into XMS chain",cr,lf>
 	jmp mainex
 @@:
@@ -539,8 +639,26 @@ else
 	shr bx,4
 	inc bx
 	mov ax,cs
-	add ax,bx		   ;num paragraphs
+	add ax,bx			;num paragraphs
 endif
+						;if no XMM found, install ÊXMM
+	and bp,bp
+	jz @F
+	push ds
+	push ax
+	@stroutc <"UMBM: XMS host not found, installing ÊXMS",cr,lf>
+	mov dx,offset myint2f
+if ?MOVEINUMB
+	mov ds,[memtab]
+else
+	push cs
+	pop ds
+endif
+	mov ax,252fh
+	int 21h
+	pop ax
+	pop ds
+@@:
 	ret
 mainex:
 	mov ax,cs
@@ -563,21 +681,29 @@ main_exe proc c
 	call explain
 	mov ax,4c00h
 	int 21h
-	ret
+
 main_exe endp
 
 dHowTo  label byte
 	db "UMBM is assumed to be located behind UMBPCI in CONFIG.SYS,",cr,lf
 	db "and before the XMS driver. This will allow to load the XMS driver",cr,lf
 	db "(and the EMM) into an UMB, thus saving some conventional DOS memory.",cr,lf
-	db "As parameter it expects the upper memory regions to be added as UMBs.",cr,lf
+	db cr,lf
+	db "UMBM needs no parameters, it will scan the upper memory region for blocks",cr,lf
+	db "activated by UMBPCI. However, UMBM may be forced to use a region with the",cr,lf
+	db "/I=XXXX-XXXX option:",cr,lf
 	db "Example:",cr,lf
-	db "DEVICE=UMBPCI.SYS /I=D000-EFFF",cr,lf
-	db "DEVICE=UMBM.EXE /I=D000-EFFF",cr,lf
+	db "DEVICE=UMBPCI.SYS",cr,lf
+	db "DEVICE=UMBM.EXE /I=D000-E000",cr,lf
 	db "DEVICEHIGH=HIMEMX.EXE",cr,lf
-	db "DEVICEHIGH=JEMM386.EXE",cr,lf
 	db "Max. 4 regions are accepted. After DOS has grabbed the UMBs,",cr,lf
 	db "UMBM will remove itself from DOS memory.",cr,lf
+if ?MOVEXBDA
+	db cr,lf
+	db "Another parameter that UMBM understands is /XBDA. This option will move",cr,lf
+	db "the XBDA to the first UMB, thus further increasing conventional DOS memory.",cr,lf
+endif
+	db cr,lf
 	db "UMBM is Public Domain. Japheth.",cr,lf
 	db '$'
 
