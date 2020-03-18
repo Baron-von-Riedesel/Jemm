@@ -1430,6 +1430,45 @@ if ?ADDCONV
 ;--- Don't do any DOS-specific work! This is to be
 ;--- done later by the 16-bit part.
 
+;--- this code would move the XBDA here in protected-mode
+;--- instead of in jemm16.asm.
+;--- the problem with the code in jemm16.asm is that it can't
+;--- control which UMB is used for the new XBDA; so the first
+;--- is used, which is bad if it is A000-B7FF.
+;--- currently the workaround is to use MOVEXBDA.exe for XBDA
+;--- moving.
+if 0;?MOVEXBDA
+	push ebx
+	test bV86Flags,V86F_MOVEXBDA
+	jz nomovexbda
+	movzx eax,word ptr ds:[@XBDA]	;does XBDA exist?
+	and eax,eax 
+	jz nomovexbda
+	cmp [ebx].UMBBLK.wSegm,0A000h	;first UMB starts at A000?
+	jnz @F
+	add ebx,sizeof UMBBLK
+@@:
+    mov cx, [ebx].UMBBLK.wSize
+	shr cx, 6	;convert para to kB
+	movzx dx,byte ptr [eax]
+	cmp dx,cx                       ;UMB large enough for XBDA?
+	jb nomovexbda
+	add ds:[@MEM_SIZE],dx
+	push esi
+	mov esi,eax
+	movzx edi,[ebx].UMBBLK.wSegm
+	mov ds:[@XBDA],di
+	shl edi,4
+	shl dx,6	;covert kb to para
+	sub [ebx].UMBBLK.wSize,dx
+	add [ebx].UMBBLK.wSegm,dx
+	movzx ecx,dx
+	shl ecx,2
+	rep movsd
+nomovexbda:
+	pop ebx
+endif
+
     mov ax, ds:[@MEM_SIZE]  ;size in KB (640 kB = 280h)
     shl ax, 6           ;280h -> A000h
     cmp ax, [ebx].UMBBLK.wSegm

@@ -1101,6 +1101,12 @@ GetRes endp
 ;--- 1. init XMS handle table for integrated version
 ;--- 2. link resident part in driver chain if moved high
 
+MCB struct
+sig db ?
+psp dw ?
+blsiz dw ?
+MCB ends
+
 endinit proc
 
 if ?INTEGRATED
@@ -1131,15 +1137,68 @@ if ?INTEGRATED
 	mov [wLow], ax
 endif
 
+	int 3
+if ?MOVEXBDA
+	test jemmini.V86Flags,V86F_MOVEXBDA
+	jz nomovexbda
+	push 0
+	pop es
+	mov ax,es:[@XBDA]
+	and ax,ax
+	jz nomovexbda
+	cmp ax,0A000h
+	jnc nomovexbda
+	mov es,ax
+	movzx si,byte ptr es:[0]
+	shl si,6	;convert kb to para
+	mov ax,4310h	;get driver addr
+	int 2Fh
+	push es
+	push bx
+	mov bp,sp
+	mov ah,10h	;alloc UMB
+	mov dx,si
+	call dword ptr [bp]
+	add sp,4
+	cmp ax,1
+	jnz nomovexbda
+	mov es,bx
+	push ds
+	push 0
+	pop ds
+	xchg bx,ds:[@XBDA]
+	mov ax,si
+	shr ax,6	;convert para to kb
+	add word ptr ds:[@MEM_SIZE],ax
+	mov ds,bx
+	mov cx,si
+	shl cx,3    ;convert para to word
+	push si
+	xor si,si
+	xor di,di
+	rep movsw
+	pop si
+	pop ds
+	mov ah,52h
+	int 21h
+	mov ax, es:[bx-2]
+nxtitem:
+	mov es, ax
+	mov dx, es:[MCB.blsiz]	;get size of MCB
+	inc dx
+	add dx, ax		;dx = next block
+	cmp byte ptr es:[MCB.sig], 'M'
+	jnz @F
+	mov ax, dx
+	jmp nxtitem
+@@:
+	add es:[MCB.blsiz],si
+nomovexbda:
+endif
+
 if ?ADDCONV
 
-MCB struct
-sig db ?
-psp dw ?
-blsiz dw ?
-MCB ends
-
-;--- if conventional memory has been increased (i.e. by I=A000-AFFF),
+;--- if conventional memory has been increased (i.e. by I=A000-B7FF),
 ;--- increase last DOS MCB
 	mov ah,52h
 	int 21h
@@ -1155,9 +1214,9 @@ nextitem:
 	jmp nextitem
 @@:
 	push ds
-	push 40h
+	push 0
 	pop ds
-	mov ax,ds:[13h]
+	mov ax,ds:[@MEM_SIZE]
 	pop ds
 	shl ax,6	;kB to paragraphs
 

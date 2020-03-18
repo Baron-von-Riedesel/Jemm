@@ -9,9 +9,13 @@
  - Jemm does again scan the region C000-EFFF for RAM. This avoids
    a system crash if upper memory has been supplied by UMBPCI and is
    used by DOS.
+ - new option MOVEXBDA for Jemm implemented.
+ - JemmEx will recognize memory blocks activated by UMBPCI and include them
+   into its UMB pool.
  - UMBM no longer requires the /I parameter; it will scan for blocks with
    the UMBPCI signature.
  - new option /XBDA for UMBM implemented.
+ - MOVEXBDA has got option /A to make it align the new XBDA to a kB boundary.
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset

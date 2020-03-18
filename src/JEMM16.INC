@@ -23,6 +23,9 @@ NAMEEXE equ <"JEMM386">
 NAMEMOD equ <"Jemm386">
 endif
 
+@XBDA     equ 40Eh
+@MEM_SIZE equ 413h
+
 ;--- modes for mainex()
 EXECMODE_SYS equ 0	;launched as dos device driver
 EXECMODE_EXE equ 1	;launched as application

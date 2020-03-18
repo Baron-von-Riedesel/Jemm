@@ -2117,7 +2117,7 @@ endif
     mov [esi-4],edx
 
 if 0    ;restoring the XBDA should be done by DOS (MS-DOS does)
-    mov dx,ds:[40Eh]
+    mov dx,ds:[@XBDA]
     and dx,dx
     jz @@noxbda
     movzx esi,dx
@@ -2128,7 +2128,7 @@ if 0    ;restoring the XBDA should be done by DOS (MS-DOS does)
     mov di,[@MEM_SIZE]
     movzx edi,di
     shl edi, 6
-    mov ds:[40Eh],di
+    mov ds:[@XBDA],di
     shl edi, 4
     movzx ecx, al
     shl ecx,8
@@ -2227,7 +2227,7 @@ endif
     rep stosd       ;78-7F
 
 if 0;?CLEARBOOTFLGS
-    movzx ecx, word ptr ds:[40Eh]
+    movzx ecx, word ptr ds:[@XBDA]
     jecxz @F
     shl ecx, 4
     mov word ptr [ecx+90h],0    ;clear boot flags (might be BIOS specific)

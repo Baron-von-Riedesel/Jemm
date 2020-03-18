@@ -51,6 +51,7 @@ GDT_SIZE        equ 200h    ; size of GDT
 
 ;--- other constants
 
+@XBDA           EQU 40Eh            ; segment of XBDA
 @MEM_SIZE       EQU 413h            ; base memory size in KB
 @KB_FLAG        EQU 417H            ; Status SHIFT/CTRL/ALT etcetera.
 @RESET_FLAG     EQU 472H            ; Flag for Warmboot (=1234h)

@@ -553,6 +553,8 @@ SetMemoryType ENDP
 ;--- 3. argument is a pointer to WORD
 ;--- may change memory type from 'U' to 'R'
 
+?UMBPCI equ 1
+
 TestForSystemRAM proc c uses si di pv:ptr BYTE, index:WORD, pi:ptr WORD
 
 local result:word
@@ -576,6 +578,13 @@ local result:word
 	mov ax, dx
 	shl ax, 8
 	mov es, ax
+if ?UMBPCI
+	cmp dword ptr es:[0],"BMU$"
+	jnz @F
+	cmp dword ptr es:[4],"!lbT"
+	jz isumbpci
+@@:
+endif
 	cli
 	mov ax, es:[0]
 	mov bx, ax
@@ -619,6 +628,17 @@ local result:word
 	mov [bx], ax
 	mov ax, di
 	ret
+isumbpci:
+	mov di,es
+	mov ax,es:[10]
+	mov result,ax
+	dec si
+nextitem:
+	mov byte ptr [si],'S'
+	inc si
+	sub ax,100h
+	ja nextitem
+	jmp @@done
 
 TestForSystemRAM endp
 
@@ -742,7 +762,17 @@ endif
 			mov ax,mem
 			add ax,si
 			dec ax
-			invoke printf,CStr("System memory found at %X-%X, region might be in use", LF), si, ax
+if ?UMBPCI
+			mov es,si
+			.if dword ptr es:[0] == "BMU$"
+				mov cx,CStr("Memory activated by UMBPCI found at %X-%X, included", LF)
+			.else
+endif
+				mov cx, CStr("System memory found at %X-%X, region might be in use", LF)
+if ?UMBPCI
+			.endif
+endif
+			invoke printf, cx, si, ax
 			mov ax,mem
 			add ax,si
 			mov al,ah
@@ -2721,6 +2751,12 @@ if ?SPLIT
 		mov SplitTest,1
 	.endif
 endif
+if ?MOVEXBDA
+	invoke FindCommand, CStr("MOVEXBDA")
+	.if ax
+		or jemmini.V86Flags, V86F_MOVEXBDA
+	.endif
+endif
 	invoke FindCommand, CStr("NOCHECK")
 	.if ax
 		or jemmini.V86Flags, V86F_NOCHECK
@@ -3019,7 +3055,7 @@ endif
 	.endif
 
 	.if bVerbose
-		invoke printf, CStr(<"Memory Map: (R=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb)",LF>)
+		invoke printf, CStr(<"Memory Map: R/S=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb",LF>)
 		sub sp,64+4
 		mov cx,4
 		mov si,offset SystemMemory

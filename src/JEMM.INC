@@ -29,6 +29,8 @@ endif
 ?V86EXC0D       EQU 1       ; 1=support V86EXC0D option
 ?ADDCONV        EQU 1       ; 1=add A000h to conv memory if I=A000-XXXX
 
+?MOVEXBDA       EQU ?INTEGRATED ; 1=support MOVEXBDA option; move XBDA into UMB
+
 ?STKSIZE        EQU 200H    ; Size monitor stack for non-reentrant execution
 ?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI
 
@@ -215,6 +217,9 @@ V86B_FASTBOOT   equ 3   ; bit 3
 endif
 if ?V86EXC0D
 V86F_V86EXC0D   equ 16  ; V86EXC0D active
+endif
+if ?MOVEXBDA
+V86F_MOVEXBDA   equ 32  ; MOVEXBDA active
 endif
 
 ;-- 120 MB max VCPI memory (in 16 kB units)
