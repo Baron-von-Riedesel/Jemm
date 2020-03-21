@@ -444,16 +444,18 @@ searchumbpciblocks proc
 		jnz noblock
 		cmp dword ptr es:[4],"!lbT"
 		jnz noblock
-		mov ax,es:[8] ;start of block
-		mov [di+0],ax
-		mov ax,es:[10];size of block in paras
-		mov [di+2],ax
-		mov [di+4],ax
-		add di,3*2
-		cmp di,offset memtab+4*3*2
-		jz done
-		add si,ax
-		.continue
+		mov bx,8
+		.while word ptr es:[bx]
+			mov ax,es:[bx] ;start of (first) block
+			mov [di+0],ax
+			mov ax,es:[bx+2];size of block in paras
+			mov [di+2],ax
+			mov [di+4],ax
+			add di,3*2
+			add bx,2*2
+			.break .if di == offset memtab+4*3*2
+		.endw
+		.break
 noblock:
 		add si,100h
 	.endw
@@ -465,7 +467,13 @@ if ?MOVEXBDA
 movexbda proc
 	push 40h
 	pop es
-	mov es,es:[000Eh]
+	mov dx,es:[0013h]
+	shl dx,6		;convert kB to para
+	mov ax,es:[000Eh]
+	cmp ax,dx
+	jnz dontmove
+	
+	mov es,ax
 	movzx ax,byte ptr es:[0]	;size of xbda in kb
 	shl ax,6		;size in paras
 	cmp ax,memtab+2
@@ -519,6 +527,10 @@ nextitem:
 	invoke _strout, CStr(cr,lf)
 done:
 	ret
+dontmove:
+	invoke _strout, CStr("UMBM: XBDA has already been moved - nothing done",cr,lf)
+	ret
+
 movexbda endp
 endif
 

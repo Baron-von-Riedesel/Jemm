@@ -1137,17 +1137,16 @@ if ?INTEGRATED
 	mov [wLow], ax
 endif
 
-	int 3
 if ?MOVEXBDA
 	test jemmini.V86Flags,V86F_MOVEXBDA
 	jz nomovexbda
 	push 0
 	pop es
 	mov ax,es:[@XBDA]
-	and ax,ax
-	jz nomovexbda
-	cmp ax,0A000h
-	jnc nomovexbda
+	mov dx,es:[@MEM_SIZE]
+	shl dx,6
+	cmp ax,dx		;XBDA must be just above conventional memory
+	jnz nomovexbda	;else it a) has been moved already b) doesn't exist
 	mov es,ax
 	movzx si,byte ptr es:[0]
 	shl si,6	;convert kb to para
@@ -1193,6 +1192,10 @@ nxtitem:
 	jmp nxtitem
 @@:
 	add es:[MCB.blsiz],si
+	cmp bVerbose,0
+	jz @F
+	invoke printf,CStr("XBDA moved to first UMB",10)
+@@:
 nomovexbda:
 endif
 
@@ -1221,7 +1224,9 @@ nextitem:
 	shl ax,6	;kB to paragraphs
 
 ;--- v5.80: do jmp even if ax = dx+1
-;--- this might be the case if UMBs are already included
+;--- this might be the case if UMBs are already included?
+;--- if UMBs are already included, the last low-mem DOS MCB
+;--- should NOT be increased!
 	inc dx
 
 	cmp ax,dx

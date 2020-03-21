@@ -315,7 +315,7 @@ ltob ENDP
 ;--- understands type %c, %x, %d, %i, u%, %s 
 ;--- and modifier l(ong)
 
-printf PROC c uses si di fmt:ptr byte, args:VARARG
+printf PROC c public uses si di fmt:ptr byte, args:VARARG
 
 local size_:word
 local flag:byte
@@ -550,7 +550,7 @@ SetMemoryType ENDP
 ;--- TestForSystemRAM(void *, int, int *);
 ;--- 1. argument is "SystemMemory" array (256 * BYTE)
 ;--- 2. argument is index for "SystemMemory" where to start scan
-;--- 3. argument is a pointer to WORD
+;--- 3. argument is a pointer to WORD, will return region size in paragraphs
 ;--- may change memory type from 'U' to 'R'
 
 ?UMBPCI equ 1
@@ -630,14 +630,23 @@ endif
 	ret
 isumbpci:
 	mov di,es
-	mov ax,es:[10]
-	mov result,ax
-	dec si
+	mov bx,8
+	.while word ptr es:[bx]
+		mov si,es:[bx+0]
+		mov dx,si
+		mov ax,es:[bx+2]
+		add dx,ax
+		shr si,8
+		add si,pv
 nextitem:
-	mov byte ptr [si],'S'
-	inc si
-	sub ax,100h
-	ja nextitem
+		mov byte ptr [si],'S'
+		inc si
+		sub ax,100h
+		ja nextitem
+		add bx,2*2
+	.endw
+	sub dx,di
+	mov result,dx
 	jmp @@done
 
 TestForSystemRAM endp
@@ -1100,12 +1109,13 @@ SMAP equ 534d4150h
 I15CheckRsvdRegion proc uses si di
 local mmap:E820MAP
 	@DbgOutS <"I15CheckRsvdRegion: enter",13,10>,?INITRMDBG
+	xor ebx,ebx
+	lea di,mmap
 nextitem:
 	push ss
 	pop es
 	mov edx,SMAP
 	mov ecx, sizeof E820MAP
-	lea di,mmap
 	xor eax,eax
 	mov mmap.baselow,eax   ; insurance against buggy BIOS
 	mov mmap.type_,eax
@@ -2479,6 +2489,23 @@ IsDPMI proc c uses si di
 	ret
 IsDPMI ENDP
 
+if ?INITRMDBG
+
+;-- display XBDA size in kB
+
+disp_xbda_size proc uses es bx
+	@DbgOutS <"XBDA size=">,1
+	push 0
+	pop es
+	mov bx,es:[@XBDA]
+	mov es,bx
+	movzx ax,byte ptr es:[0]
+	@DbgOutW ax,1
+	@DbgOutS <13,10>,1
+	ret
+disp_xbda_size endp
+endif
+
 mainex PROC c public uses di si mode:word, cmdline:ptr BYTE
 
 local rangestart:word
@@ -3106,6 +3133,19 @@ endif
 	lea eax, [eax+offset SystemMemory]
 	mov jemmini.PageMap, eax
 
+if ?INITRMDBG
+	call disp_xbda_size
+ if 0  ;this enabled a debug watchpoint (write) for first byte of XBDA
+	push 0
+	pop es
+	movzx eax,word ptr es:[@XBDA]
+	shl eax,4
+	mov dr0,eax	;set a watchpoint
+	mov eax,00010002h   ;set Write global watchpoint
+	mov dr7,eax
+ endif
+endif
+
 	invoke InitJemm
 	.if bVerbose
 		invoke printf, CStr("Physical start address of EMS pages: %lX", LF), eax
@@ -3120,7 +3160,6 @@ endif
 		.endif
 	.endif
 	invoke printf, CStr( NAMEMOD," loaded",LF )
-
 if ?INTEGRATED eq 0
 	invoke xmscall, 6	;local disable A20
 endif

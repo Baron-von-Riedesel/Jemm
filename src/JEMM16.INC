@@ -58,6 +58,7 @@ externdef c jemmini:JEMMINIT
 externdef c XMSdriverAddress:far16 ptr
 externdef c sig1:BYTE
 externdef c sig2:BYTE
+externdef bVerbose:byte
 
 if ?INTEGRATED
 externdef c xms_num_handles:WORD

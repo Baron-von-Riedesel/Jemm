@@ -1,0 +1,6 @@
+
+PGM=VCPI
+
+$(PGM).EXE: $(PGM).asm Makefile
+	jwasm -mz -Sg -Fl$* -Fo$* $(PGM).asm
+
