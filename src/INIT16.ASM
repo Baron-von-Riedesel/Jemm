@@ -1889,10 +1889,13 @@ endif
 if ?INTEGRATED eq 0
 
 ;--- xmsreg contains the locked physical address
+	mov ax,xmsreg._dx
+	shl eax,16
 	mov ax,xmsreg._bx
-	mov dx,xmsreg._dx
-	mov WORD PTR jemmini.MonitorStart+0,ax
-	mov WORD PTR jemmini.MonitorStart+2,dx
+	mov jemmini.MonitorStart+0,eax
+	.if eax >= 1000000h		;v5.80: if EMB is beyond the 16 MB barrier, display a warning
+		invoke printf, CStr("%s: address of allocated EMB (=%lX) is beyond 16MB", LF), offset szWarning, eax
+	.endif
 else
 	invoke GetEMBBase, jemmini.XMSControlHandle
 	mov jemmini.MonitorStart, eax

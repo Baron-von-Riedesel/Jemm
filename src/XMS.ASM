@@ -16,6 +16,8 @@
 
     include external.inc
 
+?MERGE0HDL equ 1	;std=0, 1=try to merge handles even if hdl to free has size 0
+
 ;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 .text$01 SEGMENT
@@ -273,8 +275,10 @@ xms_ext_alloc_emb::
 
 @@xms_alloc2:
     push ecx
+if 0	;v5.80 check for size 0 after scan
     and edx,edx              ; a request for 0 kB needs no free mem
     jz @@nullhandle
+endif
     movzx ecx,[XMS_Handle_Table.xht_numhandles]
     mov edi,[XMS_Handle_Table.xht_pArray] 
 @@nextitem:
@@ -285,6 +289,10 @@ xms_ext_alloc_emb::
 @@skipitem:
     add edi,size XMS_HANDLE   ; skip to next handle
     loop @@nextitem
+if 1	;v5.80 check for size 0 after scan
+    and edx,edx              ; a request for 0 kB needs no free mem
+    jz @@nullhandle
+endif
     mov bl,XMS_ALL_MEM_ALLOCATED
 @@alloc_failed:
     pop ecx
@@ -437,8 +445,9 @@ xms_free_emb proc
                                     ; see if there are blocks to merge
     mov eax,[esi].XMS_HANDLE.xh_baseK   ; get base address
     mov edx,[esi].XMS_HANDLE.xh_sizeK
-    mov edi, eax
-    add eax, edx                    ; calculate end-address in EAX
+    mov edi, eax                    ; base in edi
+    add eax, edx                    ; end-address in EAX
+ife ?MERGE0HDL
     mov cl, XMSF_FREE
     and edx, edx
     jnz @F
@@ -446,25 +455,49 @@ xms_free_emb proc
 @@:
     mov [esi].XMS_HANDLE.xh_flags,cl;mark this block as free (or inpool if size is 0)
     jz @@done
+endif
 
-;--- now scan the handle table for successor
+;--- now scan the handle array for successor/predecessor
 
     movzx ecx,[XMS_Handle_Table.xht_numhandles]
     mov ebx,[XMS_Handle_Table.xht_pArray] 
 @@nextitem:
     cmp [ebx].XMS_HANDLE.xh_flags,XMSF_FREE
     jnz @@skipitem
-;   cmp esi,ebx
-;   jz @@skipitem 
     mov edx,[ebx].XMS_HANDLE.xh_baseK
     cmp eax, edx                    ; is successor also free?
-    je @@adjacent_1
+    je @F
     add edx,[ebx].XMS_HANDLE.xh_sizeK
     cmp edi, edx                    ; is predecessor free?
-    je @@adjacent_2
+    jne @@skipitem
+@@:
+;--- predecessor/successor in EBX
+    cmp ebx,esi
+    jbe @F
+    xchg ebx,esi                    ; merge into the "lower" handle and free the "higher" handle
+@@:
+    xor edx, edx                    ; merge 2 handles, then free one
+    xchg edx, [esi].XMS_HANDLE.xh_sizeK
+    add [ebx].XMS_HANDLE.xh_sizeK, edx  ;new size is sum(hdl1.size,hdl2.size)
+    xor edx, edx
+    xchg edx, [esi].XMS_HANDLE.xh_baseK
+    cmp edx, [ebx].XMS_HANDLE.xh_baseK
+    ja @F
+    mov [ebx].XMS_HANDLE.xh_baseK, edx  ;new base is min(hdl1.base,hdl2.base)
+@@:
+    mov [esi].XMS_HANDLE.xh_flags,XMSF_INPOOL
+    mov esi,ebx
 @@skipitem:
-    add ebx,size XMS_HANDLE   ; skip to next handle
+    add ebx,sizeof XMS_HANDLE
     loop @@nextitem
+if ?MERGE0HDL
+    mov cl, XMSF_FREE
+    cmp [esi].XMS_HANDLE.xh_sizeK,0
+    jnz @F
+    mov cl,XMSF_INPOOL
+@@:
+    mov [esi].XMS_HANDLE.xh_flags,cl
+endif
 @@done:
     pop edx
     pop ecx
@@ -474,22 +507,6 @@ xms_free_emb proc
     mov bl,0
 @@exit:
     ret
-    
-@@adjacent_2:
-    push ebx
-    xchg esi,ebx                      ; move predecessor to SI
-    call mergeblocks
-    pop ebx
-    jmp @@skipitem
-@@adjacent_1:
-    push offset @@skipitem
-mergeblocks:
-    xor edx, edx                    ; merge 2 handles, then free one
-    mov [ebx].XMS_HANDLE.xh_baseK,edx
-    mov [ebx].XMS_HANDLE.xh_flags,XMSF_INPOOL
-    xchg edx, [ebx].XMS_HANDLE.xh_sizeK
-    add [esi].XMS_HANDLE.xh_sizeK,edx
-    retn
 
 xms_free_emb endp
 
@@ -624,9 +641,37 @@ xms_ext_realloc_emb proc
     jne @@ext_xms_locked
 
     mov edx, ebx
+if 1;v5.80
+;--- find the successor.
+	movzx ecx,[XMS_Handle_Table.xht_numhandles]
+	mov edi,[XMS_Handle_Table.xht_pArray]
+	mov eax,[esi].XMS_HANDLE.xh_sizeK
+	add eax,[esi].XMS_HANDLE.xh_baseK
+nextitem:
+	test [edi].XMS_HANDLE.xh_flags,XMSF_FREE	;scan "free embs" only
+	jz skipitem
+	cmp eax,[edi].XMS_HANDLE.xh_baseK	;successor?
+	jnz skipitem
+	mov eax,[esi].XMS_HANDLE.xh_sizeK
+	add eax,[edi].XMS_HANDLE.xh_sizeK	;get the total size
+	cmp edx,eax                         ;new size > total size?
+	ja @@ext_growing                    ;then the handle can't grow, have to copy...
+	sub edx,[esi].XMS_HANDLE.xh_sizeK	;get the size which is additionally needed (might be < 0!)
+	mov [esi].XMS_HANDLE.xh_sizeK, ebx
+	add [edi].XMS_HANDLE.xh_baseK, edx
+	sub [edi].XMS_HANDLE.xh_sizeK, edx
+	jnz @@ext_grow_success              ;remaining size > 0?
+	mov [edi].XMS_HANDLE.xh_flags, XMSF_INPOOL	;no, so free the handle
+	mov [edi].XMS_HANDLE.xh_baseK, 0
+	jmp @@ext_grow_success
+skipitem:
+	add edi,sizeof XMS_HANDLE
+	loop nextitem
+endif
     cmp ebx,[esi].XMS_HANDLE.xh_sizeK
     jbe @@ext_shrink_it
 
+@@ext_growing:
 ; growing, try to allocate a new block
 
     call xms_ext_alloc_emb  ;get a new handle in DX, size EDX
@@ -696,25 +741,27 @@ xms_ext_realloc_emb proc
 
 @@ext_shrink_it:
     mov edi,[esi].XMS_HANDLE.xh_sizeK    ; get old size
-    mov [esi].XMS_HANDLE.xh_sizeK, edx
-    mov eax, edi
     sub edi, edx                     ; calculate what's left over
     jz @@ext_dont_need_handle        ; jump if we don't need another handle
-    add edx,[esi].XMS_HANDLE.xh_baseK    ; calculate new base address
     push ebx
-    call xms_alloc_handle            ; alloc a handle in EBX
-    jnc @F
-    mov [esi].XMS_HANDLE.xh_sizeK, eax
-    jmp @@ext_no_xms_handles_left    ; return if there's an error
-@@:
-    mov word ptr [ebx].XMS_HANDLE.xh_flags,XMSF_USED
+    call xms_alloc_handle            ; alloc a handle in EBX (edx not modified)
+    jc @@ext_no_xms_handles_left     ; exit if no more handles
+    mov [esi].XMS_HANDLE.xh_sizeK, edx ;set new (reduced) size
+    add edx,[esi].XMS_HANDLE.xh_baseK; calculate base of new "free" block
     mov [ebx].XMS_HANDLE.xh_baseK,edx
     mov [ebx].XMS_HANDLE.xh_sizeK,edi
+if 1;v5.80
+;--- if this branch is active, there's surely NO free successor
+;--- so we don't need to merge.
+	mov [ebx].XMS_HANDLE.xh_flags,XMSF_FREE
+	pop ebx
+else
+    mov word ptr [ebx].XMS_HANDLE.xh_flags,XMSF_USED
     mov edx,ebx                      ; and FREE it again -
     sub edx,[dwRes]                  ;!!! 2.2.2020: line added for v5.79
     pop ebx
     call xms_free_emb                ; to merge it with free block list
-
+endif
 @@ext_dont_need_handle:
 @@ext_grow_success:
     pop edx

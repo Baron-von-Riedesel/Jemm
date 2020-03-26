@@ -12,6 +12,11 @@
  - new option MOVEXBDA for Jemm implemented.
  - JemmEx will recognize memory blocks activated by UMBPCI and include them
    into its UMB pool.
+ - a warning is displayed if the extended memory block where Jemm386 will
+   reside is beyond the 16MB limit.
+ - strategy to realloc an EMB to increase its size has been changed and is
+   now smart enough to check if the block can be increased without moving
+   it.
  - UMBM no longer requires the /I parameter; it will scan for blocks with
    the UMBPCI signature.
  - new option /XBDA for UMBM implemented.

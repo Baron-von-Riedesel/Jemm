@@ -1,15 +1,3 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 FINAL//EN">
-<HTML>
-<HEAD>
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=IBM-850">
-<META NAME="author" CONTENT="Japheth">
-<META NAME="keywords" content="Jemm386, JemmEx">
-</HEAD>
-<BODY>
-<TABLE BORDER=0 CELLSPACING=4 CELLPADDING=4 WIDTH="100%" HEIGHT="100%">
-<TR BGCOLOR=#E0E0E0>
-<TD>
-<pre>
 
  Contents
 
@@ -25,7 +13,8 @@
   6.4  EMSSTAT
   6.5  XMSSTAT
   6.6  MEMSTAT
-  6.7  MOVEXBDA
+  6.7  VCPI
+  6.8  MOVEXBDA
   7.   Troubleshooting, Hints
   8.   License
 
@@ -101,12 +90,12 @@
             if the standard handler doesn't work. Currently it does nothing.
  B=xxxx     specify lowest segment address for EMS banking (default=4000,
             min=1000).
- D=nnn      this option will set the size of the DMA buffer to &lt;nnn&gt; kB.
+ D=nnn      this option will set the size of the DMA buffer to <nnn> kB.
             The default size is 64 kB, max size is 128 kB. Will always be
             rounded up to next 4 kB.
  EMX        option to prevent EMX DOS extender from quickly terminating with
             message "out of memory (RM)" on machines with large amounts
-            of RAM (&gt; 256 MB). This is optionally because it makes Jemm
+            of RAM (> 256 MB). This is optionally because it makes Jemm
             behave not fully VCPI compliant, but shouldn't hurt usually.
  FASTBOOT   option might allow a fast reboot. There is no guarantee that it
             will work, though, see hints in "Troubleshooting".
@@ -120,19 +109,19 @@
             Usually it's better to let Jemm find a page frame on its own, 
             because choosing an address which is not free might cause troubles.
  I=mmmm-nnnn force Jemm to use a memory range for UMBs (or page frame).
-            &lt;mmmm&gt; must be &gt;= A000. Specifying a range which is not really
+            <mmmm> must be >= A000. Specifying a range which is not really
             free may give "unexpected" results.
  I=TEST     scan ROMs for unused address space. This option will regard any
             4 kB page containing identical byte values as "unused".
  LOAD       installs Jemm from the command line. Be aware that UMBs
             cannot be provided this way, since DOS will ignore them.
  [MAX=]nnn  limit the maximum amount of memory to be allocated for VCPI (and
-            EMS, if &lt;nnn&gt; is below 32 MB). The MAX= prefix is optional (a
+            EMS, if <nnn> is below 32 MB). The MAX= prefix is optional (a
             number found as option will be handled as if it has a MAX=
             prefix).
- MIN=nnn    preallocates &lt;nnn&gt; kB of XMS memory thus making sure this
+ MIN=nnn    preallocates <nnn> kB of XMS memory thus making sure this
             memory is truly available for EMS/VCPI. If MIN is higher than
-            MAX, MAX will be adjusted accordingly. Default for &lt;nnn&gt; is 0.
+            MAX, MAX will be adjusted accordingly. Default for <nnn> is 0.
  NOCHECK    disallows access via Int 15h, AH=87h to address regions which
             aren't backuped by RAM.
  NODYN      disables XMS dynamic memory allocation.
@@ -175,14 +164,14 @@
             on Pentium+ CPUs. These options can be set from the command line.
             NOVME is the default.
  X=mmmm-nnnn exclude a memory range to be used as UMBs or page frame.
-            &lt;mmmm&gt; must be &gt;= A000.
+            <mmmm> must be >= A000.
  X=TEST     will exclude all upper memory regions which contain byte values
             other than 00 or FF.
 
  JemmEx additionally understands:
 
  A20METHOD:x   select A20 switch method.
-               Possible values for &lt;x&gt;:
+               Possible values for <x>:
                ALWAYSON    Assume that A20 line is permanently ON
                BIOS        Use BIOS to toggle the A20 line
                FAST        Use port 92h, bypass INT 15h test
@@ -190,24 +179,25 @@
                KBC         Use the keyboard controller
                PORT92      Use port 92h always
  HMAMIN=k      set minimum amount in kB to get the HMA (default=0, max=63).
- MAXEXT=l      limit extended memory controlled by XMM to &lt;l&gt; kB.
+ MAXEXT=l      limit extended memory controlled by XMM to <l> kB.
  MOVEXBDA      move XBDA into UMB, thus increasing low DOS memory. This option
                might require to also set option NOHI, because some BIOSes 
-               expect the XBDA to start at a kB boundary.
+               expect the XBDA to start at a kB boundary. If the option causes
+               a system "lock", use tool MOVEXBDA.EXE instead.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
  NOE820        don't use int 15h, ax=E820h to get amount of extended memory.
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
-               need a value of &lt;m&gt;=32767.
+               need a value of <m>=32767.
  XMSHANDLES=n  set number of XMS handles (default=32, min=8, max=128).
 
 
  4. EMS Implementation Notes
 
  - The number of EMS pages is limited to 2048 (= 32 MB). It can be increased
-   up to 32768 pages (= 512 MB) by setting MIN=&lt;nnn&gt; to a value higher than
+   up to 32768 pages (= 512 MB) by setting MIN=<nnn> to a value higher than
    32 MB. However, this memory will then be preallocated, and not be available
-   as XMS memory. Some applications will not work if EMS &gt; 32 MB.
+   as XMS memory. Some applications will not work if EMS > 32 MB.
 
  - There is one memory pool, which is shared by EMS and VCPI.
 
@@ -225,8 +215,8 @@
  Some of these opcodes which might be useful for application programs
  are emulated by Jemm, however. These are:
 
- - mov &lt;special_reg&gt;, &lt;reg&gt;   ;special_reg = CRn, DRn, TRn
- - mov &lt;reg&gt;, &lt;special_reg&gt;   ;reg = eax, ebx, ecx, edx, esi, edi, ebp
+ - mov <special_reg>, <reg>   ;special_reg = CRn, DRn, TRn
+ - mov <reg>, <special_reg>   ;reg = eax, ebx, ecx, edx, esi, edi, ebp
  - WBINVD
  - INVD
  - WRMSR
@@ -302,7 +292,14 @@
  - total amount of free memory
 
 
- 6.7. MOVEXBDA
+ 6.7. VCPI
+
+ VCPI may be used to display the VCPI status of the installed EMM.
+ With option -p it will display the page table entries for the conventional
+ memory.
+
+
+ 6.8. MOVEXBDA
 
  MOVEXBDA is a device driver supposed to move the Extended BIOS Data
  Area ( XBDA or EBDA ) to low DOS memory. If an XBDA exists, it is usually
@@ -315,7 +312,9 @@
  doesn't exceed 1 kB; then MOVEXBDA is not needed and will do nothing if 
  launched. Also, both JemmEx and UMBM have the ability to move the XBDA as 
  well; those tools move the XBDA to upper memory, thus increasing low DOS 
- memory. However, sometimes MOVEXBDA may be the best option available.
+ memory. However, sometimes MOVEXBDA may be the best option available -
+ because moving the XBDA into an UMB supplied by Jemm (or UMBPCI) may cause
+ the system to "lock".
 
  MOVEXBDA should work with any EMM.
 
@@ -369,7 +368,7 @@
      Also the XBDA most likely must not be moved.
 
    - FreeDOS additionally needs JEMFBHLP.EXE to be installed prior to the
-     XMM (Himem). Possibly this might also be needed for MS-DOS versions &lt; 5.
+     XMM (Himem). Possibly this might also be needed for MS-DOS versions < 5.
 
  þ If Jemm is installed from the commandline, loading the CTMOUSE driver
    v1.9x and v2.0x might cause an exception. Adding option NOHI or NORAM
@@ -418,9 +417,9 @@
      won't work anymore and may also cause a crash. Not unusual is that the 
      current text font becomes corrupted ( text font bitmaps must be copied 
      from ROM to VGA memory when a video text mode is set ).
-   - if MOVEXBDA causes a system lock during boot, add the /A option to the
-     line in CONFIG.SYS that loads the driver. This aligns the XBDA to a kB
-     boundary, which may cure the lock.
+   - if MOVEXBDA.EXE causes a system lock during boot, add the /A option to 
+     the line in CONFIG.SYS that loads the driver. This aligns the XBDA to 
+     a kB boundary, which may cure the lock.
 
 
  8. License
@@ -440,8 +439,3 @@
 
  Japheth
 
-</pre>
-</TD></TR>
-</TABLE>
-</BODY>
-</HTML>
