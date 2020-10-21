@@ -51,9 +51,11 @@ xxx db string
 	.data
 
 xmsadr    dd 0      ;XMS host call address
-dwTotal   dd 0      ;total size EMBs
+dwTotal   dd 0      ;total size EMBs < 4GB
+dwTotalSX dd 0      ;total size EMBs
 freehdls  dw 0      ;count free handles
 wVersion  dw 0      ;XMS version
+wDriver   dw 0      ;driver version
 bFlags    db 0      ;flags
 
 FL_NOSIZENULL   equ 1
@@ -105,7 +107,7 @@ getparm_1:
 @@:
 	cmp ax,'-?'
 	jnz getparm_3
-	invoke printf, CStr(<"XMSSTAT v1.0, Public Domain",lf>)
+	invoke printf, CStr(<"XMSSTAT v1.2, Public Domain",lf>)
 	invoke printf, CStr(<"usage: XMSSTAT [ -options ]",lf>)
 	invoke printf, CStr(<"  -a: skip free memory blocks",lf>)
 	invoke printf, CStr(<"  -b: also display unused handles",lf>)
@@ -191,20 +193,29 @@ hdlout proc
 	ret
 @@:
 	invoke printf, CStr("%3u %4X"), si, bx
-	mov eax,es:[bx].XMSH.dwSize
-	add [dwTotal],eax
-	mov eax,es:[bx].XMSH.dwAddr
-	shl eax, 10
-	mov edx,es:[bx].XMSH.dwAddr
+	push si
 	mov ecx,es:[bx].XMSH.dwSize
-	add edx,ecx
-	shl edx,10
+	mov eax,es:[bx].XMSH.dwAddr
+	add [dwTotalSX],ecx
+	test eax, 0ffc00000h    ;beyond 4GB?
+	jnz @F
+	add [dwTotal],ecx
+@@:
+	mov edx, eax
+	mov esi, eax
+	shl eax, 10
+	shr esi, 22
+	add edx, ecx
+	mov edi, edx
+	shl edx, 10
+	shr edi, 22
 	jecxz @F
 	dec edx
 @@:
 	mov cl, es:[bx].XMSH.bLocks
 	mov ch, 00
-	invoke printf, CStr("   %08lx-%08lx %8lu %5u "), eax, edx, es:[bx].XMSH.dwSize, cx
+	invoke printf, CStr("   %2x%08lx-%2x%08lx %8lu %5u "), si, eax, di, edx, es:[bx].XMSH.dwSize, cx
+	pop si
 	mov al, es:[bx].XMSH.bFlags
 	call getflags
 	movzx ax,al
@@ -226,8 +237,8 @@ hdlarray proc stdcall pArray:DWORD
 	les bx,es:[bx].XMSHT.dwArray
 	jcxz exit
 	call _crout
-	invoke printf, CStr(<" no handle region            size(kB) locks  flags",lf>)
-	invoke printf, CStr(<"--------------------------------------------------------",lf>)
+	invoke printf, CStr(<" no handle region                size(kB) locks  flags",lf>)
+	invoke printf, CStr(<"------------------------------------------------------------",lf>)
 	mov si,1                    ;start with 1
 nextitem:
 	pusha
@@ -236,8 +247,14 @@ nextitem:
 	add bx,dx
 	inc si
 	loop nextitem
-	invoke printf, CStr(<"--------------------------------------------------------",lf>)
-	invoke printf, CStr(<"                            %9lu",lf>), dwTotal
+	invoke printf, CStr(<"------------------------------------------------------------",lf>)
+	invoke printf, CStr(<"                                %9lu">), dwTotalSX
+	mov ecx,dwTotal
+	cmp ecx, dwTotalSX
+	jz @F
+	invoke printf, CStr(<" (%lu kB below 4G)">), ecx
+@@:
+	call _crout
 exit:
 	invoke printf, CStr(<"free handles: %u",lf>),freehdls
 	mov ah,6					;disable A20
@@ -315,14 +332,14 @@ umbinfo  endp
 
 freememinfo2 proc
 	mov ah,8
-	mov bl,0
 	call [xmsadr]
 	cmp bl,0
 	jnz failed
 	invoke printf, CStr(<"v2 free memory largest/total (kB): %u/%u",lf>), ax, dx
 	ret
 failed:
-	invoke printf, CStr(<"XMS call AH=08 failed",lf>)
+	movzx bx,bl
+	invoke printf, CStr(<"XMS call AH=08 returned bl=%X: %u/%u",lf>), bx, ax, dx
 	ret
 freememinfo2 endp
 
@@ -330,25 +347,43 @@ freememinfo2 endp
 
 freememinfo3 proc
 	mov ah,88h
-	mov bl,0
 	call [xmsadr]
 	cmp bl,0
 	jnz failed
 	invoke printf, CStr(<"v3 free memory largest/total (kB): %lu/%lu, highest addr: %lX",lf>), eax, edx, ecx
 	ret
 failed:
-	invoke printf, CStr(<"XMS call AH=88h failed",lf>)
+	movzx bx,bl
+	invoke printf, CStr(<"XMS call AH=88h returned bl=%X: %lu/%lu, highest addr: %lX",lf>), bx, eax, edx, ecx
 	ret
 freememinfo3 endp
+
+;--- display XMS v3.5 (HimemSX) memory info
+
+freememinfoSX proc
+	mov ah,0C8h
+	call [xmsadr]
+	cmp bl,0
+	jnz failed
+	invoke printf, CStr(<"v3.5 free memory > 4GB largest/total (kB): %lu/%lu",lf>), eax, edx
+	ret
+failed:
+	movzx bx,bl
+	invoke printf, CStr(<"XMS call AH=C8h returned bl=%X: %lu/%lu",lf>), bx, eax, edx
+	ret
+freememinfoSX endp
 
 versioninfo proc
 	mov ah,00
 	call [xmsadr]
-	mov [wVersion],ax
+	mov [wVersion],ax	;version is BCD coded, major version in AH, minor in AL
+	mov [wDriver],bx
 	push dx
 	movzx ax,byte ptr [wVersion+1]
 	movzx dx,byte ptr [wVersion+0]
-	invoke printf, CStr(<"XMS version: %u.%u",lf>), ax, dx
+	movzx bx,byte ptr [wDriver+1]
+	movzx cx,byte ptr [wDriver+0]
+	invoke printf, CStr(<"XMS version: %u.%X, driver version: %u.%X",lf>), ax, dx, bx, cx
 	pop dx
 	test dx,1
 	jz nohma
@@ -394,6 +429,9 @@ main1:
 	cmp byte ptr [wVersion+1],3
 	jb @F
 	call freememinfo3
+	cmp byte ptr [wVersion],50h
+	jb @F
+	call freememinfoSX
 @@:
 	call hdlinfo
 	call umbinfo
