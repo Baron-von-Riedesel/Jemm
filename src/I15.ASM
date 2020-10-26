@@ -67,6 +67,11 @@ I15_Simulate87 proc public
 
     cld
 
+    MOVZX edi,WORD PTR [ebp].Client_Reg_Struc.Client_ES   ; make edi = linear address of command
+    MOVZX esi,WORD PTR [ebp].Client_Reg_Struc.Client_ESI
+    SHL edi,4
+    add esi,edi
+
 ;-- MS Emm386 returns with error AH=2 if CX > 8000h!
 
     cmp cx, 8000h
@@ -74,11 +79,6 @@ I15_Simulate87 proc public
     or ecx,ecx
     je @@ok            ; nothing to do
     shl ecx,1
-
-    MOVZX edi,WORD PTR [ebp].Client_Reg_Struc.Client_ES   ; make edi = linear address of command
-    MOVZX esi,WORD PTR [ebp].Client_Reg_Struc.Client_ESI
-    SHL edi,4
-    add esi,edi
 
     mov eax,ecx         ; verify that src and dst descriptors are ok.
     dec eax             ; we don't care about segment access rights
@@ -133,6 +133,40 @@ endif
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, ah
     ret
 @@error02:
+	cmp cx,0F00Fh
+	jnz @F
+	cmp cx,word ptr [ebp].Client_Reg_Struc.Client_EAX+2
+	jnz @F
+	bt [dwFeatures],17	;PSE supported?
+	jnc @F
+	mov cx,word ptr [ebp].Client_Reg_Struc.Client_ECX+2
+	shl ecx,1
+if ?I15DBG
+    @DbgOutS <"Int 15h, ah=87h, bx=">,1
+	@DbgOutW bx,1
+	@DbgOutS <", src=">,1
+    @DbgOutD esi,1
+    @DbgOutS <", dst=">,1
+    @DbgOutD edi,1
+    @DbgOutS <", siz=">,1
+    @DbgOutW cx,1
+    @DbgOutS <10>,1
+endif
+    mov al,[esi].I15MOVE.src.bA1623
+    mov ah,[esi].I15MOVE.src.bA2431 ; get linear source address
+    mov dl,[esi].I15MOVE.dst.bA1623
+    mov dh,[esi].I15MOVE.dst.bA2431 ; get linear destination address
+    shl eax,16
+    shl edx,16
+    mov ax,[esi].I15MOVE.src.wA0015
+    mov dx,[esi].I15MOVE.dst.wA0015
+    mov esi,eax
+    mov edi,edx
+	movzx eax,word ptr [ebp].Client_Reg_Struc.Client_EDX	;src bits 32-47
+	movzx edx,word ptr [ebp].Client_Reg_Struc.Client_EBX	;dst bits 32-47
+	call MoveMemoryPhysPSE
+	jmp @@ok
+@@:
     mov ah,02h
     or [ebp].Client_Reg_Struc.Client_EFlags, 1 ;CF=1
     jmp @@i1587_exit

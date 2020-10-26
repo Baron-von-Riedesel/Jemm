@@ -1075,6 +1075,9 @@ endif
 ife ?INTEGRATED
 	@DbgOutS <"calling InstallXMSHandler",13,10>,?INITRMDBG
 	call InstallXMSHandler
+ if ?MOVEXBDA
+	call move_xbda ;must be called after InstallXMSHandler
+ endif
 endif
 
 	pop eax  ;load FIRSTPAGE value in EAX
@@ -1137,7 +1140,62 @@ if ?INTEGRATED
 	mov [wLow], ax
 endif
 
+if ?INTEGRATED
+ if ?MOVEXBDA
+	call move_xbda
+ endif
+endif
+
+if ?ADDCONV
+
+;--- if conventional memory has been increased (i.e. by I=A000-B7FF),
+;--- increase last DOS MCB
+	mov ah,52h
+	int 21h
+	mov si, es:[bx-2]
+nextitem:
+	mov es, si
+	mov dx, es:[MCB.blsiz]	;get size of MCB
+	inc dx
+	add dx, si		;dx = next block
+	cmp byte ptr es:[MCB.sig], 'M'
+	jnz @F
+	mov si, dx
+	jmp nextitem
+@@:
+	push ds
+	push 0
+	pop ds
+	mov ax,ds:[@MEM_SIZE]
+	pop ds
+	shl ax,6	;kB to paragraphs
+
+;--- v5.80: do jmp even if ax = dx+1
+;--- this might be the case if UMBs are already included?
+;--- if UMBs are already included, the last low-mem DOS MCB
+;--- should NOT be increased!
+	inc dx
+
+	cmp ax,dx
+	jbe noconv_increased	;do nothing if BIOS mem is lower or equal
+	sub ax, si
+	dec ax
+	mov es:[MCB.blsiz],ax
+noconv_increased:
+endif
+
+if ?MOVEHIGH
+	call GetRes
+	jc @F
+	mov [wLow],0		;add the EMMXXXX0 driver to the driver chain
+	call LinkChain		;if we moved high
+@@:
+endif
+	ret
+endinit endp
+
 if ?MOVEXBDA
+move_xbda proc
 	test jemmini.V86Flags,V86F_MOVEXBDA
 	jz nomovexbda
 	push 0
@@ -1197,55 +1255,9 @@ nxtitem:
 	invoke printf,CStr("XBDA moved to first UMB",10)
 @@:
 nomovexbda:
-endif
-
-if ?ADDCONV
-
-;--- if conventional memory has been increased (i.e. by I=A000-B7FF),
-;--- increase last DOS MCB
-	mov ah,52h
-	int 21h
-	mov si, es:[bx-2]
-nextitem:
-	mov es, si
-	mov dx, es:[MCB.blsiz]	;get size of MCB
-	inc dx
-	add dx, si		;dx = next block
-	cmp byte ptr es:[MCB.sig], 'M'
-	jnz @F
-	mov si, dx
-	jmp nextitem
-@@:
-	push ds
-	push 0
-	pop ds
-	mov ax,ds:[@MEM_SIZE]
-	pop ds
-	shl ax,6	;kB to paragraphs
-
-;--- v5.80: do jmp even if ax = dx+1
-;--- this might be the case if UMBs are already included?
-;--- if UMBs are already included, the last low-mem DOS MCB
-;--- should NOT be increased!
-	inc dx
-
-	cmp ax,dx
-	jbe noconv_increased	;do nothing if BIOS mem is lower or equal
-	sub ax, si
-	dec ax
-	mov es:[MCB.blsiz],ax
-noconv_increased:
-endif
-
-if ?MOVEHIGH
-	call GetRes
-	jc @F
-	mov [wLow],0		;add the EMMXXXX0 driver to the driver chain
-	call LinkChain		;if we moved high
-@@:
-endif
 	ret
-endinit endp
+move_xbda endp
+endif
 
 LinkChain proc
 	mov ah,52h

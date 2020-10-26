@@ -118,6 +118,7 @@ endif
 dwMaxPhysMem    dd 0        ; XMS highest address (r/o)
 bpstart         dd 0        ; linear address start of bp table
 PageMapHeap     dd ?SYSLINEAR+?PAGETABSYS+6*4
+Heap4MB         dd ?PAGEDIR+4	;linear address of heap inside page directory
 pSmallHeap      label dword ; used during Init only
 OldInt06        dd 0
 dwHeapSize      label dword ; used during Init only
@@ -1599,6 +1600,110 @@ endif
     align 4
 
 MapPhysPages endp
+
+;--- in: AX:ESI src physical region to map
+;--- in: DX:EDI dst physical region to map
+;--- in: ECX size
+;--- the region is mapped at 400000h+x
+
+MapPhysPagesPSE proc uses ecx
+
+if ?I15DBG
+    @DbgOutS <"MapPhysPagesPSE, ax::esi=">,1
+    @DbgOutW ax,1
+    @DbgOutD esi
+    @DbgOutS <", dx::edi=">,1
+    @DbgOutW dx
+    @DbgOutD edi
+    @DbgOutS <10>, 1
+endif
+	.586p
+	mov ecx,cr4
+	or cl,10h
+	mov cr4,ecx
+	.386p
+	mov ecx, esi
+	cmp ax,0
+	jnz @F
+	cmp ecx,?MEMBORDER
+	jc donesrc
+@@:
+	movzx eax,ax
+	shl eax,13
+	and ecx,0FFC00000h
+	or eax, ecx
+	mov al,81h
+	mov ds:[ebx+0],eax
+	add eax, 1 shl 22
+	jnc @F
+	add eax, 1 shl 13
+@@:
+	mov ds:[ebx+4], eax
+	and esi,3fffffh
+	mov eax,ebx
+	sub eax,?PAGEDIR
+	shl eax,20
+	add esi,eax
+	.586p
+	invlpg ds:[esi]
+	invlpg ds:[esi+400000h]
+	.386p
+	lea ebx,[ebx+2*4]
+donesrc:
+	mov ecx, edi
+	cmp dx,0
+	jnz @F
+	cmp ecx,?MEMBORDER
+	jc donedst
+@@:
+	movzx eax,dx
+	shl eax,13
+	and ecx,0FFC00000h
+	or eax, ecx
+	mov al,83h
+	mov ds:[ebx+0],eax
+	add eax, 1 shl 22
+	jnc @F
+	add eax, 1 shl 13
+@@:
+	mov ds:[ebx+4], eax
+	and edi,3fffffh
+	mov eax,ebx
+	sub eax,?PAGEDIR
+	shl eax,20
+	add edi,eax
+	.586p
+	invlpg ds:[edi]
+	invlpg ds:[edi+400000h]
+	.386p
+	lea ebx,[ebx+2*4]
+donedst:
+if ?I15DBG
+    @DbgOutS <"MapPhysPagesPSE, esi=">,1
+    @DbgOutD esi
+    @DbgOutS <", edi=">,1
+    @DbgOutD edi
+    @DbgOutS <10>, 1
+endif
+	ret
+	align 4
+MapPhysPagesPSE endp
+
+;--- in: AX:ESI src physical region to map
+;--- in: DX:EDI dst physical region to map
+;--- in: ECX size
+;--- the src region is mapped at 400000h+x (x!=0 if jemm reentered)
+;--- the dst region is mapped at C00000h+x
+
+MoveMemoryPhysPSE proc public
+	mov ebx,Heap4MB
+	push ebx
+	call MapPhysPagesPSE
+	mov Heap4MB, ebx
+	call MoveMemory
+	pop Heap4MB
+	ret
+MoveMemoryPhysPSE endp
 
 ;--- copy memory block ESI to EDI, size ECX
 ;--- allow interrupts during move op

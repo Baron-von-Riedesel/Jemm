@@ -29,7 +29,11 @@ endif
 ?V86EXC0D       EQU 1       ; 1=support V86EXC0D option
 ?ADDCONV        EQU 1       ; 1=add A000h to conv memory if I=A000-XXXX
 
-?MOVEXBDA       EQU ?INTEGRATED ; 1=support MOVEXBDA option; move XBDA into UMB
+if ?INTEGRATED
+?MOVEXBDA       EQU 1       ; 1=support MOVEXBDA option; move XBDA into UMB
+else
+?MOVEXBDA       EQU 1
+endif
 
 ?STKSIZE        EQU 200H    ; Size monitor stack for non-reentrant execution
 ?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI

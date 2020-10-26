@@ -21,6 +21,9 @@
    the UMBPCI signature.
  - new option /XBDA for UMBM implemented.
  - MOVEXBDA has got option /A to make it align the new XBDA to a kB boundary.
+ - tool CPUSTAT split into CPUSTAT and CPUID.
+ - emulation of Int 15h, ah=87 (move extended memory) has been enhanced
+   to allow to access physical memory beyond the 4 GB border via PSE-36.
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset
