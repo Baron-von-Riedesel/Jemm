@@ -6,17 +6,19 @@
   3.   Commandline Options
   4.   EMS Implementation Notes
   5.   Emulation of privileged Opcodes
-  6.   Additional Tools
-  6.1  UMBM
-  6.2  JEMFBHLP
-  6.3  CPUSTAT
-  6.4  EMSSTAT
-  6.5  XMSSTAT
-  6.6  MEMSTAT
-  6.7  VCPI
-  6.8  MOVEXBDA
-  7.   Troubleshooting, Hints
-  8.   License
+  6.   Programming Interface
+  7.   Additional Tools
+  7.1  UMBM
+  7.2  JEMFBHLP
+  7.3  CPUSTAT
+  7.4  EMSSTAT
+  7.5  XMSSTAT
+  7.6  MEMSTAT
+  7.7  VCPI
+  7.8  MOVEXBDA
+  7.9  CPUID
+  8.   Troubleshooting, Hints
+  9.   License
 
 
  1. About Jemm
@@ -122,6 +124,10 @@
  MIN=nnn    preallocates <nnn> kB of XMS memory thus making sure this
             memory is truly available for EMS/VCPI. If MIN is higher than
             MAX, MAX will be adjusted accordingly. Default for <nnn> is 0.
+ MOVEXBDA   move XBDA into UMB, thus increasing low DOS memory. This option
+            might require to also set option NOHI, because some BIOSes 
+            expect the XBDA to start at a kB boundary. If the option causes
+            a system "lock", use either MOVEXBDA.EXE or UMBPCI+UMBM instead.
  NOCHECK    disallows access via Int 15h, AH=87h to address regions which
             aren't backuped by RAM.
  NODYN      disables XMS dynamic memory allocation.
@@ -180,10 +186,6 @@
                PORT92      Use port 92h always
  HMAMIN=k      set minimum amount in kB to get the HMA (default=0, max=63).
  MAXEXT=l      limit extended memory controlled by XMM to <l> kB.
- MOVEXBDA      move XBDA into UMB, thus increasing low DOS memory. This option
-               might require to also set option NOHI, because some BIOSes 
-               expect the XBDA to start at a kB boundary. If the option causes
-               a system "lock", use tool MOVEXBDA.EXE instead.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
  NOE820        don't use int 15h, ax=E820h to get amount of extended memory.
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
@@ -224,9 +226,33 @@
  - RDTSC
 
 
- 6. Additional Tools
+ 6. Programming Interface
 
- 6.1. UMBM
+ Jemm adds the following DOS 16-bit API enhancements:
+
+ - Int 15h, AH=87h: since Jemm v5.8, this interrupt has been enhanced to
+   allow accessing memory beyond the 4 GB barrier. The standard API expects
+   size of the block in words to be in CX, and the maximum value is 8000h 
+   (allowing a 64kB block to be moved). The enhanced register setup for this
+   interrupt is as follows:
+   
+   AH: 87h
+   EAX[bits 16-31]: F00Fh
+   CX: F00Fh
+   ECX[bits 16-31]: size of block in words
+   DS:SI: same as the standard ( pointing to a GDT ), descriptors 2 & 3
+      defining address bits 0-31 of source/destination region.
+   DX: address bits 32-47 of the source region.
+   BX: address bits 32-47 of the destination region.
+
+   If the call succeeded, the carry flag is cleared and register AH is 0.
+   If an error occured ( for example, CPU doesn't support PSE), the carry
+   flag is set and AH is != 0.
+
+
+ 7. Additional Tools
+
+ 7.1. UMBM
 
  UMBM is a small tool only useful if Jemm386 is used in conjunction with
  Uwe Sieber's UMBPCI. The purpose is to be able to load the XMM into
@@ -254,7 +280,7 @@
  to CONFIG.SYS. UMBM has been tested to run with MS-DOS 6/7 and FreeDOS.
 
 
- 6.2. JEMFBHLP
+ 7.2. JEMFBHLP
 
  JEMFBHLP is a tiny device driver only needed if both FreeDOS and Jemm's
  FASTBOOT option are used. FreeDOS v1.0 does not provide the information
@@ -265,25 +291,27 @@
  I was told that in FreeDOS v1.1 this problem has been fixed.
 
 
- 6.3. CPUSTAT
+ 7.3. CPUSTAT
 
- CPUSTAT can be used to display the current status of the CPU.
+ CPUSTAT displays some system registers. Most of them aren't accessible in
+ v86-mode. So this program should be seen as a test if the emulation of the
+ privileged opcodes works as expected.
 
 
- 6.4. EMSSTAT
+ 7.4. EMSSTAT
 
  EMSSTAT can be used to display the current status of the installed EMM.
  It works with any EMM, not just Jemm.
 
 
- 6.5. XMSSTAT
+ 7.5. XMSSTAT
 
  XMSSTAT can be used to display the current status of the installed XMM.
  It allows to control current values of JemmEx options X2MAX, MAXEXT and
  XMSHANDLES.
 
 
- 6.6. MEMSTAT
+ 7.6. MEMSTAT
 
  MEMSTAT may be used to display the machine's memory layout, as it is
  returned by the BIOS. The most interesting infos are:
@@ -292,14 +320,14 @@
  - total amount of free memory
 
 
- 6.7. VCPI
+ 7.7. VCPI
 
  VCPI may be used to display the VCPI status of the installed EMM.
  With option -p it will display the page table entries for the conventional
  memory.
 
 
- 6.8. MOVEXBDA
+ 7.8. MOVEXBDA
 
  MOVEXBDA is a device driver supposed to move the Extended BIOS Data
  Area ( XBDA or EBDA ) to low DOS memory. If an XBDA exists, it is usually
@@ -319,7 +347,12 @@
  MOVEXBDA should work with any EMM.
 
 
- 7. Troubleshooting, Hints
+ 7.9. CPUID
+
+ CPUID displays cpu features returned by the CPUID instruction.
+
+
+ 8. Troubleshooting, Hints
 
  þ If Jemm halts or reboots the machine, the following combinations
    of parameters may help to find the reason. Generally, Jemm386 should be
@@ -352,7 +385,7 @@
 
     Qemu, VMware, VirtualPC, Bochs, VirtualBox
 
-   However, it might be necessary to set options NOINVLPG and/or NOVME.
+   However, it might be necessary to set option NOINVLPG.
 
  þ Some DOS programs will not work if EMS is enabled without a page frame.
 
@@ -422,16 +455,18 @@
      a kB boundary, which may cure the lock.
 
 
- 8. License
+ 9. License
 
  - JEMM386/JEMMEX: partly Artistic License (see ARTISTIC.TXT for details)
  - UMBM:     Public Domain
  - JEMFBHLP: Public Domain
+ - CPUID:    Public Domain
  - CPUSTAT:  Public Domain
  - EMSSTAT:  Public Domain
  - XMSSTAT:  Public Domain
  - MEMSTAT:  Public Domain
  - MOVEXBDA: Public Domain
+ - VCPI:     Public Domain
 
  Binaries and source are distributed in separate packages. The binaries'
  package has a 'B' suffix in its name, the package containing the source
