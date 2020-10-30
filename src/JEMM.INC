@@ -70,6 +70,10 @@ XMS_HANDLETABLE ends
 
 if ?INTEGRATED
 
+ifndef ?XMS35
+?XMS35     equ 1    ;std=1, 1=support super-extended memory beyond 4GB
+endif
+
 XMS_MOVE struct
   len           dd  ?       ;  +0 block length in bytes
   src_handle    dw  ?       ;  +4 source handle
@@ -87,8 +91,13 @@ A20_ALWAYSON equ 3
 A20_FAST    equ 4
 A20_PORT92  equ 5
 
+if ?XMS35
+DRIVER_VER      equ 350h+1
+INTERFACE_VER   equ 350h
+else
 DRIVER_VER      equ 300h+29
 INTERFACE_VER   equ 300h
+endif
 
 ;--- XMS error codes
 

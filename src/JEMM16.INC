@@ -63,6 +63,10 @@ externdef bVerbose:byte
 if ?INTEGRATED
 externdef c xms_num_handles:WORD
 externdef c xms_max:dword
+if ?XMS35
+externdef c xms_smax:dword
+externdef c xms_maxhigh:dword
+endif
 externdef c xms_mem_free:dword
 externdef c xms_mem_largest:dword
 externdef c xms_mem_highest:dword

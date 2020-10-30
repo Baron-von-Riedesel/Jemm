@@ -46,6 +46,10 @@
  JemmEx most likely is the better choice because it will need less DOS
  memory than an external XMM + Jemm386.
 
+ Currently there's a third variant supplied, JemmExL. It's a stripped down
+ version of JemmEx, missing the enhanced XMS capabilities added to JemmEx
+ in v5.80. Might be removed in future releases.
+
 
  2. Jemm's Features
 
@@ -186,12 +190,16 @@
                PORT92      Use port 92h always
  HMAMIN=k      set minimum amount in kB to get the HMA (default=0, max=63).
  MAXEXT=l      limit extended memory controlled by XMM to <l> kB.
+ MAXSEXT=l     limit extended memory beyond 4GB barrier to <l> kB.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
- NOE820        don't use int 15h, ax=E820h to get amount of extended memory.
+ NOE820        [removed in v5.80]
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
                need a value of <m>=32767.
  XMSHANDLES=n  set number of XMS handles (default=32, min=8, max=128).
+
+ JemmExL still understands option NOE820, which tells it not to use int 15h,
+ ax=E820h to get amount of extended memory.
 
 
  4. EMS Implementation Notes

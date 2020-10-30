@@ -1603,19 +1603,21 @@ MapPhysPages endp
 
 ;--- in: AX:ESI src physical region to map
 ;--- in: DX:EDI dst physical region to map
-;--- in: ECX size
+;--- max 4 4MB pages are set in pagedir, 2 for src, 2 for dst
 ;--- the region is mapped at 400000h+x
 
 MapPhysPagesPSE proc uses ecx
 
-if ?I15DBG
+if ?I15DBG or ?EMBDBG
     @DbgOutS <"MapPhysPagesPSE, ax::esi=">,1
     @DbgOutW ax,1
-    @DbgOutD esi
+    @DbgOutD esi,1
     @DbgOutS <", dx::edi=">,1
-    @DbgOutW dx
-    @DbgOutD edi
-    @DbgOutS <10>, 1
+    @DbgOutW dx,1
+    @DbgOutD edi,1
+    @DbgOutS <", ecx=">,1
+    @DbgOutD ecx,1
+    @DbgOutS <10>,1
 endif
 	.586p
 	mov ecx,cr4
@@ -1632,7 +1634,7 @@ endif
 	shl eax,13
 	and ecx,0FFC00000h
 	or eax, ecx
-	mov al,81h
+	mov al,81h			;page flags for src: present + 4MB page
 	mov ds:[ebx+0],eax
 	add eax, 1 shl 22
 	jnc @F
@@ -1660,7 +1662,7 @@ donesrc:
 	shl eax,13
 	and ecx,0FFC00000h
 	or eax, ecx
-	mov al,83h
+	mov al,83h			;page flags for dst: preset + writable + 4MB page
 	mov ds:[ebx+0],eax
 	add eax, 1 shl 22
 	jnc @F
@@ -1678,11 +1680,11 @@ donesrc:
 	.386p
 	lea ebx,[ebx+2*4]
 donedst:
-if ?I15DBG
+if ?I15DBG or ?EMBDBG
     @DbgOutS <"MapPhysPagesPSE, esi=">,1
-    @DbgOutD esi
+    @DbgOutD esi,1
     @DbgOutS <", edi=">,1
-    @DbgOutD edi
+    @DbgOutD edi,1
     @DbgOutS <10>, 1
 endif
 	ret
@@ -1696,12 +1698,45 @@ MapPhysPagesPSE endp
 ;--- the dst region is mapped at C00000h+x
 
 MoveMemoryPhysPSE proc public
+if ?I15DBG or ?EMBDBG
+    @DbgOutS <"MoveMemoryPhysPSE, ax::esi=">,1
+    @DbgOutW ax,1
+    @DbgOutD esi,1
+    @DbgOutS <", dx::edi=">,1
+    @DbgOutW dx,1
+    @DbgOutD edi,1
+    @DbgOutS <", ecx=">,1
+    @DbgOutD ecx,1
+    @DbgOutS <10>, 1
+endif
+move_loop:
+	push ecx
+	cmp ecx, 400000h
+	jb @F
+	mov ecx, 400000h
+@@:
+	push eax
+	push edx
+	push esi
+	push edi
 	mov ebx,Heap4MB
 	push ebx
 	call MapPhysPagesPSE
 	mov Heap4MB, ebx
 	call MoveMemory
 	pop Heap4MB
+	pop edi
+	pop esi
+	pop edx
+	pop eax
+	pop ecx
+	mov ebx, 400000h
+	add edi, ebx
+	adc dx,0
+	add esi, ebx
+	adc ax,0
+	sub ecx, ebx
+	ja move_loop
 	ret
 MoveMemoryPhysPSE endp
 

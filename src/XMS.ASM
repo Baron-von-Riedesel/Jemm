@@ -89,11 +89,22 @@ endif
     jz @@ok2
     cmp al,8Eh/2        ; 8E-8F?
     jz @@ok3
+if ?XMS35
+	cmp al,0C8h/2		; C8-C9?
+	jz @@ok4
+	cmp ah,0CCh			; CC?
+	jz @@ok5
+endif
     cmp ah,12h
     jbe umb_handler
     xor ax,ax           ; everything else fails
     mov bl,XMS_NOT_IMPLEMENTED
     jmp @@dispatcher_end
+@@ok5:
+	sub ah,2            ; CC    -> CA
+@@ok4:
+	sub ah,0C8h-14h		; C8-CA -> 14-16
+	jmp @@ok1
 @@ok3:
     sub ah,4            ; 8E-8F -> 8A-8B
 @@ok2:
@@ -129,11 +140,15 @@ xms_table label dword
     dd xms_get_handle_info      ;0E
     dd xms_realloc_emb          ;0F
 
-    dd xms_ext_query_free_mem   ;88
-    dd xms_ext_alloc_emb        ;89
-    dd xms_ext_get_handle_info  ;8E
-    dd xms_ext_realloc_emb      ;8F
-
+    dd xms_ext_query_free_mem   ; 88 10
+    dd xms_ext_alloc_emb        ; 89 11
+    dd xms_ext_get_handle_info  ; 8E 12
+    dd xms_ext_realloc_emb      ; 8F 13
+ if ?XMS35
+    dd xms_sext_query_free_mem  ; C8 14
+    dd xms_sext_alloc_emb       ; C9 15
+    dd xms_sext_lock_emb        ; CC 16
+ endif
 else
   if ?A20XMS
     cmp ah,10h
@@ -270,6 +285,9 @@ xms_alloc_emb proc
 ;-- 32-bit entry for function AH=89h: alloc EMB, size EDX kB
 
 xms_ext_alloc_emb::
+if ?XMS35
+xms_sext_alloc_emb::;<--- entry, ah=15h
+endif
     push edx
     @DbgOutS <"xms_ext_alloc_emb",10>,?EMBDBG
 
@@ -284,6 +302,18 @@ endif
 @@nextitem:
     cmp [edi].XMS_HANDLE.xh_flags,XMSF_FREE
     jnz @@skipitem
+;--- filter blocks 
+if ?XMS35
+	cmp ah,15h	;15h is xms_sext_alloc_emb #
+	jnz @F
+	test word ptr [edi].XMS_HANDLE.xh_baseK+2,0FFC0h
+	jnz sext_mem
+	jmp @@skipitem
+@@:
+	test word ptr [edi].XMS_HANDLE.xh_baseK+2,0FFC0h
+	jnz @@skipitem
+sext_mem:
+endif
     cmp edx,[edi].XMS_HANDLE.xh_sizeK   ; check if it's large enough
     jbe @@found_block
 @@skipitem:
@@ -345,6 +375,55 @@ endif
     ret
 xms_alloc_emb endp
 
+if ?XMS35
+;******************************************************************************
+; query free super-extended memory
+; In:   AH=C8h
+; Out:  EAX=size of largest free super-extended block in kbytes
+;   EDX=total amount of free super-extended block in kbytes
+;   BL=0 if ok
+;   BL=080h -> function not implemented
+;   BL=081h -> VDISK is detected
+;   BL=0a0h -> all super-extended memory is allocated
+
+xms_sext_query_free_mem proc
+
+	xor eax,eax 	; contains largest free block
+	xor edx,edx 	; contains total free block
+
+	push ecx
+	push ebx
+    movzx ecx,[XMS_Handle_Table.xht_numhandles]
+    mov ebx,[XMS_Handle_Table.xht_pArray]
+nextitem:
+	test [ebx].XMS_HANDLE.xh_flags,XMSF_FREE	; check if flagged free or in use
+	je @F
+
+;--- filter blocks below 4 GB
+;--- 00000000-003fffffh
+	test word ptr [ebx].XMS_HANDLE.xh_baseK+2, 0ffc0h
+	jz @F
+
+	mov esi, [ebx].XMS_HANDLE.xh_sizeK
+	add edx, esi
+	cmp esi, eax			  ; check if larger than largest
+	jbe @F
+	mov eax,esi 			  ; larger, update
+@@:
+	add ebx,sizeof XMS_HANDLE
+	loop nextitem
+	pop ebx
+	pop ecx
+	mov bl,0
+	and edx,edx
+	jnz @F
+	mov bl,XMS_ALL_MEM_ALLOCATED
+@@:
+	ret 			; success
+
+xms_sext_query_free_mem endp
+endif
+
 ;--- AH=88h: get free mem info
 ;--- out: eax=max free block, edx=total free, ecx=highest phys addr
 
@@ -361,6 +440,12 @@ xms_ext_query_free_mem proc
 @@nextitem:
     test [ebx].XMS_HANDLE.xh_flags,XMSF_USED or XMSF_FREE   ; check if flagged free or in use
     je  @@skipitem
+
+;--- filter blocks beyond 4 GB
+;--- 00000000-003fffffh
+	test word ptr [ebx].XMS_HANDLE.xh_baseK+2, 0ffc0h
+	jnz @@skipitem
+
     mov esi, [ebx].XMS_HANDLE.xh_sizeK
     cmp  [ebx].XMS_HANDLE.xh_flags,XMSF_FREE
     jnz @@notfree
@@ -529,11 +614,41 @@ xms_lock_emb proc
     pop dx
     inc eax
     ret
-@@lock_error:
+@@lock_error::
     dec [esi].XMS_HANDLE.xh_locks
     mov bl,XMS_LOCK_COUNT_OVERFLOW
     ret
 xms_lock_emb endp
+
+if ?XMS35
+;******************************************************************************
+; locks a (super-extended) MB
+; In:   AH=0cch
+;   DX=XMS handle to be locked
+; Out:  AX=1 if block is locked
+;     EDX:EBX=64-bit linear address of block
+;   AX=0 if not successful
+;     BL=080h -> function not implemented
+;     BL=081h -> VDISK is detected
+;     BL=0a2h -> handle is invalid
+;     BL=0ach -> lock count overflow
+;     BL=0adh -> lock fails
+
+xms_sext_lock_emb proc
+
+	@DbgOutS <"xms_sext_lock_emb enter",10>
+	call xms_check_handle_ex	; check if dx holds "used" handle
+    xor ax,ax                   ; flag error 
+	inc [esi].XMS_HANDLE.xh_locks; increase lock counter
+	jz @@lock_error
+	mov ebx,[esi].XMS_HANDLE.xh_baseK
+	mov edx,ebx
+	shl ebx,10					; calculate linear address 0-31
+	shr edx,22					; calculate linear address 32-41
+	inc eax
+	ret
+xms_sext_lock_emb endp
+endif
 
 ;--- AH=0D, unlock EMB in DX
 
@@ -674,6 +789,11 @@ endif
 @@ext_growing:
 ; growing, try to allocate a new block
 
+	mov ah,11h				;11h is xms_ext_alloc_emb #
+	test word ptr [esi].XMS_HANDLE.xh_baseK+2, 0FFC0h
+	jz @F
+	mov ah,15h				;15h is for super-extended memory
+@@:
     call xms_ext_alloc_emb  ;get a new handle in DX, size EDX
     and ax,ax
     jz @@ext_failed
@@ -792,7 +912,11 @@ xms_realloc_emb proc
 
 xms_realloc_emb endp
 
-;--- extended memory move
+; calculate the move src/dst address
+; In: SI - handle (0 if EDX should be interpreted as seg:ofs value)
+;   EDX - offset
+;   ECX - length
+; Out: SI:EAX=linear address 00-39
 
 xms_get_move_addr proc
     or si,si           ; translate address in EDX?
@@ -817,19 +941,24 @@ xms_get_move_addr proc
 @@is_emb:               ; it's a handle:offset pair
     call xms_check_handle   ;check if SI holds a "used" handle
 
-    mov eax,ecx         ; contains length
-    add eax,edx         ; assert length + offset < size    
-    jc @@wrong_size    ; probably negative length
-    add eax,1024-1      ;
-    jc @@wrong_size    ; probably negative length
-
-    shr eax,10          ; convert to kB units
+	push ebx
+	xor ebx,ebx
+	mov eax,ecx 		; contains length
+	add eax,edx 		; assert length + offset < size    
+	adc ebx,ebx
+	add eax,1024-1		; round up to kB
+	adc ebx,0
+	shrd eax,ebx,10		; convert to kB units
+	pop ebx
     cmp eax,[esi].XMS_HANDLE.xh_sizeK    ; compare with max offset
     ja @@wrong_size
 
     mov eax,[esi].XMS_HANDLE.xh_baseK   ; get block base address
-    shl eax,10          ; convert from kb to linear
-    add eax,edx         ; add offset into block
+	mov esi,eax 		; store in source index
+	shl eax,10			; convert from kb to linear
+	shr esi,22
+	add eax,edx 		; add offset into block
+	adc esi,0
     ret
 
 @@wrong_size:
@@ -849,7 +978,7 @@ xms_move_emb proc
     shl edi, 4
     movzx esi,si
     add esi,edi
-xms_move_emb_ex::               ; <--- entry for internal use
+xms_move_emb_ex::           ; <--- entry for internal use
     xor ax,ax               ; default to error
     push ecx
     push edx
@@ -878,66 +1007,73 @@ endif
     mov edx,[esi].XMS_MOVE.dest_offset
     mov si,[esi].XMS_MOVE.dest_handle
     call xms_get_move_addr          ; get move address
+	mov edx,esi ;save lines 32-39 in DX, since BL must be preserved
     pop esi
     jc @@copy_dest_is_wrong
+	mov ebx,edx
     mov edi,eax                     ; store in destination index
 
     mov edx,[esi].XMS_MOVE.src_offset
     mov si,[esi].XMS_MOVE.src_handle
     call xms_get_move_addr          ; get move address
     jc @@copy_source_is_wrong
-    mov esi,eax                     ; store in source index
+	xchg eax,esi
+	mov bh,al
 
+;**************************************************
+; setup finished with
+;   BH.ESI = source A00-A39
+;   BL.EDI = destination A00-A39
+;   ECX = number of words to move
+;**************************************************
 if ?EMBDBG
     @DbgOutS <"xms_move_emb: siz=">,1
     @DbgOutD ecx,1
     @DbgOutS <" src=">,1
+    @DbgOutB bh,1
     @DbgOutD esi,1
     @DbgOutS <" dst=">,1
+    @DbgOutB bl,1
     @DbgOutD edi,1
     @DbgOutS <10>,1
 endif
 
-;**************************************************
-; setup finished with
-;   ESI = source
-;   EDI = destination
-;   ECX = number of words to move
-;
-; now we must check for potential overlap
-;**************************************************
-
     or ecx,ecx                 ; nothing to do ??
     jz @@xms_exit_copy
 
-    cmp esi,edi                 ; nothing to do ??
-    jz @@xms_exit_copy
+; overlap test. start of destination block (BL.EDI)
+; must either be <= start of source block (BH.ESI) 
+; or  >= start of source block + block length (BH.ESI+ECX)
 
-
-;
-; if source is greater the destination, it's ok
-;     ( at least if the BIOS, too, does it with CLD)
-
-    ja @@move_ok_to_start
-
-;
-; no, it's less
-; if (source + length > destination)
-;    return ERROR_OVERLAP
-
-    lea edx, [esi+ecx]
-    cmp edx, edi
-    ja @@move_invalid_overlap
-
-;
-; we might be able to handle that, but are not yet
-; so better don't copy
-;   jmp use_int15               ; always BIOS
-
+; 1. check if BL.EDI <= BH.ESI
+	cmp bl,bh
+	jb @@move_ok_to_start
+	ja @F
+	cmp edi,esi
+	jbe @@move_ok_to_start
+@@:
+; calculate source + block length: DL.EAX = BH.ESI + ECX
+	mov dl,bh
+	mov eax, esi
+	add eax, ecx
+	adc dl,0
+; 2. check if BL.EDI >= DL.EAX
+	cmp bl,dl
+	ja @@move_ok_to_start
+	jb @@move_invalid_overlap
+	cmp edi,eax
+	jb @@move_invalid_overlap
 
 @@move_ok_to_start:
 
-    call MoveMemoryPhys ;copy ecx bytes from [esi] to [edi]
+	and bx,bx
+	jnz @F
+    call MoveMemoryPhys
+	jmp @@xms_exit_copy
+@@:
+	movzx ax,bh
+	movzx dx,bl
+	call MoveMemoryPhysPSE ;copy ecx bytes from [ax:esi] to [dx:edi]
 @@xms_exit_copy:
     pop ebx
     pop eax

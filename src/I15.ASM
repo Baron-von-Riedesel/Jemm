@@ -16,6 +16,8 @@
 
 ;--- assembly time constants
 
+?SUPEREXT equ 1	;support enhanced int 15h, ah=87h for memory > 4GB
+
 ;--- segment definitions
 
 ;--- publics/externals
@@ -133,25 +135,15 @@ endif
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, ah
     ret
 @@error02:
-	cmp cx,0F00Fh
-	jnz @F
-	cmp cx,word ptr [ebp].Client_Reg_Struc.Client_EAX+2
-	jnz @F
-	bt [dwFeatures],17	;PSE supported?
-	jnc @F
-	mov cx,word ptr [ebp].Client_Reg_Struc.Client_ECX+2
-	shl ecx,1
-if ?I15DBG
-    @DbgOutS <"Int 15h, ah=87h, bx=">,1
-	@DbgOutW bx,1
-	@DbgOutS <", src=">,1
-    @DbgOutD esi,1
-    @DbgOutS <", dst=">,1
-    @DbgOutD edi,1
-    @DbgOutS <", siz=">,1
-    @DbgOutW cx,1
-    @DbgOutS <10>,1
-endif
+if ?SUPEREXT
+    cmp cx,0F00Fh
+    jnz @F
+    cmp cx,word ptr [ebp].Client_Reg_Struc.Client_EAX+2
+    jnz @F
+    bt [dwFeatures],17  ;PSE supported?
+    jnc @F
+    mov cx,word ptr [ebp].Client_Reg_Struc.Client_ECX+2
+    shl ecx,1
     mov al,[esi].I15MOVE.src.bA1623
     mov ah,[esi].I15MOVE.src.bA2431 ; get linear source address
     mov dl,[esi].I15MOVE.dst.bA1623
@@ -162,11 +154,23 @@ endif
     mov dx,[esi].I15MOVE.dst.wA0015
     mov esi,eax
     mov edi,edx
-	movzx eax,word ptr [ebp].Client_Reg_Struc.Client_EDX	;src bits 32-47
-	movzx edx,word ptr [ebp].Client_Reg_Struc.Client_EBX	;dst bits 32-47
-	call MoveMemoryPhysPSE
-	jmp @@ok
+    mov eax,[ebp].Client_Reg_Struc.Client_EDX   ;src bits 32-47
+    mov edx,[ebp].Client_Reg_Struc.Client_EBX   ;dst bits 32-47
+if ?I15DBG
+    @DbgOutS <"Int 15h, ah=87h, src=">,1
+    @DbgOutW ax,1
+    @DbgOutD esi,1
+    @DbgOutS <", dst=">,1
+    @DbgOutW dx,1
+    @DbgOutD edi,1
+    @DbgOutS <", siz=">,1
+    @DbgOutW cx,1
+    @DbgOutS <10>,1
+endif
+    call MoveMemoryPhysPSE
+    jmp @@ok
 @@:
+endif
     mov ah,02h
     or [ebp].Client_Reg_Struc.Client_EFlags, 1 ;CF=1
     jmp @@i1587_exit
@@ -180,7 +184,6 @@ endif
     align 4
 
 I15_Simulate87 endp
-
 
 .text$03 ends
 

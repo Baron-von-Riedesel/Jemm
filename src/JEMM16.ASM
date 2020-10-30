@@ -1392,6 +1392,17 @@ I15SetHandle proc c public uses ds bx
 	sub ecx, 64
 	jc exit
 @@:
+if ?XMS35
+	cmp edx, 400000h    ;beyond 4GB?
+	jc @F
+	sub xms_smax, ecx	;/SUPERMAX option set?
+	jnc beyond4g
+	add ecx, xms_smax	;limit to maximum
+	mov xms_smax,0
+	jecxz exit
+	jmp beyond4g
+@@:
+endif
 	sub xms_max, ecx	;MAXEXT option set?
 	jnc @F
 	add ecx, xms_max	;limit to maximum
@@ -1411,6 +1422,7 @@ I15SetHandle proc c public uses ds bx
 	jb @F
 	mov xms_mem_highest, eax
 @@:
+beyond4g:
 	push cs
 	pop ds
 	mov bx, offset xms_handle_array

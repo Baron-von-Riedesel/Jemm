@@ -25,6 +25,8 @@ NULL equ 0
 	include jemm16.inc
 	include debug.inc
 
+CPUID1_PSE36 equ 17
+
 NAMEGEN equ <"Jemm">
 
 MAX_EMS_PAGES_ALLOWED equ 800h
@@ -65,8 +67,16 @@ bLoad	DB 0
 endif
 if ?INTEGRATED
 xms_max	DD 4095*1024	;MAXEXT= value
+if ?XMS35
+xms_smax	DD 1023*4096*1024	;MAXSEXT= value
+xms_maxhigh	dd -1		; mask for upper memory address limit   
+xms_num_handles	DW 48	;XMSHANDLES= value
+else
 xms_num_handles	DW 32	;XMSHANDLES= value
+endif
+ ife ?XMS35
 bNoE820	DB 0
+ endif
 bNoE801	DB 0
 endif
 bI15RsvdChk db 0
@@ -169,12 +179,17 @@ endif
     db " [MAX=]n       limit for VCPI (and EMS if < 32M) memory in kB (default 120 MB)",LF
 if ?INTEGRATED
     db " MAXEXT=n      limit extended memory usage to <n> kB",LF
+ if ?XMS35
+    db " MAXSEXT=n     limit extended memory usage beyond 4 GB to <n> kB",LF
+ endif
 endif
     db " MIN=n         reserve up to <n> kB for EMS/VCPI memory on init (default=0)",LF
     db " NOCHECK       disallow access to address space without RAM (MMIO)",LF
 if ?INTEGRATED
     db " NOE801        don't use Int 15h, E801h to get amount of ext. memory",LF
+ ife ?XMS35
     db " NOE820        don't use Int 15h, E820h to get amount of ext. memory",LF
+ endif
 endif
     db " NOEMS         disable EMS handling",LF
     db " NODYN         no dynamic XMS memory allocation (use MIN= to set fix amount)",LF
@@ -1172,8 +1187,10 @@ I15GetMemoryStatus proc stdcall uses si di
 local maxvalue:DWORD
 local mmap:E820MAP
 
+ife ?XMS35
 	cmp [bNoE820],0    ; NOE820 option set?
 	jne @@e801_check
+endif
 
 	@DbgOutS <"I15GetMemoryStatus: get extended memory with int 15, E820",13,10>,?INITRMDBG
 
@@ -1210,21 +1227,44 @@ e820_nextitem:
 
 	cmp mmap.type_,1	; memory available to OS?
 	jne e820_itemdone
-
-	cmp mmap.basehigh, 0;ignore memory beyond 4 GB for now
-	jnz e820_itemdone
-
 	mov edx, mmap.baselow
+	mov eax, mmap.basehigh
+	cmp eax, 0			; memory beyond 4 GB?
+ife ?XMS35
+	jnz e820_itemdone	; ignore item
+else
+	jnz @F
+endif
 	cmp edx, 100000h ; has to live in extended memory
 	jb e820_itemdone
-
+@@:
+if ?XMS35
+	test eax, xms_maxhigh	;block start beyond 4GB/1TB?
+	jnz e820_itemdone
+endif
 	@DbgOutS <"I15GetMemoryStatus: available memory found at ">,?INITRMDBG
+	@DbgOutD eax,?INITRMDBG
 	@DbgOutD edx,?INITRMDBG
 	@DbgOutS <13,10>,?INITRMDBG
-
 	mov ecx, mmap.lenlow
+if ?XMS35
+	shrd edx, eax, 10
+	mov eax, mmap.lenhigh
+	shrd ecx, eax, 10
+	mov eax, edx
+	add eax, ecx		;block crossing 4TB (XMS v3 limit)?
+	jc @F
+	dec eax
+	test eax, 0C0000000h;block crossing 1TB barrier (PSE-36 limit)?
+	jz e820_itemok
+@@:
+	mov ecx, 0C0000000h	;truncate the block to ensure it fits in the first TB 
+	sub ecx, edx
+else
 	shr ecx, 10
 	shr edx, 10
+endif
+e820_itemok:
 	call I15SetHandle	;set xms block, sizeK in ECX, baseK in EDX
 	inc si
 	cmp si,?PREDEFXMSHDLS	;reached max capacity of the static handle array?
@@ -2509,6 +2549,35 @@ disp_xbda_size proc uses es bx
 disp_xbda_size endp
 endif
 
+if ?INTEGRATED
+if ?XMS35
+hascpuid proc
+	push di
+	mov di,sp
+	and sp,0fffch	;make sure we don't get an exc 11 (if AM set in CR0)
+	pushfd						; save EFlags
+	cli
+	pushd 240000h				; set AC bit in eflags, reset IF
+	popfd						; pop extended flags
+	pushfd						; push extended flags
+	pop ax
+	pop ax						; get HiWord(EFlags) into AX
+	popfd						; restore EFlags
+	mov sp,di
+	pop di
+	test al,04	;AC bit set?
+	je @F
+	test al,20h	;CPUID bit set?
+	jz @F
+	clc
+	ret
+@@:
+	stc
+	ret
+hascpuid endp
+endif
+endif
+
 mainex PROC c public uses di si mode:word, cmdline:ptr BYTE
 
 local rangestart:word
@@ -2655,15 +2724,34 @@ if ?INTEGRATED
 		invoke GetValue, ax, 10, 1
 		mov xms_max, eax
 	.endif
-
+ if ?XMS35
+    call hascpuid
+	jc @F
+	xor eax,eax
+	inc eax
+	.586
+	cpuid
+	.386
+	bt edx,CPUID1_PSE36
+	jnc @F
+	mov byte ptr xms_maxhigh,0; allow memory up to 000000ff.ffffffffh   
+@@:
+	invoke FindCommand, CStr("MAXSEXT=")
+	.if ax
+		invoke GetValue, ax, 10, 1
+		mov xms_smax, eax
+	.endif
+ endif
 	invoke FindCommand, CStr("NOE801")
 	.if ax
 		mov bNoE801,1
 	.endif
+ ife ?XMS35
 	invoke FindCommand, CStr("NOE820")
 	.if ax
 		mov bNoE820,1
 	.endif
+ endif
 	invoke FindCommand, CStr("XMSHANDLES=")
 	.if ax
 		invoke GetValue,ax, 10, 0

@@ -11,7 +11,7 @@
    used by DOS.
  - new option MOVEXBDA for Jemm implemented.
  - JemmEx will recognize memory blocks activated by UMBPCI and include them
-   into its UMB pool.
+   into its UMB pool. Makes option S=start-end virtually obsolete.
  - a warning is displayed if the extended memory block where Jemm386 will
    reside is beyond the 16MB limit.
  - strategy to realloc an EMB to increase its size has been changed and is
@@ -24,6 +24,8 @@
  - tool CPUSTAT split into CPUSTAT and CPUID.
  - emulation of Int 15h, ah=87 (move extended memory) has been enhanced
    to allow to access physical memory beyond the 4 GB border via PSE-36.
+ - JemmEx XMM now able to manage extended memory beyond the 4 GB barrier.
+   Added JemmExL.exe, a version without this extension. 
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset
