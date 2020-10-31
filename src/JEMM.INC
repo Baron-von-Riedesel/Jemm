@@ -43,6 +43,16 @@ endif
 ?BPOPC          equ 0F4h            ; opcode used for breakpoints (HLT)
 ;?BPOPC         equ 063h            ; this should also work (ARPL)
 
+SMAP equ 534d4150h
+
+E820MAP struct
+baselow  dd ?
+basehigh dd ?
+lenlow   dd ?
+lenhigh  dd ?
+type_    dd ?
+E820MAP ends
+
 ;--- XMS
 
 XMS_HANDLE struct

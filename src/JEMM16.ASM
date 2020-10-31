@@ -209,12 +209,17 @@ NEW15 PROC FAR
 if ?INTEGRATED
 	CMP AH,88H		; ext memory size
 	JZ getextmem
+ if ?XMS35
+	CMP AX,0E820h	; memmap
+	JZ memmap
+ endif
 endif
 	db 0EAh
 OLDINT15 dd 0
 if ?INTEGRATED
 getextmem:
 	xor ax,ax			; no memory available
+exit_iret:
   ife ?HOOK13
 	push bp
 	mov bp,sp
@@ -224,6 +229,21 @@ getextmem:
   else
 	jmp iret_with_new_CY
   endif
+ if ?XMS35
+memmap:
+	pushf
+	call cs:[OLDINT15]
+	jc iret_with_new_CY
+	cmp eax,SMAP
+	jnz exit_iret
+	cmp es:[di].E820MAP.basehigh,0
+	jz exit_iret
+	cmp es:[di].E820MAP.type_,1		;"available" memory?
+	clc
+	jnz exit_iret
+	mov byte ptr es:[di].E820MAP.type_,2		;change to "reserved"
+	jmp exit_iret
+ endif
 endif
 NEW15 ENDP
 

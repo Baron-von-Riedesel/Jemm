@@ -1073,7 +1073,7 @@ endif
 @@:
 	movzx ax,bh
 	movzx dx,bl
-	call MoveMemoryPhysPSE ;copy ecx bytes from [ax:esi] to [dx:edi]
+	call MoveMemoryPhysEx ;copy ecx bytes from [ax:esi] to [dx:edi]
 @@xms_exit_copy:
     pop ebx
     pop eax

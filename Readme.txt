@@ -6,19 +6,18 @@
   3.   Commandline Options
   4.   EMS Implementation Notes
   5.   Emulation of privileged Opcodes
-  6.   Programming Interface
-  7.   Additional Tools
-  7.1  UMBM
-  7.2  JEMFBHLP
-  7.3  CPUSTAT
-  7.4  EMSSTAT
-  7.5  XMSSTAT
-  7.6  MEMSTAT
-  7.7  VCPI
-  7.8  MOVEXBDA
-  7.9  CPUID
-  8.   Troubleshooting, Hints
-  9.   License
+  6.   Additional Tools
+  6.1  UMBM
+  6.2  JEMFBHLP
+  6.3  CPUSTAT
+  6.4  EMSSTAT
+  6.5  XMSSTAT
+  6.6  MEMSTAT
+  6.7  VCPI
+  6.8  MOVEXBDA
+  6.9  CPUID
+  7.   Troubleshooting, Hints
+  8.   License
 
 
  1. About Jemm
@@ -81,6 +80,8 @@
  - Exceptions in protected-mode are detected and displayed.
  - a (rudimentary) API is supplied which allows to extend Jemm. [ JLoad
    uses this API to add support for 32bit protected-mode extensions (JLMs). ]
+ - JemmEx supports XMS v3.5, allowing access to extended memory beyond the
+   4 GB barrier. See XMS35.txt for technical details.
 
 
  3. Commandline Options
@@ -234,33 +235,9 @@
  - RDTSC
 
 
- 6. Programming Interface
+ 6. Additional Tools
 
- Jemm adds the following DOS 16-bit API enhancements:
-
- - Int 15h, AH=87h: since Jemm v5.8, this interrupt has been enhanced to
-   allow accessing memory beyond the 4 GB barrier. The standard API expects
-   size of the block in words to be in CX, and the maximum value is 8000h 
-   (allowing a 64kB block to be moved). The enhanced register setup for this
-   interrupt is as follows:
-   
-   AH: 87h
-   EAX[bits 16-31]: F00Fh
-   CX: F00Fh
-   ECX[bits 16-31]: size of block in words
-   DS:SI: same as the standard ( pointing to a GDT ), descriptors 2 & 3
-      defining address bits 0-31 of source/destination region.
-   DX: address bits 32-47 of the source region.
-   BX: address bits 32-47 of the destination region.
-
-   If the call succeeded, the carry flag is cleared and register AH is 0.
-   If an error occured ( for example, CPU doesn't support PSE), the carry
-   flag is set and AH is != 0.
-
-
- 7. Additional Tools
-
- 7.1. UMBM
+ 6.1. UMBM
 
  UMBM is a small tool only useful if Jemm386 is used in conjunction with
  Uwe Sieber's UMBPCI. The purpose is to be able to load the XMM into
@@ -288,7 +265,7 @@
  to CONFIG.SYS. UMBM has been tested to run with MS-DOS 6/7 and FreeDOS.
 
 
- 7.2. JEMFBHLP
+ 6.2. JEMFBHLP
 
  JEMFBHLP is a tiny device driver only needed if both FreeDOS and Jemm's
  FASTBOOT option are used. FreeDOS v1.0 does not provide the information
@@ -299,27 +276,27 @@
  I was told that in FreeDOS v1.1 this problem has been fixed.
 
 
- 7.3. CPUSTAT
+ 6.3. CPUSTAT
 
  CPUSTAT displays some system registers. Most of them aren't accessible in
  v86-mode. So this program should be seen as a test if the emulation of the
  privileged opcodes works as expected.
 
 
- 7.4. EMSSTAT
+ 6.4. EMSSTAT
 
  EMSSTAT can be used to display the current status of the installed EMM.
  It works with any EMM, not just Jemm.
 
 
- 7.5. XMSSTAT
+ 6.5. XMSSTAT
 
  XMSSTAT can be used to display the current status of the installed XMM.
  It allows to control current values of JemmEx options X2MAX, MAXEXT and
  XMSHANDLES.
 
 
- 7.6. MEMSTAT
+ 6.6. MEMSTAT
 
  MEMSTAT may be used to display the machine's memory layout, as it is
  returned by the BIOS. The most interesting infos are:
@@ -328,14 +305,14 @@
  - total amount of free memory
 
 
- 7.7. VCPI
+ 6.7. VCPI
 
  VCPI may be used to display the VCPI status of the installed EMM.
  With option -p it will display the page table entries for the conventional
  memory.
 
 
- 7.8. MOVEXBDA
+ 6.8. MOVEXBDA
 
  MOVEXBDA is a device driver supposed to move the Extended BIOS Data
  Area ( XBDA or EBDA ) to low DOS memory. If an XBDA exists, it is usually
@@ -355,12 +332,12 @@
  MOVEXBDA should work with any EMM.
 
 
- 7.9. CPUID
+ 6.9. CPUID
 
  CPUID displays cpu features returned by the CPUID instruction.
 
 
- 8. Troubleshooting, Hints
+ 7. Troubleshooting, Hints
 
  þ If Jemm halts or reboots the machine, the following combinations
    of parameters may help to find the reason. Generally, Jemm386 should be
@@ -463,7 +440,7 @@
      a kB boundary, which may cure the lock.
 
 
- 9. License
+ 8. License
 
  - JEMM386/JEMMEX: partly Artistic License (see ARTISTIC.TXT for details)
  - UMBM:     Public Domain

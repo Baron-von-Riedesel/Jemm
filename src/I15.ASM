@@ -167,7 +167,7 @@ if ?I15DBG
     @DbgOutW cx,1
     @DbgOutS <10>,1
 endif
-    call MoveMemoryPhysPSE
+    call MoveMemoryPhysEx
     jmp @@ok
 @@:
 endif

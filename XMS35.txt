@@ -1,0 +1,47 @@
+
+  XMS v3.5 API
+  
+  XMS v3.5 has been created to allow accessing extended memory beyond the 4 GB
+  barrier. 
+
+  To achieve this, the XMS v3.0 API has been extended:
+  
+  AH=0C8h: query free super-extended memory. Returns in EAX largest free block
+           in kB, in EDX the total amount (in kB) of free super-extended memory.
+           AX=0 indicates an error.
+  
+  AH=0C9h: allocate block of super-extended memory. Expects in EDX the
+           requested amount of memory in kB. Returns AX=0 if an error occured,
+           else AX is 1 and the handle of the block is in DX.
+
+  AH=0CCh: lock a (super-extended) memory block. Expects handle in DX. Returns
+           64-bit physical address of locked block in EDX:EBX. Returns AX=0
+           if an error occured.
+
+  XMS function 00 (Get Version) will return ax=0350h, that is version 3.50.
+
+  Since the memory beyond the 4 GB limit must be managed exclusively,
+  Int 15h, ax=E820h should be intercepted in a way that all memory blocks with
+  addresses >= 100000000h are changed from "available" to "reserved".
+
+  In V86 mode, the XMM's 'move extended memory' function (AH=0Bh) will need the
+  help of the Expanded Memory Manager (EMM), since privileged code has to be
+  executed. The only EMMs that currently support accessing memory beyond 4 GB 
+  are Jemm386/JemmEx v5.80+. Their Int 15h API has been exhanced as well.
+  
+  Register setup for Int 15h, AH=87h: 
+   
+  - AH: 87h
+  - EAX[bits 16-31]: F00Fh
+  - CX: F00Fh
+  - ECX[bits 16-31]: size of block in words
+  - DS:SI: same as the standard ( pointing to a GDT ), descriptors 2 & 3
+           defining address bits 0-31 of source/destination region.
+  - DX: address bits 32-47 of the source region.
+  - BX: address bits 32-47 of the destination region.
+
+   If the call succeeded, the carry flag is cleared and register AH is 0.
+   If an error occured ( for example, CPU doesn't support PSE ), the carry
+   flag is set and AH is != 0.
+
+  Japheth

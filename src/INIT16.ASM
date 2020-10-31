@@ -1111,16 +1111,6 @@ XMSAllocMemory ENDP
 
 endif
 
-E820MAP struct
-baselow  dd ?
-basehigh dd ?
-lenlow   dd ?
-lenhigh  dd ?
-type_    dd ?
-E820MAP ends
-
-SMAP equ 534d4150h
-
 I15CheckRsvdRegion proc uses si di
 local mmap:E820MAP
 	@DbgOutS <"I15CheckRsvdRegion: enter",13,10>,?INITRMDBG

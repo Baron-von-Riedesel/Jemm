@@ -1697,9 +1697,9 @@ MapPhysPagesPSE endp
 ;--- the src region is mapped at 400000h+x (x!=0 if jemm reentered)
 ;--- the dst region is mapped at C00000h+x
 
-MoveMemoryPhysPSE proc public
+MoveMemoryPhysEx proc public
 if ?I15DBG or ?EMBDBG
-    @DbgOutS <"MoveMemoryPhysPSE, ax::esi=">,1
+    @DbgOutS <"MoveMemoryPhysEx, ax::esi=">,1
     @DbgOutW ax,1
     @DbgOutD esi,1
     @DbgOutS <", dx::edi=">,1
@@ -1738,7 +1738,7 @@ move_loop:
 	sub ecx, ebx
 	ja move_loop
 	ret
-MoveMemoryPhysPSE endp
+MoveMemoryPhysEx endp
 
 ;--- copy memory block ESI to EDI, size ECX
 ;--- allow interrupts during move op

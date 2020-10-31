@@ -86,7 +86,7 @@ externdef Resume_Exec:near
 externdef Yield:near
 externdef Simulate_IO:near
 externdef MoveMemoryPhys:near
-externdef MoveMemoryPhysPSE:near
+externdef MoveMemoryPhysEx:near
 externdef MapPhysPages:near
 externdef MapPhysPagesEx:near
 externdef MoveMemory:near

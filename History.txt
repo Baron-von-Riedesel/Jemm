@@ -24,7 +24,7 @@
  - tool CPUSTAT split into CPUSTAT and CPUID.
  - emulation of Int 15h, ah=87 (move extended memory) has been enhanced
    to allow to access physical memory beyond the 4 GB border via PSE-36.
- - JemmEx XMM now able to manage extended memory beyond the 4 GB barrier.
+ - JemmEx XMM now implements XMS v3.5 (extended memory > 4 GB).
    Added JemmExL.exe, a version without this extension. 
 
  02/02/2020: v5.79
