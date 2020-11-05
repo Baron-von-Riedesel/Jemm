@@ -197,7 +197,7 @@
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
                need a value of <m>=32767.
- XMSHANDLES=n  set number of XMS handles (default=32, min=8, max=128).
+ XMSHANDLES=n  set number of XMS handles (default=48, min=8, max=128).
 
  JemmExL still understands option NOE820, which tells it not to use int 15h,
  ax=E820h to get amount of extended memory.
@@ -374,6 +374,13 @@
 
  þ Some DOS programs will not work if EMS is enabled without a page frame.
 
+ þ Some DOS programs will crash if too much VCPI memory is offered. Jemm's
+   default is 128MB, it can be decreased with option MAX=xxx. Popular 
+   programs that may cause troubles are programs that use Borland's 16-bit
+   DPMI host DPMI16BI.OVL (usually coupled with RTM.EXE). Setting Jemm  option
+   MAX=32M should help. As for DPMI16BI.OVL, is may also help to enter
+   "set DPMIMEM=MAXMEM 16383" at the cmdline.
+
  þ The JEMM ;-) DOS Extender (used for "Strike Commander" and "Privateer")
    requires the NOVME option to be set. This requirement is a strong sign
    that this extender switches to V86 mode on its own, which is a bad idea
@@ -435,6 +442,8 @@
      won't work anymore and may also cause a crash. Not unusual is that the 
      current text font becomes corrupted ( text font bitmaps must be copied 
      from ROM to VGA memory when a video text mode is set ).
+   - DOS conventional memory cannot be increased anymore once UMB have been 
+     added to the DOS memory pool. So you cannot use tool UMBM here!
    - if MOVEXBDA.EXE causes a system lock during boot, add the /A option to 
      the line in CONFIG.SYS that loads the driver. This aligns the XBDA to 
      a kB boundary, which may cure the lock.

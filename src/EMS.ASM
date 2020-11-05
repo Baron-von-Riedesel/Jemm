@@ -275,22 +275,31 @@ if ?VCPI
     cmp [bNoVCPI],0     ; check if VCPI turned off
     jne @@vcpi_inv_call ; yes, return invalid code, flags VCPI not present for 0de00h
   if ?VCPIDBG
+    bt vcpidbgfilt,cx
+    jnc nodbgout
     @DbgOutS <"VCPI rm, in: ax=">,1
     @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EAX>,1
+    @DbgOutS <" cx=">,1
+    @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_ECX>,1
     @DbgOutS <" edx=">,1
     @DbgOutD [ebp].Client_Reg_Struc.Client_EDX,1
-  endif
     call [VCPI_Call_Table+ECX*4]
-  if ?VCPIDBG
     @DbgOutS <", out: ax=">,1
     @DbgOutW ax,1
     @DbgOutS <" edx=">,1
     @DbgOutD edx,1
     @DbgOutS <10>,1
+    jmp vcpi_done
+    align 4
+;--- VCPI functions that are to be logged
+;------------- FEDCBA9876543210
+vcpidbgfilt dw 0000111111111111b
+  nodbgout:
   endif
+    call [VCPI_Call_Table+ECX*4]
+vcpi_done:
     mov [ebp].Client_Reg_Struc.Client_EDX, edx
-    mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,ah
-    jmp @@byeemsx
+    jmp @@byeems
     align 4
 @@not_vcpi_api:
 endif
@@ -322,7 +331,6 @@ endif
     mov word ptr [ebp].Client_Reg_Struc.Client_EDX,dx
 @@byeems:
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,ah
-@@byeemsx:
     @emmpopreg
     IRETD
 

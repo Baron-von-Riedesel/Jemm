@@ -214,7 +214,7 @@ hdlout proc
 @@:
 	mov cl, es:[bx].XMSH.bLocks
 	mov ch, 00
-	invoke printf, CStr("   %2x%08lx-%2x%08lx %8lu %5u "), si, eax, di, edx, es:[bx].XMSH.dwSize, cx
+	invoke printf, CStr("   %2x%08lx-%2x%08lx %8lu %4u  "), si, eax, di, edx, es:[bx].XMSH.dwSize, cx
 	pop si
 	mov al, es:[bx].XMSH.bFlags
 	call getflags
@@ -237,7 +237,7 @@ hdlarray proc stdcall pArray:DWORD
 	les bx,es:[bx].XMSHT.dwArray
 	jcxz exit
 	call _crout
-	invoke printf, CStr(<" no handle region                size(kB) locks  flags",lf>)
+	invoke printf, CStr(<" no handle   region              size(kB) locks  flags",lf>)
 	invoke printf, CStr(<"------------------------------------------------------------",lf>)
 	mov si,1                    ;start with 1
 nextitem:
@@ -383,7 +383,7 @@ versioninfo proc
 	movzx dx,byte ptr [wVersion+0]
 	movzx bx,byte ptr [wDriver+1]
 	movzx cx,byte ptr [wDriver+0]
-	invoke printf, CStr(<"XMS version: %u.%X, driver version: %u.%X",lf>), ax, dx, bx, cx
+	invoke printf, CStr(<"XMS version: %u.%X, driver version: %u.%u",lf>), ax, dx, bx, cx
 	pop dx
 	test dx,1
 	jz nohma

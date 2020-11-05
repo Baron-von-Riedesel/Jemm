@@ -204,15 +204,18 @@ if ?RBTDBG
     mov esi,[pSavedVecs]
     mov ecx,20h
     xor ebx,ebx
-@@: 
+nextitem: 
     lodsd
     @DbgOutB bl,1
     @DbgOutS <": ">,1
     @DbgOutD eax, 1
     @DbgOutS <"        ">,1
-    inc ebx
-    loop @B
+    test cl,1
+    jz @F
     @DbgOutS <10>,1
+@@:
+    inc ebx
+    loop nextitem
 endif
 @@nofastboot:
     ret

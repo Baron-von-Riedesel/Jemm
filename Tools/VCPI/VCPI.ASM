@@ -126,16 +126,17 @@ handle  dw 0		;handle EMS
 segcs   dw 0		;segment CS
 segds   dw 0		;segment DS
 ptadr   dw 0		;segment page table 0
+vcpiend dw 0		;offset in pagetab 0 where free space begins
 
 flags   db 00
 
-UFLAG	equ 1
-NFLAG	equ 2
-QFLAG	equ 4
-PFLAG	equ 8
-FFLAG	equ 16
-AFLAG	equ 32
-RFLAG	equ 64
+UFLAG	equ 1	;option u - display PTEs for UMBs
+NFLAG	equ 2	;option n - no switch to pmode
+QFLAG	equ 4	;option q - query pages in protected-mode
+PFLAG	equ 8	;option p - display PTEs for conv. memory
+FFLAG	equ 16	;option f - free pages in pmode
+AFLAG	equ 32	;option a - alloc pages in pmode
+RFLAG	equ 64	;option r - free pages in rmode
 
 bRet	db 00
 bNoDisp	db 00
@@ -157,22 +158,10 @@ drtab	dd 8 dup (?)
 
 	include printf.inc
 
-_putchr proc
-	mov dl,al
-	mov ah,2
-	int 21h
+println proc
+	invoke printf, CStr(10)
 	ret
-_putchr endp
-
-_crout proc
-	invoke printf,CStr(10)
-	ret
-_crout endp
-
-_wordout proc stdcall uses bx cx dx value:word
-	invoke printf,CStr("%04X"),value
-	ret
-_wordout endp
+println endp
 
 if ?DISPEXC
 
@@ -293,17 +282,17 @@ defint proc near
 	iretd
 defint endp
 
-descout proc near
+;--- get descriptor values in EAX (base), DX (limit), CX (attr)
+
+getdesc proc near
 	mov ah,[di+7]		;base bits 31..24
 	mov al,[di+4]		;base bits 23..16
 	shl eax,16
 	mov ax,[di+2]		;base bits 15..0
 	mov dx,[di+0]		;limit bits 15..0
 	mov cx,[di+5]
-	invoke printf, CStr("%08lX:%04X,%04X"),eax,dx,cx
-	stc
 	ret
-descout endp
+getdesc endp
 
 gethex proc
 	xor edx, edx
@@ -613,31 +602,29 @@ endif
 	call InitProt
 
 	mov es,[ptadr]
-	xor di,di			;ES:DI -> page table 0	
+	xor di,di			;ES:DI -> page table 0
 	mov si,offset restab;DS:SI -> 3 free GDT descriptors
 	mov ax,0DE01h		;get protected mode interface
 	int 67h
 	cmp ah,00
 	jnz de01done
 	mov [vcpiofs],ebx
+	mov vcpiend,di
 	cmp bNoDisp, 0
 	jnz de01done
 	invoke printf, CStr( <"Offset of VCPI entry in protected-mode: %08lX",lf>),ebx
 	movzx edi,di
 	shl edi, 10
 	invoke printf, CStr( <"Start free address space: %08lX",lf>), edi
-	invoke printf, CStr( <'1. VCPI descriptor: '>)
 	mov di,offset restab
-	call descout
-	invoke _crout
-	invoke printf, CStr( <'2. VCPI descriptor: '>)
-	mov di,offset restab+8
-	call descout
-	invoke _crout
-	invoke printf, CStr( <'3. VCPI descriptor: '>)
-	mov di,offset restab+16
-	call descout
-	invoke _crout
+	call getdesc
+	invoke printf, CStr( <"1. VCPI descriptor: %08lX:%04X,%04X",lf>), eax, dx, cx
+	add di,8
+	call getdesc
+	invoke printf, CStr( <"2. VCPI descriptor: %08lX:%04X,%04X",lf>), eax, dx, cx
+	add di,8
+	call getdesc
+	invoke printf, CStr( <"3. VCPI descriptor: %08lX:%04X,%04X",lf>), eax, dx, cx
 de01done:
 
 	cmp bNoDisp, 0
@@ -721,27 +708,29 @@ pvcpi endp
 
 DispUMBs proc uses es si
 
-	nop
+	nop ;MASM bug
 	invoke printf, CStr( <"Pages used for UMBs:",lf>)
 	mov es,[ptadr]
 	mov si,0000
 	mov cx,100h
 	xor edx,edx
 nextitem:
+	push cx
+	push edx
 	mov eax,es:[si]
 	and ax,0F000h
 	cmp eax,edx
 	jz @F
 	mov eax, edx
 	shr eax,4
-	invoke _wordout,  ax
-	mov al,' '
-	call _putchr
+	invoke printf,CStr("%04X "), ax
 @@:
+	pop edx
 	add edx,1000h
 	add si,4
+	pop cx
 	loop nextitem
-	invoke _crout
+	invoke println
 	ret
 DispUMBs endp        
 
@@ -760,27 +749,26 @@ nextitem:
 	jnz @F
 	mov ax,si
 	shr ax,2
-	invoke _wordout, ax
-	mov al,':'
-	call _putchr
-	mov al,' '
-	call _putchr
+	invoke printf, CStr("%04X: "), ax
 @@:
 	mov eax,es:[si+0]
 	push ax
-	invoke printf,CStr("%8lX"),eax
+	invoke printf,CStr("%8lX "),eax
 	pop ax
 	and ax,0FFE7h		;???
 	mov es:[si+0],ax	;???
-	mov al,' '
-	call _putchr
 	add si,4
 	test si,1Fh
 	jnz @F
-	invoke _crout
+	invoke println
 @@:
 	pop cx
+if 1
+	cmp si, vcpiend
+	jb nextitem
+else
 	loop nextitem
+endif
 	ret
 DispPTEs endp
 
@@ -976,7 +964,7 @@ protocol proc
 		.if (dwAlloced)
 			invoke printf, CStr( <", (first) page=%08lX">), dwPage
 		.endif
-		invoke _crout
+		invoke println
 	.elseif (flags & FFLAG)
 		invoke printf, CStr( <"freed %lu">), dwFreed
 		movzx ax,bRet
@@ -984,7 +972,7 @@ protocol proc
 		.if (dwFreed)
 			invoke printf, CStr( <", (last) page released=%08lX">), dwPage
 		.endif
-		invoke _crout
+		invoke println
 	.elseif (flags & RFLAG)
 		invoke printf, CStr( <"freed %lu">), dwFreed
 		movzx ax,bRet
@@ -992,7 +980,7 @@ protocol proc
 		.if (dwFreed)
 			invoke printf, CStr( <", (last) page released=%08lX">), dwPage
 		.endif
-		invoke _crout
+		invoke println
 	.elseif (flags & QFLAG)
 		movzx ax,bRet
 		invoke printf, CStr( <"%lu free pages in pm, status ah=%02X",lf>), dwFreePages, ax
@@ -1094,7 +1082,8 @@ start:
 	shl bx,4
 	add bx,sp
 	mov ss,ax
-	mov sp,bx
+	mov sp,bx       ;make SS=DS
+
 	mov ax,ds
 	mov cx,cs
 	sub ax,cx

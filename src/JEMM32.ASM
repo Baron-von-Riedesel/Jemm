@@ -40,7 +40,7 @@
 ?NMI        equ 1       ; std=1, 1=allow NMIs inside the monitor
 ?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06
 ?ISRFLGS    equ 0       ; std=0, 1=display PIC ISR flags
-?CLEARBOOTFLGS equ 1    ; std=1, 1=clear boot flags in XBDA
+?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
 ?CLEARCR4   equ 1       ; std=1, 1=clear CR4 at reboot
 
 if ?INTEGRATED
@@ -1619,11 +1619,6 @@ if ?I15DBG or ?EMBDBG
     @DbgOutD ecx,1
     @DbgOutS <10>,1
 endif
-	.586p
-	mov ecx,cr4
-	or cl,10h
-	mov cr4,ecx
-	.386p
 	mov ecx, esi
 	cmp ax,0
 	jnz @F
@@ -1709,6 +1704,12 @@ if ?I15DBG or ?EMBDBG
     @DbgOutD ecx,1
     @DbgOutS <10>, 1
 endif
+	.586p
+	mov ebx,cr4
+	bts ebx,4
+	jc move_loop	;set PSE only if it isn't set yet
+	mov cr4,ebx
+	.386p
 move_loop:
 	push ecx
 	cmp ecx, 400000h
@@ -2344,14 +2345,13 @@ fastboot_1:
     @DbgOutS <"reached fastboot_1",10>,?RBTDBG
     mov eax,[OldInt19]
     mov ds:[19h*4],eax
-
 if 0
-    mov dword ptr ds:[1Eh*4],0F000EFC7h
+    mov dword ptr ds:[1Eh*4],0F000EFC7h	;restore int 1Eh to original value
 endif
 
 ;--- the v86 space is now "without" DOS
 
-;--- set vectors 20-3F, 60-67 and 78-FF
+;--- set vectors 20-3F, 60-67 and 78-FF to 0000:0000
 
     push ds
     pop es
@@ -2370,7 +2370,7 @@ if 0;?CLEARBOOTFLGS
     movzx ecx, word ptr ds:[@XBDA]
     jecxz @F
     shl ecx, 4
-    mov word ptr [ecx+90h],0    ;clear boot flags (might be BIOS specific)
+    mov word ptr [ecx+90h],0    ;clear boot flags (can't do this, probably BIOS specific)
 @@:
 endif
 
@@ -2378,16 +2378,18 @@ if ?RBTDBG
     mov ecx,20h
     xor esi,esi
     xor ebx,ebx
-@@:
+nextitem:
     lodsd
     @DbgOutB bl,1
     @DbgOutS <": ">,1
     @DbgOutD eax, 1
     @DbgOutS <"        ">,1
-    inc ebx
-    loop @B
+    test cl,1
+    jz @F
     @DbgOutS <10>,1
-;    @WaitKey 1,1
+@@:
+    inc ebx
+    loop nextitem
 endif
 
     mov dl,1        ;set flag for fastboot
@@ -2416,6 +2418,8 @@ endif
 Reboot_1::
     @DbgOutS <"Reboot_1 reached, int 19=">,?RBTDBG    
     @DbgOutD ds:[19h*4],?RBTDBG
+    @DbgOutS <" XBDA segment=">,?RBTDBG
+    @DbgOutW ds:[@XBDA],?RBTDBG
     @DbgOutS <10>,?RBTDBG    
 
     MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
@@ -2484,20 +2488,23 @@ rmcode:
     db 0Fh, 22h, 0C1h       ;7E03: mov cr0, ecx (switches to real-mode)
     db 0Fh, 22h, 0D8h       ;7E00: mov cr3, eax
     db 8Eh, 0D0h            ;7E06: mov ss, ax (set SS=0000)
-    db 0EAh,0, 0, -1, -1    ;7E08: jmp ffff:0000 (set CS=FFFF)
+;    db 0EAh,0, 0, -1, -1    ;7E08: jmp ffff:0000 (set CS=FFFF)
+    db 0EAh,0F0h, 0FFh, 0, 0F0h ;7E08: jmp f000:fff0 (set CS=F000)
                             ;7E0D:
 endofrmcode:
 if ?FASTBOOT
 rmcode2:
     db 0EAh,0Dh,7Eh,0, 0    ;jmp 0000:7E0D (set CS=0)
 if ?RBTDBG
-    db 0B8h, 52h, 0Eh       ;mov ax,0e52h
+    db 0B8h, 52h, 0Eh       ;mov ax,0e52h 'R'
     db 0BBh, 07h, 00h       ;mov bx,0007h
     db 0CDh, 10h            ;int 10h
-    db 0B8h, 42h, 0Eh       ;mov ax,0e42h
+    db 0B8h, 42h, 0Eh       ;mov ax,0e42h 'B'
     db 0CDh, 10h            ;int 10h
-    db 0B8h, 54h, 0Eh       ;mov ax,0e54h
+    db 0B8h, 54h, 0Eh       ;mov ax,0e54h 'T'
     db 0CDh, 10h            ;int 10h
+    db 0B4h, 00h            ;mov ah,00
+    db 0CDh, 16h            ;int 16h
 endif
 if 0
     db 0Eh                  ;push cs

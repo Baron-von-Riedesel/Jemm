@@ -15,7 +15,7 @@
 ;***   and therefore a small risk remains. 
 
 ?MOVEINUMB equ 1        ;move in 1. umb
-?MOVEXBDA  equ 1        ;move XBDA
+?MOVEXBDA  equ 1        ;/XBDA option
 
 	.286
 	.MODEL SMALL
@@ -709,20 +709,17 @@ dHowTo  label byte
 	db "and before the XMS driver. This will allow to load the XMS driver",cr,lf
 	db "(and the EMM) into an UMB, thus saving some conventional DOS memory.",cr,lf
 	db cr,lf
-	db "UMBM needs no parameters, it will scan the upper memory region for blocks",cr,lf
-	db "activated by UMBPCI. However, UMBM may be forced to use a region with the",cr,lf
-	db "/I=XXXX-XXXX option:",cr,lf
+	db "UMBM knows the following options:",cr,lf
+	db "  /I=XXXX-YYYY   force region XXXX-YYYY to be included. Example: /I=D000-DBFF.",cr,lf
+	db "  /XBDA          move the XBDA to the first UMB",cr,lf
+	db "Option /I is not recommended, since UMBM will automatically find regions",cr,lf
+	db "activated by UMBPCI. Option /XBDA may cause troubles if the upper memory",cr,lf
+	db "can't be used by DMA. To find out, there's no other way than to try.",cr,lf
 	db "Example:",cr,lf
 	db "DEVICE=UMBPCI.SYS",cr,lf
-	db "DEVICE=UMBM.EXE /I=D000-E000",cr,lf
+	db "DEVICE=UMBM.EXE",cr,lf
 	db "DEVICEHIGH=HIMEMX.EXE",cr,lf
-	db "Max. 4 regions are accepted. After DOS has grabbed the UMBs,",cr,lf
-	db "UMBM will remove itself from DOS memory.",cr,lf
-if ?MOVEXBDA
-	db cr,lf
-	db "Another parameter that UMBM understands is /XBDA. This option will move",cr,lf
-	db "the XBDA to the first UMB, thus further increasing conventional DOS memory.",cr,lf
-endif
+	db "After DOS has grabbed the UMBs, UMBM will remove itself from DOS memory.",cr,lf
 	db cr,lf
 	db "UMBM is Public Domain. Japheth.",cr,lf
 	db '$'

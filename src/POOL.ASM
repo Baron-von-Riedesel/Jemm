@@ -1110,6 +1110,10 @@ Pool_AllocateEMBForPool PROC
     je @@next                      ; no, don't check
     mov ebx,[esi].XMS_HANDLE.xh_baseK
     mov eax,[esi].XMS_HANDLE.xh_sizeK
+if 1;?XMS35
+	test ebx,0ffc00000h    ; block beyond 4GB?
+	jnz @@next
+endif
 ife ?INTEGRATED    
     and ebx,ebx
     je @@next              ; FD Himem bug, ignore blank or zero-sized handle
@@ -1320,6 +1324,10 @@ ife ?INTEGRATED
     je @@next
 endif
     mov eax,[esi].XMS_HANDLE.xh_baseK
+if 1;?XMS35
+	test eax,0FFC00000h    ; block beyond 4GB?
+	jnz @@next
+endif
     mov ebx,eax
     add ebx,3       ; round up
     add eax,[esi].XMS_HANDLE.xh_sizeK

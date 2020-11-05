@@ -19,6 +19,7 @@
 ?VCPITMPSS  equ 1   ;std 1, 1=use a tmp SS sel to avoid hiword(ESP) to be <> 0
 ?SAFEMODE   EQU 0   ;std 0, 1=additionally switch GDTR and IDTR
 ?SAFETSS    equ 0   ;std 0, 1=additionally switch TR (clear "busy" flags!)
+?SPSYSTEM   equ 1   ;std 1, 1=set shared page at 110000 to "system" instead of r/o
 
     include external.inc
 
@@ -116,8 +117,11 @@ endif
     stos dword ptr [edi]
     loop @@vgiloop
 
-if 1
+if ?SPSYSTEM
     and byte ptr es:[edi-4], not 4  ;set shared page 111xxxh to system
+else
+    or byte ptr es:[edi-4], 4
+    and byte ptr es:[edi-4], not 2  ;set shared page 111xxxh to r/o
 endif
 
     mov [ebp].Client_Reg_Struc.Client_EBX,OFFSET VCPI_PM_Entry

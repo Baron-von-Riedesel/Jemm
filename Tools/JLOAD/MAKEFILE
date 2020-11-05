@@ -52,7 +52,7 @@ LOPTS = op m=$*.MAP
 LINK32=@link.exe /nologo /filealign:0x200 /fixed /driver /subsystem:native /base:0xF83F0000 /align:0x10000 /MAP /MERGE:DATA_=.text
 #LINK32=polink.exe /fixed /driver /subsystem:native /base:0xFBFF0000 /align:0x10000 /MAP /MERGE:.data=.text
 !else
-LINK32=@jwlink.exe format raw bin op offset=0xF8400000, map, start='_start@0'
+LINK32=@jwlink.exe format raw bin op offset=0xF8400000, map, start='_start@0',quiet
 !endif
 INC32=jload.inc jload32.inc debug.inc ..\..\src\Jemm32.inc ..\..\Include\jlm.inc
 INC16=jload.inc debug.inc ..\..\src\Jemm32.inc ..\..\src\Jemm.inc ..\..\Include\jlm.inc
@@ -65,7 +65,7 @@ $(OUTDIR):
 $(OUTDIR)\$(NAME).EXE: $(OUTDIR)\$(NAME).obj MAKEFILE
 #	$(LINK16) @<<
 #$*.OBJ $(LOPTS), $*.EXE, $*.MAP, $(LIBS);
-	$(LINK16) format dos file $*.OBJ $(LOPTS) name $*.EXE
+	@$(LINK16) format dos file $*.OBJ $(LOPTS) name $*.EXE op quiet
 
 $(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).inc $(INC16)
 	$(ASM) $(NAME).asm

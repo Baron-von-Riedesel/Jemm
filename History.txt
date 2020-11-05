@@ -24,8 +24,9 @@
  - tool CPUSTAT split into CPUSTAT and CPUID.
  - emulation of Int 15h, ah=87 (move extended memory) has been enhanced
    to allow to access physical memory beyond the 4 GB border via PSE-36.
- - JemmEx XMM now implements XMS v3.5 (extended memory > 4 GB).
-   Added JemmExL.exe, a version without this extension. 
+ - JemmEx XMM now implements XMS v3.5 (extended memory > 4 GB). Default XMS
+   handles changed to 48 (previously 32). Added JemmExL.exe, still supporting
+   XMS v3.0 only. 
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset

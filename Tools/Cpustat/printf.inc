@@ -1,7 +1,8 @@
 
-	.286
+;--- simple printf() implementation
 
-strlen proc c uses di string:ptr
+strlen proc c uses di string:ptr BYTE
+
 	mov cx,-1
 	mov di,string
 	push ds
@@ -13,59 +14,17 @@ strlen proc c uses di string:ptr
 	inc ax
 	not ax
 	ret
+
 strlen endp
-
-;--- convert long to string - always base 16
-;--- stdcall ltoa(long n, char * s);
-
-ltoa PROC c number:dword, tbuffer:ptr
-
-	mov ch,0
-	mov ax, word ptr number+0
-	mov dx, word ptr number+2
-	mov bx,tbuffer
-	add bx,10
-	mov BYTE PTR [bx],0
-	dec bx
-
-@@nextdigit:
-	push ax
-	and al,0Fh
-	add al,'0'
-	cmp al,'9'
-	jbe @F
-	add al,7+20h
-@@:
-	mov [bx],al
-	dec bx
-	pop ax
-	mov cl,4
-@@:
-	shr dx,1
-	rcr ax,1
-	dec cl
-	jnz @B
-	mov cx,ax
-	or cx,dx
-	jne @@nextdigit
-	inc bx
-	mov ax,bx
-	ret
-
-ltoa ENDP
 
 handle_char proc
 
-	pop cx
-	pop dx
-	push cx
-	cmp dl,10
+	mov dl,al
+	cmp al,10
 	jnz @F
-	push dx
 	mov dl,13
-	mov ah,2
-	int 21h
-	pop dx
+	call @F
+	mov dl,10
 @@:
 	mov ah,2
 	int 21h
@@ -73,19 +32,60 @@ handle_char proc
 
 handle_char endp
 
-;--- simple printf() implementation
+;--- ltob(long n, char * s, int base);
+;--- convert long to string
 
-printf PROC c uses si di fmt:ptr byte, args:VARARG
+ltob PROC stdcall uses edi number:dword, outb:word, base:word
 
+	mov ch,0
+	movzx edi, base
+	mov eax, number
+	cmp di,-10
+	jne @F
+	mov di,10
+	and eax,eax
+	jns @F
+	neg eax
+	mov ch,'-'
+@@:
+	mov bx,outb
+	add bx,10
+	mov BYTE PTR [bx],0
+	dec bx
+@@nextdigit:
+	xor edx, edx
+	div edi
+	add dl,'0'
+	cmp dl,'9'
+	jbe @F
+	add dl,7+20h
+@@:
+	mov [bx],dl
+	dec bx
+	and eax, eax
+	jne @@nextdigit
+	cmp ch,0
+	je @F
+	mov [bx],ch
+	dec bx
+@@:
+	inc bx
+	mov ax,bx
+	ret
+
+ltob ENDP
+
+printf PROC c uses es si di bx fmt:ptr byte, args:VARARG
+
+local size_:word
 local flag:byte
 local longarg:byte
-local size_:word
-local fillchr:word
+local fill:byte
 local szTmp[12]:byte
 
 	push ds
 	pop es
-	lea di,args
+	lea di,[fmt+2]
 @@L335:
 	mov si,[fmt]
 nextchar:
@@ -94,13 +94,11 @@ nextchar:
 	je done
 	cmp al,'%'
 	je formatitem
-	push ax
 	call handle_char
 	jmp nextchar
 done:
 	xor ax,ax
-	ret 
-
+	ret
 formatitem:
 	xor dx,dx
 	mov [longarg],dl
@@ -117,19 +115,23 @@ formatitem:
 	mov cl,'0'
 	inc si
 @@:
-	mov [fillchr],cx
+	mov [fill],cl
 	mov [size_],dx
 	mov bx,dx
-
-	.while ( byte ptr [si] >= '0' && byte ptr [si] <= '9' )
-		lodsb
-		sub al,'0'
-		cbw
-		imul cx,bx,10		;cx = bx * 10
-		add ax,cx
-		mov bx,ax
-	.endw
-
+	jmp @@L358
+@@FC250:
+	cmp BYTE PTR [si],'9'
+	jg	@@L362
+	lodsb
+	sub al,'0'
+	cbw
+	imul cx,bx,10		;cx = bx * 10
+	add ax,cx
+	mov bx,ax
+@@L358:
+	cmp BYTE PTR [si],'0'
+	jge @@FC250
+@@L362:
 	mov [size_],bx
 	cmp BYTE PTR [si],'l'
 	jne @F
@@ -138,76 +140,94 @@ formatitem:
 @@:
 	lodsb
 	mov [fmt],si
-	or al,al
-	je done
+	cbw
 	cmp al,'x'
 	je handle_x
-	cmp al,'X'
+	ja @@L359
+	or al,al
+	je done 	;\0?
+	sub al,'X'
 	je handle_x
-	cmp al,'s'
-	je handle_s
-handle_c:
-	push WORD PTR [di]
+	sub al,11
+	je handle_c	;'c'
+	dec al
+	je handle_d	;'d'
+	sub al,5
+	je handle_i	;'i'
+	sub al,10
+	je handle_s	;'s'
+	sub al,2
+	je handle_u	;'u'
+	jmp @@L359
+handle_c:				;'c'
+	mov ax,[di]
 	add di,2
+@@L359:
 	call handle_char
 	jmp @@L335
 
-handle_s:
+handle_s:				;'s'
 	mov si,[di]
 	add di,2
-	jmp print_string
+	jmp @@do_outputstring260
 
-handle_x:
-	cmp [longarg],0
-	je @F
-	mov ax,[di+0]
-	mov dx,[di+2]
-	add di,4
-	jmp @@L341
-@@:
+handle_x:				;'X' + 'x'
+	mov bx,16
+	jmp @@lprt262
+handle_d:				;'d'
+handle_i:				;'i'
+	mov bx,-10
+	jmp @@lprt262
+handle_u:				;'u'
+	mov bx,10
+@@lprt262:
 	mov ax,[di]
 	add di,2
-	sub dx,dx		;unsigned integer
-@@L341:
+	sub dx,dx
+	cmp bx,0		;signed or unsigned?
+	jge @F
+	cwd
+@@:
+	cmp [longarg],0
+	je @F
+	mov dx,[di]
+	add di,2
+@@:
 	lea cx,[szTmp]
-	invoke ltoa, dx::ax, cx
+	invoke ltob, dx::ax, cx, bx
 	mov si,ax
-print_string:		;print string SI
-	push si
-	call strlen
-	pop bx
+@@do_outputstring260:
+	invoke strlen, si
 	sub [size_],ax
-	cmp [flag],1
-	jne print_string_chars
-
+	cmp BYTE PTR [flag],1
+	jne @@L360
 	mov bx,[size_]
 	jmp @@L363
 @@F270:
-	push [fillchr]
-	call handle_char	;print leading filler chars
+	mov al,[fill]
+	call handle_char
 	dec bx
 @@L363:
 	or bx,bx
 	jg @@F270
 	mov [size_],bx
+	jmp @@L360
 
-print_string_chars:
-
-	.while (byte ptr [si])
-		lodsb
-		push ax
-		call handle_char	;print char of string
-	.endw
-
+@@F273:
+	mov al,[si]
+	call handle_char
+	inc si
+@@L360:
+	cmp BYTE PTR [si],0
+	jne @@F273
 	mov bx,[size_]
 @@:
 	or bx,bx
 	jle @@L335
-	push [fillchr]
-	call handle_char	;print trailing spaces
+	mov al,[fill]
+	call handle_char
 	dec bx
 	jmp @B
 
 printf ENDP
-
 
