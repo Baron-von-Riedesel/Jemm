@@ -327,6 +327,7 @@ endif
 @@alloc_failed:
     pop ecx
     pop edx
+    xor dx,dx    ;v5.80: return DX=0 if alloc fails (XMS spec)
     xor ax,ax
     ret
 @@nullhandle:

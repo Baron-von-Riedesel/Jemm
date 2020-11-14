@@ -67,13 +67,11 @@ bLoad	DB 0
 endif
 if ?INTEGRATED
 xms_max	DD 4095*1024	;MAXEXT= value
-if ?XMS35
+ if ?XMS35
 xms_smax	DD 1023*4096*1024	;MAXSEXT= value
 xms_maxhigh	dd -1		; mask for upper memory address limit   
-xms_num_handles	DW 48	;XMSHANDLES= value
-else
-xms_num_handles	DW 32	;XMSHANDLES= value
-endif
+ endif
+xms_num_handles	DW ?XMS_DEFHDLS	;XMSHANDLES= value
  ife ?XMS35
 bNoE820	DB 0
  endif
@@ -216,7 +214,7 @@ endif
     db " X=TEST        scan memory region C000-EFFF for UMB exclusion",LF
 if ?INTEGRATED
     db " X2MAX=n       max. value in Kb for XMS V2 free memory report (default=65535)",LF
-    db " XMSHANDLES=n  number of available XMS handles (8<=n<=128, default=32)",LF
+    db " XMSHANDLES=n  number of available XMS handles (8<=n<=",@CatStr(!",%?XMS_MAXHDLS,!"),", default=",@CatStr(!",%?XMS_DEFHDLS,!"),")",LF
 endif
     db LF
     db " '+': option can be set dynamically by running ",NAMEMOD," from the command line",LF
@@ -1731,7 +1729,7 @@ endif
 		movzx eax,ax
 		mov jemmini.MinMem16k,eax
 		.if bVerbose
-			invoke printf, CStr("default preallocated memory=%lu 16k-pages", LF), jemmini.MinMem16k
+			invoke printf, CStr("default preallocated memory=%u 16k-pages", LF), ax
 		.endif
 	.endif
 
@@ -2744,11 +2742,11 @@ if ?INTEGRATED
  endif
 	invoke FindCommand, CStr("XMSHANDLES=")
 	.if ax
-		invoke GetValue,ax, 10, 0
+		invoke GetValue, ax, 10, 0
 		.if ax < 8
 			mov ax,8
-		.elseif ( ax > 128 )
-			mov ax, 128
+		.elseif ( ax > ?XMS_MAXHDLS )
+			mov ax, ?XMS_MAXHDLS
 		.endif
 		mov xms_num_handles,ax
 	.endif
@@ -3095,7 +3093,7 @@ if ?INTEGRATED eq 0
 ;    /* if no int 2fh, function 4309h support, disable pool sharing */
 	.if jemmini.XMSHandleTable == 0 && jemmini.NoPool == 0
 		mov jemmini.NoPool,1
-		invoke printf, CStr("%s: XMS host doesn''t provide handle array, dynamic memory allocation off!", LF), offset szWarning
+		invoke printf, CStr("%s: XMS host doesn't provide handle array, dynamic memory allocation off!", LF), offset szWarning
 	.endif
 endif
 
@@ -3237,7 +3235,7 @@ endif
 			movzx ecx,dx
 			shl eax,4
 			shl ecx,4
-			invoke printf, CStr("Total/available EMS pages: %d/%d (= %lu(%lu) kB)",LF), dx, bx, ecx, eax
+			invoke printf, CStr("Total/available EMS memory: %d/%d pages (= %lu/%lu kB)",LF), dx, bx, ecx, eax
 		.endif
 	.endif
 	invoke printf, CStr( NAMEMOD," loaded",LF )

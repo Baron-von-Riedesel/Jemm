@@ -25,6 +25,10 @@
 #  3. assemble the 16-bit assembly sources (Jemm32.bin will be included,
 #     either directly ( JWasm ) or indirectly via tool Bin2Inc ( Masm ).
 #  4. link 16-bit modules (Jemm16.obj, Init16.obj) to Jemm386/JemmEx
+#
+# To enable (selective) debug displays, enter:
+#   nmake debug=1 dbgopt=-D?VCPIDBG=1
+# This will enable VCPI related displays. For more switches, see DEBUG.INC.
 
 NAME1=JEMM386
 NAME2=JEMMEX
@@ -77,7 +81,7 @@ JWLINK=1
 !endif
 
 !if $(DEBUG)
-AOPTD=-D_DEBUG -D?VCPIDBG=1 -D?VCPIXDBG=1
+AOPTD=-D_DEBUG $(DBGOPT)
 !else
 AOPTD=
 !endif

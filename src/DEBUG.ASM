@@ -250,6 +250,10 @@ if 1;e ?INTEGRATED
 @@nextitem:
 	test [edx].XMS_HANDLE.xh_flags, XMSF_FREE
 	jz @@skipitem
+if 1;?XMS35
+	test word ptr [edx].XMS_HANDLE.xh_baseK+2, 0FFC0h
+	jnz @@skipitem
+endif
 	cmp [edx].XMS_HANDLE.xh_sizeK, ?BUFFSIZ / 1024
 	jnc  @@founditem
 @@skipitem:

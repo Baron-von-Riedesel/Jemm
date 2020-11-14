@@ -205,12 +205,14 @@ hdlout proc
 	mov esi, eax
 	shl eax, 10
 	shr esi, 22
+
 	add edx, ecx
 	mov edi, edx
 	shl edx, 10
 	shr edi, 22
 	jecxz @F
-	dec edx
+	sub edx,1
+	sbb di,0
 @@:
 	mov cl, es:[bx].XMSH.bLocks
 	mov ch, 00
@@ -363,6 +365,8 @@ freememinfo3 endp
 freememinfoSX proc
 	mov ah,0C8h
 	call [xmsadr]
+	cmp bl,80h	;not implemented?
+	jz exit
 	cmp bl,0
 	jnz failed
 	invoke printf, CStr(<"v3.5 free memory > 4GB largest/total (kB): %lu/%lu",lf>), eax, edx
@@ -370,6 +374,7 @@ freememinfoSX proc
 failed:
 	movzx bx,bl
 	invoke printf, CStr(<"XMS call AH=C8h returned bl=%X: %lu/%lu",lf>), bx, eax, edx
+exit:
 	ret
 freememinfoSX endp
 

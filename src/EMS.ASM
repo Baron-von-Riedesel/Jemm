@@ -1544,6 +1544,8 @@ GetFreeEMSPages PROC
 if ?POOLDBG
     @DbgOutS <"GetFreeEMSPages: eax=">,1
     @DbgOutD eax,1
+    @DbgOutS <" EMSMax-EMSUsed=">,1
+    @DbgOutD edx,1
     @DbgOutS <10>,1
 endif
     pop edx

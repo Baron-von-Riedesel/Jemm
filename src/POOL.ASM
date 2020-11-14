@@ -128,6 +128,10 @@ Pool_GetFree4KPages PROC public
 if ?POOLDBG
     @DbgOutS <"Pool_GetFree4KPages: ">,1
     @DbgOutD eax,1
+    @DbgOutS <", dwUsedMem4K=">,1
+    @DbgOutD dwUsedMem4K,1
+    @DbgOutS <", dwMaxMem4K=">,1
+    @DbgOutD dwMaxMem4K,1
     @DbgOutS <10>,1
 endif
     ret
@@ -1110,7 +1114,7 @@ Pool_AllocateEMBForPool PROC
     je @@next                      ; no, don't check
     mov ebx,[esi].XMS_HANDLE.xh_baseK
     mov eax,[esi].XMS_HANDLE.xh_sizeK
-if 1;?XMS35
+if ?XMS35COMPAT
 	test ebx,0ffc00000h    ; block beyond 4GB?
 	jnz @@next
 endif
@@ -1324,7 +1328,7 @@ ife ?INTEGRATED
     je @@next
 endif
     mov eax,[esi].XMS_HANDLE.xh_baseK
-if 1;?XMS35
+if ?XMS35COMPAT
 	test eax,0FFC00000h    ; block beyond 4GB?
 	jnz @@next
 endif

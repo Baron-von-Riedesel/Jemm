@@ -66,7 +66,11 @@ externdef c xms_max:dword
 if ?XMS35
 externdef c xms_smax:dword
 externdef c xms_maxhigh:dword
+?XMS_DEFHDLS equ 48
+else
+?XMS_DEFHDLS equ 32
 endif
+?XMS_MAXHDLS equ 128
 externdef c xms_mem_free:dword
 externdef c xms_mem_largest:dword
 externdef c xms_mem_highest:dword

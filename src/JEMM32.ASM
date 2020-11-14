@@ -1601,6 +1601,7 @@ endif
 
 MapPhysPages endp
 
+if ?XMS35COMPAT
 ;--- in: AX:ESI src physical region to map
 ;--- in: DX:EDI dst physical region to map
 ;--- max 4 4MB pages are set in pagedir, 2 for src, 2 for dst
@@ -1740,6 +1741,8 @@ move_loop:
 	ja move_loop
 	ret
 MoveMemoryPhysEx endp
+
+endif
 
 ;--- copy memory block ESI to EDI, size ECX
 ;--- allow interrupts during move op

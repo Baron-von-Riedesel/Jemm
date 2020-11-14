@@ -55,6 +55,8 @@ E820MAP ends
 
 ;--- XMS
 
+?XMS35COMPAT equ 1	;1=monitor is XMS v3.5 compatible (is aware of memory blocks beyond 4GB)
+
 XMS_HANDLE struct
 xh_flags    DB  ?
 xh_locks    DB  ?

@@ -27,6 +27,7 @@
  - JemmEx XMM now implements XMS v3.5 (extended memory > 4 GB). Default XMS
    handles changed to 48 (previously 32). Added JemmExL.exe, still supporting
    XMS v3.0 only. 
+ - JemmEx: return DX=0 if XMS alloc functions fail (XMS spec).
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset

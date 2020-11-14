@@ -16,8 +16,6 @@
 
 ;--- assembly time constants
 
-?SUPEREXT equ 1	;support enhanced int 15h, ah=87h for memory > 4GB
-
 ;--- segment definitions
 
 ;--- publics/externals
@@ -135,7 +133,7 @@ endif
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, ah
     ret
 @@error02:
-if ?SUPEREXT
+if ?XMS35COMPAT
     cmp cx,0F00Fh
     jnz @F
     cmp cx,word ptr [ebp].Client_Reg_Struc.Client_EAX+2
@@ -156,7 +154,7 @@ if ?SUPEREXT
     mov edi,edx
     mov eax,[ebp].Client_Reg_Struc.Client_EDX   ;src bits 32-47
     mov edx,[ebp].Client_Reg_Struc.Client_EBX   ;dst bits 32-47
-if ?I15DBG
+  if ?I15DBG
     @DbgOutS <"Int 15h, ah=87h, src=">,1
     @DbgOutW ax,1
     @DbgOutD esi,1
@@ -166,7 +164,7 @@ if ?I15DBG
     @DbgOutS <", siz=">,1
     @DbgOutW cx,1
     @DbgOutS <10>,1
-endif
+  endif
     call MoveMemoryPhysEx
     jmp @@ok
 @@:

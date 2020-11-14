@@ -135,7 +135,10 @@
             a system "lock", use either MOVEXBDA.EXE or UMBPCI+UMBM instead.
  NOCHECK    disallows access via Int 15h, AH=87h to address regions which
             aren't backuped by RAM.
- NODYN      disables XMS dynamic memory allocation.
+ NODYN      disables XMS dynamic memory allocation. Jemm will allocate
+            XMS memory for EMS/VCPI on initialization. Default is size
+            of largest XMS block/2, but max. 32MB. With option MIN=xxx one
+            may override this.
  NOEMS      disables EMS support.
  NOHI       this option will prevent Jemm from moving its resident part
             into upper memory. If no UMBs are installed by Jemm, NOHI
@@ -157,6 +160,7 @@
             UMBPCI, which must have been loaded *before* Himem/JemmEx.
             NOTE: for Jemm386, instead of using "S=" one might as well use
             UMBM.EXE, which additionally allows to load the XMS host "high".
+ SB         Soundblaster driver compatibility mode on.
  SPLIT      if ROMs are found which don't end exactly at a 4 kB boundary
             then setting this option will increase available UMB space. ROM
             sizes are defined in 0.5 kB units, so there might be up to 3.5 kB
@@ -375,11 +379,11 @@
  þ Some DOS programs will not work if EMS is enabled without a page frame.
 
  þ Some DOS programs will crash if too much VCPI memory is offered. Jemm's
-   default is 128MB, it can be decreased with option MAX=xxx. Popular 
+   default is 128MB, it can be changed with option MAX=xxx. Popular
    programs that may cause troubles are programs that use Borland's 16-bit
-   DPMI host DPMI16BI.OVL (usually coupled with RTM.EXE). Setting Jemm  option
-   MAX=32M should help. As for DPMI16BI.OVL, is may also help to enter
-   "set DPMIMEM=MAXMEM 16383" at the cmdline.
+   DPMI host DPMI16BI.OVL (usually coupled with RTM.EXE). Setting Jemm option
+   MAX=32752K ( that's 32MB minus 16kB) should help. As for DPMI16BI.OVL, it
+   may also help to enter "set DPMIMEM=MAXMEM 16383" at the cmdline.
 
  þ The JEMM ;-) DOS Extender (used for "Strike Commander" and "Privateer")
    requires the NOVME option to be set. This requirement is a strong sign
