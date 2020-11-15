@@ -25,6 +25,7 @@ NULL equ 0
 	include jemm16.inc
 	include debug.inc
 
+?I15RESNOSCAN equ 0	;1=don't scan regions marked as reserved by Int 15h, ax=e820
 CPUID1_PSE36 equ 17
 
 NAMEGEN equ <"Jemm">
@@ -61,10 +62,6 @@ xms_mem_largest	DD 0	;largest free block in kB
 xms_mem_free	DD 0	;total free mem in kB
 xms_mem_highest	dd 0	;highest physical address
 
-bVerbose	DB 0
-if ?LOAD
-bLoad	DB 0
-endif
 if ?INTEGRATED
 xms_max	DD 4095*1024	;MAXEXT= value
  if ?XMS35
@@ -77,18 +74,25 @@ bNoE820	DB 0
  endif
 bNoE801	DB 0
 endif
-bI15RsvdChk db 0
+bVerbose	DB FALSE
+
+if ?LOAD
+bLoad	DB FALSE
+endif
+if ?I15RESNOSCAN
+bI15RsvdChk db FALSE
+endif
 
 if ?INTEGRATED eq 0
 xmsspec3	DW 0
 endif
 bFrameWanted DB 0   ;FRAME=XX00
-ExcludeTest	DB 0	;X=TEST
-IncludeTest	DB 0	;I=TEST
+ExcludeTest	DB FALSE;X=TEST
+IncludeTest	DB FALSE;I=TEST
 if ?SPLIT
 SplitTest	DB 0
 endif
-MinRequest	DB 0	;MIN= has been found
+MinRequest	DB FALSE;MIN= has been found
 
 	.const
 
@@ -582,6 +586,10 @@ local result:word
 	jbe @@done
 @@nextpage:
 	lodsb
+if 1 ;v5.80: also test 'E', since 'E' might contain RAM in v5.80 (UMBPCI)
+	cmp al,'E'
+	jz @F
+endif
 	cmp al,'U'
 	jz @F
 	cmp al,'I'			;'I' is also tested, but not modified
@@ -609,11 +617,10 @@ endif
 	mov es:[0], ax
 	cmp ax, es:[0]
 	jnz @@noram
-	
-	cmp byte ptr [si-1], 'U'
-	jnz @F
-	mov byte ptr [si-1], 'R'
-@@:
+	mov al,[si-1]
+	.if al == 'E' || al == 'U'	;v5.80: change 'E' to 'R' as well
+		mov byte ptr [si-1], 'R'
+	.endif
 	and di, di
 	jnz @F
 	mov di, es
@@ -634,13 +641,15 @@ endif
 
 @@skipitem:
 	inc dx
-	loop @@nextpage
+	dec cx
+	jnz @@nextpage
 @@done:
 	mov bx, pi
 	mov ax, result
 	mov [bx], ax
 	mov ax, di
 	ret
+if ?UMBPCI
 isumbpci:
 	mov di,es
 	mov bx,8
@@ -661,8 +670,35 @@ nextitem:
 	sub dx,di
 	mov result,dx
 	jmp @@done
+endif
 
 TestForSystemRAM endp
+
+;--- handle I=TEST option
+;--- may change 'E' to 'I'
+
+HandleITest proc uses si
+	mov si,0C0h
+	.repeat
+		.if SystemMemory[si] == 'E'
+			mov ax,si
+			xchg al,ah
+			mov es, ax
+			mov bx,0
+			mov al,es:[bx]
+			inc bx
+			.while bx < 1000h
+				.break .if al != es:[bx]
+				inc bx
+			.endw
+			.if bx == 1000h
+				invoke SetMemoryType, es, 'I'
+			.endif
+		.endif
+		inc si
+	.until si == 0F8h
+	ret
+HandleITest endp
 
 ;    ScanSystemMemory()
 ;    search memory for ROMS, adapters, graphics,...
@@ -681,8 +717,7 @@ TestForSystemRAM endp
 
 ScanSystemMemory PROC uses si di
 
-local blksiz:word
-local i:word
+local i:word       ;size EPROM in 0.5kB units
 local romsize:word
 local mem:word
 
@@ -693,66 +728,39 @@ local mem:word
 		mov es,mem
 		xor si, si
 		.if ( word ptr es:[si] == 0AA55h )
-			mov al, es:[si+2]
-			sub ah,ah
+			movzx ax,byte ptr es:[si+2]	;size in 512-byte units
 			mov di,ax
-			and ax,1
-			cmp ax,1
-			cmc
-			sbb cx,cx
-			and cx,5
+			mov i,ax
+			mov romsize,ax
+			mov si,es
 			.if bVerbose
-				mov ax,di
 				shr ax,1
+				sbb cx,cx
+				and cx,5
 				invoke printf, CStr("EPROM at %X, size %u.%u kB", LF), es, ax, cx
 			.endif
-			mov i,di
-			mov si,mem
-			mov romsize,di
 
 			.while i
-				mov di, 200H
+				mov di, 200H	;512-bytes units
 				mov bx,si
-				mov bl,bh
-				sub bh,bh
+				movzx bx,bh
 				.if SystemMemory[bx] != 'X'
 					mov ax, i
 					mov cx, si
-					.if ( cl == 0 || ax == romsize )
+					.if ( cl == 0 || ax == romsize )	;cl=0 means: 4k-page boundary
 						invoke SetMemoryType, si, 'E'
-						mov cx, si
-						.if IncludeTest && cl == 0
-							mov di, 1000H
-							.if WORD PTR i <= 7
-								mov di,i
-								shl di,9
-							.endif
-							mov blksiz,di
-							mov es,si
-							mov bx,0
-							mov ah,es:[bx]
-							inc bx
-							.while bx < di
-								.break .if al != es:[bx]
-								inc bx
-							.endw
-							.if bx == di
-								invoke SetMemoryType, si, 'I'
-							.endif
-						.endif
 					.endif
 				.endif
 				mov ax,di
-				shr di,4
+				shr di,4	;convert bytes to paras
 				add si,di
-				shr ax,9
+				shr ax,9	;convert bytes to 0.5kB units
 				sub i,ax
 			.endw
 
 			mov ax,si
 			mov bx,si
-			mov bl,bh
-			sub bh,bh
+			movzx bx,bh
 			.if SplitTest && al && SystemMemory[bx] == 'E'
 				shr al,5
 				add al,'0'
@@ -766,12 +774,12 @@ local mem:word
 			mov mem,ax
 			.continue
 		.endif
-		add	mem,0080H	;add 128 paragraphs (=2 kB)
+		add mem,0080H	;add 128 paragraphs (=2 kB)
 	.until mem >= 0F000h
 
-if 0;1;?INTEGRATED
+if ?I15RESNOSCAN
 ;--- don't scan for RAM if we called Int 15h ax=e820h
-	cmp bI15RsvdChk,0
+	cmp bI15RsvdChk, FALSE
 	jnz @F
 endif
 
@@ -797,8 +805,7 @@ endif
 			invoke printf, cx, si, ax
 			mov ax,mem
 			add ax,si
-			mov al,ah
-			sub ah,ah
+			movzx ax,ah
 			mov si,ax
 		.endif
 	.until si == 0
@@ -829,12 +836,19 @@ endif
 			inc mem
 		.endw
 	.endif
+
+;--- handle I=TEST
+	.if IncludeTest
+		call HandleITest
+	.endif
+
 	ret
 
 ScanSystemMemory ENDP
 
 ;--- find a contiguous area of 64 KB for the EMS page frame.
 ;--- should handle commandline option like "FRAME=D000"
+;--- out: AX=frame segment address
 
 LocatePageFrame PROC uses di si
 
@@ -855,10 +869,7 @@ local bWarning:byte
 	.endif
 
 	xor si,si	;frame address
-; Line 296
-	mov al,bFrameWanted
-	sub ah,ah
-	mov di,ax
+	movzx di,bFrameWanted
 
 ; Line 300
 	xor bx,bx
@@ -937,9 +948,9 @@ else
 	rep stosb
 endif
 
-	mov	ax,si
-	mov	ah,al
-	sub	al,al
+	mov ax,si
+	mov ah,al
+	sub al,al
 
 exit:
 	ret
@@ -948,75 +959,53 @@ LocatePageFrame ENDP
 
 IsUMBMemory PROC stdcall pg:word
 
-	cmp	jemmini.NoRAM,0
-	jne	$L567
-	mov	bx, pg
+	cmp jemmini.NoRAM,0
+	jne $L567
+	mov bx, pg
 	mov al, SystemMemory[bx]
-	cmp	al,'U'
-	je	$I275
-	cmp	al,'I'
-	je	$I275
+	cmp al,'U'
+	je $I275
+	cmp al,'I'
+	je $I275
 if ?SPLIT
-	cmp	al,'0'
-	jbe	@F
-	cmp	al,'8'
-	jb	$I275
+	cmp al,'0'
+	jbe @F
+	cmp al,'8'
+	jb $I275
 @@:
 endif
-	cmp	jemmini.NoEMS,0
-	jne	@F
-	cmp	jemmini.NoFrame,0
-	je	$L567
+	cmp jemmini.NoEMS,0
+	jne @F
+	cmp jemmini.NoFrame,0
+	je $L567
 @@:
-	cmp	al,'P'
-	jne	$L567
+	cmp al,'P'
+	jne $L567
 $I275:
-	mov	ax,1
+	mov ax,1
 $EX272:
 	ret
 $L567:
-	xor	ax,ax
-	jmp	$EX272
+	xor ax,ax
+	jmp $EX272
 
 IsUMBMemory ENDP
 
 UMBpageswanted PROC uses di si
 
-	xor	di,di
-	mov	si,0A0H
+	xor di,di
+	mov si,0A0H
 	.repeat
 		invoke IsUMBMemory, si
 		add di,ax
-		inc	si
+		inc si
 	.until si == 0F8h
-	mov	ax,di
+	mov ax,di
 	ret
 
 UMBpageswanted ENDP
 
 if ?INTEGRATED eq 0
-
-if 0
-
-emmcall proc c uses si function:byte
-
-	mov si,offset emmreg
-	mov al,byte ptr [si].REGS._ax
-	mov ah, function
-	mov bx,[si].REGS._bx
-	mov cx,[si].REGS._cx
-	mov dx,[si].REGS._dx
-	int 67h
-	mov [si].REGS._ax,ax
-	mov [si].REGS._bx,bx
-	mov [si].REGS._cx,cx
-	mov [si].REGS._dx,dx
-	movzx ax,ah
-	ret
-
-emmcall endp
-
-endif
 
 xmscall proc stdcall uses si function:BYTE
 
@@ -1052,13 +1041,25 @@ endif
 	ret
 xmscall endp
 
+XMS_GETVERSION   equ  0h
+XMS_ENABLEA20    equ  5h
+XMS_DISABLEA20   equ  6h
+XMS_V2_QUERYMEM  equ  8h
+XMS_V2_ALLOCEMB  equ  9h
+XMS_FREEEMB      equ 0Ah
+XMS_LOCKEMB      equ 0Ch
+XMS_UNLOCKEMB    equ 0Dh
+XMS_V3_QUERYMEM  equ 88h
+XMS_V3_ALLOCEMB  equ 89h
+
 ;--- get status of XMS memory
 ;--- sets global variables xms_mem_largest, xms_mem_free
 
 XMSGetMemoryStatus PROC c usev3:word
 
+	mov xmsreg._bx,-1
 	.if usev3
-		invoke xmscall, 88h	;get total free memory (edx) and largest free block (eax)
+		invoke xmscall, XMS_V3_QUERYMEM	;get v3 total free memory (edx) and largest free block (eax)
 		.if bl == 0	;BL must be 00
 			mov xms_mem_largest, eax
 			mov xms_mem_free, edx
@@ -1066,8 +1067,7 @@ XMSGetMemoryStatus PROC c usev3:word
 			jmp ok
 		.endif
 	.endif
-	mov xmsreg._bx,0
-	invoke xmscall, 8	;get total free memory (dx) and largest free block (ax)
+	invoke xmscall, XMS_V2_QUERYMEM		;get total free memory (dx) and largest free block (ax)
 	.if bl == 0
 		movzx eax, ax
 		movzx edx, dx
@@ -1093,12 +1093,12 @@ local xmshandle:word
 	mov eax, dwSizeKB
 	mov xmsreg._edx, eax
 	.if eax >= 10000h || usev3
-		invoke xmscall, 089h	;allocate ext. mem block
+		invoke xmscall, XMS_V3_ALLOCEMB	;allocate EMB
 	.else
-		invoke xmscall, 9		;allocate ext. mem block
+		invoke xmscall, XMS_V2_ALLOCEMB	;allocate EMB
 	.endif
 	.if ax
-		mov ax, xmsreg._dx
+		mov ax, dx
 	.endif
 	@DbgOutS <"XMSAllocMemory: exit, ax=">,?INITRMDBG
 	@DbgOutW ax,?INITRMDBG
@@ -1158,7 +1158,9 @@ nextitem:
 itemdone:
 	cmp ebx,0		;was this the last entry?
 	jnz nextitem
-	mov bI15RsvdChk,1
+if ?I15RESNOSCAN
+	mov bI15RsvdChk, TRUE
+endif
 done:
 	ret
 I15CheckRsvdRegion endp
@@ -1889,10 +1891,10 @@ if ?INTEGRATED eq 0
 	mov jemmini.XMSControlHandle, ax
 
 	mov xmsreg._dx, ax
-	invoke xmscall, 12	;lock extended memory block (returns phys address)
+	invoke xmscall, XMS_LOCKEMB	;lock EMB (returns phys address in DX:BX)
 	.if !ax
 		invoke printf, CStr("%s: can't lock XMS memory", LF), offset szError
-		invoke xmscall, 10	;free memory block
+		invoke xmscall, XMS_FREEEMB
 		jmp $L569	;exit with error
 	.endif
 
@@ -2125,9 +2127,9 @@ endif
 	jc @@nouninst
 ife ?INTEGRATED
 	mov dx,ax
-	mov ah, 0Dh 	;unlock block
+	mov ah, XMS_UNLOCKEMB	;unlock block
 	call [XMSdriverAddress]
-	mov ah, 0Ah 	;free block
+	mov ah, XMS_FREEEMB		;free block
 	call [XMSdriverAddress]
 else
 	movzx bx, al
@@ -2381,6 +2383,8 @@ IsEmmInstalled endp
 
 ;--- GetValue()
 ;--- converts a string into a DWORD
+;--- out: NC -> value in EAX
+;---      C -> no valid digit found
 
 GetValue PROC stdcall uses esi di cmdline:ptr BYTE, base:WORD, usesuffix:WORD
 
@@ -2413,6 +2417,8 @@ GetValue PROC stdcall uses esi di cmdline:ptr BYTE, base:WORD, usesuffix:WORD
 	jmp @@nextitem
 
 @@FB316:
+	cmp bx,cmdline
+	jz nodigit
 	cmp BYTE PTR usesuffix, 0
 	je @@I322
 	mov al,ah
@@ -2442,7 +2448,12 @@ GetValue PROC stdcall uses esi di cmdline:ptr BYTE, base:WORD, usesuffix:WORD
 	and al,al
 	jnz @@nextchar
 	pop eax		;result in EAX
+exit:
 	ret
+nodigit:
+	xor eax,eax
+	stc
+	jmp exit
 
 GetValue ENDP
 
@@ -2495,6 +2506,55 @@ VMwareDetect proc c
 	ret
 
 VMwareDetect endp
+
+;--- Display current status of (conventional) memory map
+
+DisplayMemoryMap proc
+	invoke printf, CStr(<"Memory Map: R/S=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb",LF>)
+	sub sp,64+4
+	mov cx,4
+	mov si,offset SystemMemory
+	.while cx
+		push cx
+		movzx eax,si
+		sub ax,offset SystemMemory
+		shl eax,12
+		invoke printf, CStr(<"%05lX: ">), eax
+		push ss
+		pop es
+		mov al,' '
+		mov di,sp
+		add di,2
+		push di
+		movsd
+		movsd
+		movsd
+		movsd
+		stosb
+		movsd
+		movsd
+		movsd
+		movsd
+		stosb
+		movsd
+		movsd
+		movsd
+		movsd
+		stosb
+		movsd
+		movsd
+		movsd
+		movsd
+		mov al,0
+		stosb
+		pop di
+		invoke printf, CStr(<"%s",LF>), di
+		pop cx
+		dec cx
+	.endw
+	add sp,64+4
+	ret
+DisplayMemoryMap endp
 
 cprintf PROC c pszText:ptr byte
 
@@ -2577,12 +2637,12 @@ local bHelp:byte
 
 	cld
 	xor di,di		;bOptionSet
-	mov bHelp,0
+	mov bHelp, FALSE
 
 	mov si,cmdline
 	.if mode != EXECMODE_EXE
 		invoke printf, addr szStartup
-		mov bLoad,1
+		mov bLoad, TRUE
 if ?FASTBOOT
 		invoke FindCommand, CStr("FASTBOOT")
 		.if ax
@@ -2601,7 +2661,7 @@ endif
 if ?LOAD
 		invoke FindCommand, CStr("LOAD")
 		.if ax
-			mov bLoad,1
+			mov bLoad, TRUE
 		.else
 			mov al,0ffh
 			mov jemmini.NoVCPI,al
@@ -2627,18 +2687,18 @@ endif
 			.endif
 		.endif
 		.if ax
-			mov bHelp,1
+			mov bHelp, TRUE
 		.endif
 	.endif
 
 	invoke FindCommand, CStr("NOVCPI")
 	.if ax
-		mov jemmini.NoVCPI,1
+		mov jemmini.NoVCPI,TRUE
 		inc di
 	.endif
 	invoke FindCommand, CStr("VCPI")
 	.if ax
-		mov jemmini.NoVCPI,0
+		mov jemmini.NoVCPI,FALSE
 		inc di
 	.endif
 if ?INTEGRATED
@@ -2652,12 +2712,12 @@ endif
 if ?A20PORTS or ?A20XMS
 	invoke FindCommand, CStr("NOA20")
 	.if ax
-		mov jemmini.NoA20,1
+		mov jemmini.NoA20,TRUE
 		inc di
 	.endif
 	invoke FindCommand, CStr("A20")
 	.if ax
-		mov jemmini.NoA20,0
+		mov jemmini.NoA20,FALSE
 		inc di
 	.endif
 endif
@@ -2665,25 +2725,25 @@ if ?VME
 ;	mov jemmini.NoVME,1
 	invoke FindCommand, CStr("NOVME")
 	.if ax
-		mov jemmini.NoVME,1
+		mov jemmini.NoVME,TRUE
 		inc di
 	.endif
 	invoke FindCommand, CStr("VME")
 	.if ax
-		mov jemmini.NoVME,0
+		mov jemmini.NoVME,FALSE
 		inc di
 	.endif
 endif
 if ?PGE
 	invoke FindCommand, CStr("NOPGE")
 	.if ax
-		mov jemmini.NoPGE,1
+		mov jemmini.NoPGE,TRUE
 		inc di
 	.endif
 
 	invoke FindCommand, CStr("PGE")
 	.if ax
-		mov jemmini.NoPGE,0
+		mov jemmini.NoPGE,FALSE
 		inc di
 	.endif
 endif
@@ -2701,7 +2761,7 @@ endif
 if ?INTEGRATED
 	invoke FindCommand, CStr("HMAMIN=")
 	.if ax
-		invoke GetValue, ax, 10, 0
+		invoke GetValue, ax, 10, FALSE
 		.if ax > 63
 			mov ax,63
 		.endif
@@ -2709,7 +2769,7 @@ if ?INTEGRATED
 	.endif
 	invoke FindCommand, CStr("MAXEXT=")
 	.if ax
-		invoke GetValue, ax, 10, 1
+		invoke GetValue, ax, 10, TRUE
 		mov xms_max, eax
 	.endif
  if ?XMS35
@@ -2726,25 +2786,25 @@ if ?INTEGRATED
 @@:
 	invoke FindCommand, CStr("MAXSEXT=")
 	.if ax
-		invoke GetValue, ax, 10, 1
+		invoke GetValue, ax, 10, TRUE
 		mov xms_smax, eax
 	.endif
  endif
 	invoke FindCommand, CStr("NOE801")
 	.if ax
-		mov bNoE801,1
+		mov bNoE801, TRUE
 	.endif
  ife ?XMS35
 	invoke FindCommand, CStr("NOE820")
 	.if ax
-		mov bNoE820,1
+		mov bNoE820, TRUE
 	.endif
  endif
 	invoke FindCommand, CStr("XMSHANDLES=")
 	.if ax
-		invoke GetValue, ax, 10, 0
+		invoke GetValue, ax, 10, FALSE
 		.if ax < 8
-			mov ax,8
+			mov ax, 8
 		.elseif ( ax > ?XMS_MAXHDLS )
 			mov ax, ?XMS_MAXHDLS
 		.endif
@@ -2752,12 +2812,12 @@ if ?INTEGRATED
 	.endif
 	invoke FindCommand, CStr("X2MAX=")
 	.if ax
-		invoke GetValue, ax, 10, 1
+		invoke GetValue, ax, 10, TRUE
 		mov jemmini.X2Max, ax
 	.endif
 endif
 
-	cmp bLoad,0
+	cmp bLoad, FALSE
 	je $I395
 
 	invoke FindCommand, CStr("VERBOSE")
@@ -2765,61 +2825,61 @@ endif
 		invoke FindCommand, CStr("/V")
 	.endif
 	.if ax
-		mov bVerbose,1
+		mov bVerbose, TRUE
 	.endif
 
 	invoke FindCommand, CStr("NODYN")
 	.if ax
-		mov jemmini.NoPool,1
+		mov jemmini.NoPool, TRUE
 	.endif
 	invoke FindCommand, CStr("NOINVLPG")
 	.if ax
-		mov jemmini.NoInvlPg,1
+		mov jemmini.NoInvlPg, TRUE
 	.endif
 
 	invoke FindCommand, CStr("MIN=")
 	.if ax
-		invoke GetValue, ax, 10, 1
+		invoke GetValue, ax, 10, TRUE
 		shr eax, 4
 		mov jemmini.MinMem16k,eax
 		.if bVerbose
 			shl eax, 4
 			invoke printf, CStr("Wanted preallocated EMS/VCPI memory: %lu kB", LF), eax
 		.endif
-		mov MinRequest,1
+		mov MinRequest, TRUE
 	.endif
 
 	invoke FindCommand, CStr("MAX=")
 	.if ax
-		invoke GetValue, ax, 10, 1
+		invoke GetValue, ax, 10, TRUE
 		shr eax,4
 		mov jemmini.MaxMem16k+0,eax
 	.endif
 	invoke FindCommand, CStr("NOEMS")
 	.if ax
 		invoke cprintf, CStr("NOEMS: EMS disabled (mostly :-)", LF)
-		mov jemmini.NoEMS,1
+		mov jemmini.NoEMS, TRUE
 	.endif
 
 	invoke FindCommand, CStr("NOVDS")
 	.if ax
-		mov jemmini.NoVDS,1
+		mov jemmini.NoVDS, TRUE
 	.endif
 	invoke FindCommand, CStr("VDS")
 	.if ax
-		mov jemmini.NoVDS,0
+		mov jemmini.NoVDS, FALSE
 	.endif
 
 	invoke FindCommand, CStr("FRAME=NONE")
 	.if ax
-		mov jemmini.NoFrame,1
+		mov jemmini.NoFrame, TRUE
 	.else
 		invoke FindCommand, CStr("FRAME=")
 		.if !ax
 			invoke FindCommand, CStr("/P")
 		.endif
 		.if ax
-			invoke GetValue, ax, 16, 0
+			invoke GetValue, ax, 16, FALSE
 			.if al
 				invoke printf, CStr("Rejected page frame=%x", LF), ax
 			.else
@@ -2833,11 +2893,11 @@ endif
 
 	invoke FindCommand, CStr("X=TEST")
 	.if ax
-		mov ExcludeTest,1
+		mov ExcludeTest,TRUE
 	.endif
 	invoke FindCommand, CStr("I=TEST")
 	.if ax
-		mov IncludeTest,1
+		mov IncludeTest,TRUE
 	.endif
 if ?SB
 	invoke FindCommand, CStr("SB")
@@ -2854,7 +2914,7 @@ endif
 if ?SPLIT
 	invoke FindCommand, CStr("SPLIT")
 	.if ax
-		mov SplitTest,1
+		mov SplitTest, TRUE
 	.endif
 endif
 if ?MOVEXBDA
@@ -2870,11 +2930,11 @@ endif
 
 	invoke FindCommand, CStr("ALTBOOT")
 	.if ax
-		mov jemmini.AltBoot,1
+		mov jemmini.AltBoot, TRUE
 	.endif
 	invoke FindCommand, CStr("NOHI")
 	.if ax
-		mov jemmini.NoHigh,1
+		mov jemmini.NoHigh, TRUE
 	.endif
 
 ;--- NOMOVEXBDA is a no-op, but helps MS EMM386 switch compatibility
@@ -2882,17 +2942,17 @@ endif
 
 	invoke FindCommand, CStr("NORAM")
 	.if ax
-		mov jemmini.NoRAM,1
+		mov jemmini.NoRAM, TRUE
 	.endif
 
 	invoke FindCommand, CStr("RAM")
 	.if ax
-		mov jemmini.NoRAM,0
+		mov jemmini.NoRAM, FALSE
 	.endif
 
 	invoke FindCommand, CStr("D=")
 	.if ax
-		invoke GetValue,ax, 10, 0
+		invoke GetValue,ax, 10, FALSE
 		mov di,ax
 		.if ax <= 128
 			lea ax,[di+3]
@@ -2906,8 +2966,9 @@ endif
 
 	invoke FindCommand, CStr("B=")
 	.if ax
-		invoke GetValue, ax, 16, 0
+		invoke GetValue, ax, 16, FALSE
 		.if ax < 1000h
+			invoke printf, CStr("%s: EMS banking start too low, set to 0x1000", LF), addr szWarning
 			mov ax, 1000h
 		.endif
 		mov jemmini.Border,ax
@@ -2950,6 +3011,7 @@ endif
 		invoke cprintf, CStr("VMware detected", LF)
 	.endif
 
+;--- get the "range" options: I|S|X=bbbb-eeee
 	.while 1
 		mov memtype,'I'
 		invoke FindCommand, CStr("I=")
@@ -2963,15 +3025,16 @@ endif
 			.endif
 		.endif
 		mov di,ax
-		invoke GetValue, ax, 16, 0
+		invoke GetValue, ax, 16, FALSE	;get start of range
+		jc range_invalid
 		mov rangestart,ax
 		.if BYTE PTR [di] == '-'
 			mov BYTE PTR [di],' '
 			inc di
-			invoke GetValue, di, 16, 0
+			invoke GetValue, di, 16, FALSE
+			jc range_invalid
 			mov rangestop, ax
-			mov cl, memtype
-			sub ch,ch
+			movzx cx, memtype
 			mov dx, rangestart
 			.if dx < 0A000h || dx >= ax
 				invoke printf, CStr("Rejected %c=%x..%x", LF), cx, dx, ax
@@ -2985,6 +3048,9 @@ endif
 					inc di
 				.endw
 			.endif
+		.else
+range_invalid:
+			invoke printf, CStr("%s: option '%c=' rejected, invalid syntax", LF), offset szError, memtype
 		.endif
 	.endw
 
@@ -2995,7 +3061,7 @@ $I395:
 	jb @F
 	cmp BYTE PTR [si],'9'
 	ja @F
-	invoke GetValue, ax, 10, 1
+	invoke GetValue, ax, 10, TRUE
 	shr eax,4
 	mov jemmini.MaxMem16k,eax
 	invoke skipWhite, si
@@ -3007,7 +3073,7 @@ $I395:
 		je exit1
 	.endif
 
-	.if bLoad == 0
+	.if bLoad == FALSE
 		invoke printf, addr szStartup
 		.if bHelp
 			invoke printf, addr szCopyRight
@@ -3069,11 +3135,11 @@ if ?INTEGRATED
 	mov ah,ENABLE_A20
 	call A20procs[bx]
 else
-	invoke xmscall, 0	;get version
+	invoke xmscall, XMS_GETVERSION
 	.if ax && xmsreg._ax >= 0300h
-		mov xmsspec3,1
+		mov xmsspec3, TRUE
 	.endif
-	invoke xmscall, 5	;enable A20
+	invoke xmscall, XMS_ENABLEA20
 	.if !ax
 		invoke printf, CStr("%s: enable A20 failed", LF), offset szError
 		jmp exit1
@@ -3091,8 +3157,8 @@ endif
 	.endif
 if ?INTEGRATED eq 0
 ;    /* if no int 2fh, function 4309h support, disable pool sharing */
-	.if jemmini.XMSHandleTable == 0 && jemmini.NoPool == 0
-		mov jemmini.NoPool,1
+	.if jemmini.XMSHandleTable == 0 && jemmini.NoPool == FALSE
+		mov jemmini.NoPool, TRUE
 		invoke printf, CStr("%s: XMS host doesn't provide handle array, dynamic memory allocation off!", LF), offset szWarning
 	.endif
 endif
@@ -3100,11 +3166,11 @@ endif
 	invoke ScanSystemMemory	;/* build up system memory map */
 
 	.if  jemmini.NoEMS
-		mov jemmini.NoFrame,1
+		mov jemmini.NoFrame, TRUE
 	.endif
-	.if jemmini.NoFrame == 0
+	.if jemmini.NoFrame == FALSE
 		invoke LocatePageFrame
-		mov jemmini.Frame,ax
+		mov jemmini.Frame, ax
 	.endif
 
 ; allocate from XMS the memory we need
@@ -3147,7 +3213,7 @@ if ?INTEGRATED
 		mov ah,DISABLE_A20
 		call A20procs[bx]
 else
-		invoke xmscall, 6 ; local disable A20
+		invoke xmscall, XMS_DISABLEA20 ; local disable A20
 endif
 		jmp exit1
 	.endif
@@ -3158,52 +3224,7 @@ endif
 
 	.if bVerbose
 		invoke printf, CStr("XMS memory block for monitor: %lx-%lx, XMS highest=%lx", LF), jemmini.MonitorStart, eax, jemmini.MaxPhysMem
-	.endif
-
-	.if bVerbose
-		invoke printf, CStr(<"Memory Map: R/S=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb",LF>)
-		sub sp,64+4
-		mov cx,4
-		mov si,offset SystemMemory
-		.while cx
-			push cx
-			movzx eax,si
-			sub ax,offset SystemMemory
-			shl eax,12
-			invoke printf, CStr(<"%05lX: ">), eax
-			push ss
-			pop es
-			mov al,' '
-			mov di,sp
-			add di,2
-			push di
-			movsd
-			movsd
-			movsd
-			movsd
-			stosb
-			movsd
-			movsd
-			movsd
-			movsd
-			stosb
-			movsd
-			movsd
-			movsd
-			movsd
-			stosb
-			movsd
-			movsd
-			movsd
-			movsd
-			mov al,0
-			stosb
-			pop di
-			invoke printf, CStr(<"%s",LF>), di
-			pop cx
-			dec cx
-		.endw
-		add sp,64+4
+		invoke DisplayMemoryMap
 	.endif
 
 	mov ax, ds
@@ -3240,7 +3261,7 @@ endif
 	.endif
 	invoke printf, CStr( NAMEMOD," loaded",LF )
 if ?INTEGRATED eq 0
-	invoke xmscall, 6	;local disable A20
+	invoke xmscall, XMS_DISABLEA20	;local disable A20
 endif
 	xor	ax,ax
 $EX338:

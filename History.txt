@@ -28,6 +28,9 @@
    handles changed to 48 (previously 32). Added JemmExL.exe, still supporting
    XMS v3.0 only. 
  - JemmEx: return DX=0 if XMS alloc functions fail (XMS spec).
+ - option I=TEST does now indeed what's documented. Previously it only
+   scanned regions of "external" ROMs ( i.e., the ROM of the VGA card ).
+   This means it's more "aggressive" now.
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset

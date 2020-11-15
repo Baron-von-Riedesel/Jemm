@@ -119,13 +119,14 @@
             <mmmm> must be >= A000. Specifying a range which is not really
             free may give "unexpected" results.
  I=TEST     scan ROMs for unused address space. This option will regard any
-            4 kB page containing identical byte values as "unused".
+            4 kB page containing identical byte values in read-only memory as
+            "unused".
  LOAD       installs Jemm from the command line. Be aware that UMBs
             cannot be provided this way, since DOS will ignore them.
  [MAX=]nnn  limit the maximum amount of memory to be allocated for VCPI (and
             EMS, if <nnn> is below 32 MB). The MAX= prefix is optional (a
             number found as option will be handled as if it has a MAX=
-            prefix).
+            prefix). Default value is 120 MB.
  MIN=nnn    preallocates <nnn> kB of XMS memory thus making sure this
             memory is truly available for EMS/VCPI. If MIN is higher than
             MAX, MAX will be adjusted accordingly. Default for <nnn> is 0.
@@ -172,7 +173,8 @@
             an EMS page) while they are running.
  V86EXC0D   makes Jemm route General Protection Faults (GPF) which occur in
             V86-mode to Int 0Dh. Without this option they are routed to
-            Int 06h. Usually there's no need to set this option.
+            Int 06h. This option should only be set if a resident program
+            is to be installed that can handle GPFs in v86-mode.
  VCPI       (re)enables VCPI. Option can be set from the command line.
  VERBOSE    talk a bit more during the load process (abbreviation: /V).
  VME/NOVME  options will enable/disable using the V86 Mode Extensions
@@ -197,14 +199,13 @@
  MAXEXT=l      limit extended memory controlled by XMM to <l> kB.
  MAXSEXT=l     limit extended memory beyond 4GB barrier to <l> kB.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
- NOE820        [removed in v5.80]
+ NOE820        for JemmEx, removed in v5.80, since required by XMS v3.5.
+               JemmExL still understands this option, which tells it not to use
+               int 15h, ax=E820h to get amount of extended memory.
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
                need a value of <m>=32767.
  XMSHANDLES=n  set number of XMS handles (default=48, min=8, max=128).
-
- JemmExL still understands option NOE820, which tells it not to use int 15h,
- ax=E820h to get amount of extended memory.
 
 
  4. EMS Implementation Notes
