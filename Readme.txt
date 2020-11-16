@@ -249,19 +249,17 @@
 
  6.1. UMBM
 
- UMBM is a small tool only useful if Jemm386 is used in conjunction with
- Uwe Sieber's UMBPCI. The purpose is to be able to load the XMM into
- upper memory. This driver must be loaded before Jemm386 and therefore
- cannot use UMBs provided by Jemm386.
-
- For JemmEx, UMBM is less useful, since the XMS is included and hence
- needs no low DOS memory.
+ UMBM is a small tool only useful in conjunction with Uwe Sieber's UMBPCI.
+ The main purpose of UMBM is to allow DOS to load the XMM into upper memory.
+ This driver must be loaded before Jemm386 and therefore DOS can't use UMBs 
+ provided by Jemm386. For JemmEx, UMBM is less useful, since the XMM is 
+ already included.
 
  How does UMBM work? It expects to find a "shadow" RAM region activated by
  UMBPCI. Then it installs inself as a temporary XMS host which just provides
  support for allocating UMBs. This is enough for most DOSes to grab the
- memory. After the UMBs have been allocated, UMBM will be removed from
- memory automatically.
+ memory (note: for this to work line DOS=UMB is required in CONFIG.SYS). After
+ the UMBs have been allocated, UMBM will be removed from memory automatically.
 
  UMBs based on "shadow" RAM, as it is supplied by UMBPCI+UMBM, may have
  limitations depending on the motherboard's chipset. Very often the memory

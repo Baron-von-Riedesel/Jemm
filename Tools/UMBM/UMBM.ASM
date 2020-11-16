@@ -101,6 +101,10 @@ umbr1:
 	jz umb2
 	db 0EAh
 oldvec	dd 0			;chain to previous handler
+dummyxmm::
+	xor ax,ax
+	mov bl,80h
+	retf
 
 umb1:					;request umb
 	mov bx,offset memtab
@@ -195,7 +199,6 @@ myint2f::
 	jmp dword ptr cs:[oldint2f]
 int4300:
 	or al,80h
-_iret:
 	iret
 int4310:
 	mov bx,offset umbrou
@@ -604,6 +607,7 @@ if ?MOVEXBDA
 @@:
 endif
 
+;--- check if an XMM is active
 	mov ax,4300h
 	int 2fh
 	xor bp,bp
@@ -613,7 +617,7 @@ endif
 	int 21h
 	mov word ptr oldint2f+0,bx
 	mov word ptr oldint2f+2,es
-	mov word ptr [oldvec+0],offset _iret
+	mov word ptr [oldvec+0],offset dummyxmm
 if ?MOVEINUMB
 	mov ax,[memtab]
 else
@@ -716,6 +720,7 @@ dHowTo  label byte
 	db "activated by UMBPCI. Option /XBDA may cause troubles if the upper memory",cr,lf
 	db "can't be used by DMA. To find out, there's no other way than to try.",cr,lf
 	db "Example:",cr,lf
+	db "DOS=UMB",cr,lf
 	db "DEVICE=UMBPCI.SYS",cr,lf
 	db "DEVICE=UMBM.EXE",cr,lf
 	db "DEVICEHIGH=HIMEMX.EXE",cr,lf

@@ -19,7 +19,8 @@
    it.
  - UMBM no longer requires the /I parameter; it will scan for blocks with
    the UMBPCI signature.
- - new option /XBDA for UMBM implemented.
+ - UMBM has new option /XBDA.
+ - UMBM now acts gracefully if line DOS=UMB is missing in CONFIG.SYS.
  - MOVEXBDA has got option /A to make it align the new XBDA to a kB boundary.
  - tool CPUSTAT split into CPUSTAT and CPUID.
  - emulation of Int 15h, ah=87 (move extended memory) has been enhanced
