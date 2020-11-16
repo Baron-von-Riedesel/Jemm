@@ -147,7 +147,10 @@
             expect the XBDA to start at a kB boundary. If the option causes
             a system "lock", use either MOVEXBDA.EXE or UMBPCI+UMBM instead.
  NOCHECK    disallows access via Int 15h, AH=87h to address regions which
-            aren't backuped by RAM.
+            aren't backuped by RAM. As for Jemm386: be aware that some old 
+            XMMs return wrong values for highest physical RAM - then this 
+            option may cause strange results. Also, this option may prevent
+            real-mode programs to use the VESA LFB.
  NODYN      disables XMS dynamic memory allocation. Jemm will allocate
             XMS memory for EMS/VCPI on initialization. Default is size
             of largest XMS block/2, but max. 32MB. With option MIN=xxx one
@@ -171,8 +174,10 @@
  S=mmmm-nnnn add a memory region (which must be in range C800-EFFF) as UMB.
             The memory region has to be filled with Shadow-RAM activated by
             UMBPCI, which must have been loaded *before* Himem/JemmEx.
-            NOTE: for Jemm386, instead of using "S=" one might as well use
-            UMBM.EXE, which additionally allows to load the XMS host "high".
+            NOTE: since v5.80, this option is virtually obsolete, because
+            either Jemm should find RAM activated by UMBPCI automatically, or,
+            if UMBM.EXE has been loaded in CONFIG.SYS, the RAM is already used
+            by DOS.
  SB         Soundblaster driver compatibility mode on.
  SPLIT      if ROMs are found which don't end exactly at a 4 kB boundary
             then setting this option will increase available UMB space. ROM

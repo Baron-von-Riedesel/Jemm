@@ -60,7 +60,7 @@ XMSdriverAddress PF16 0
 dwAllocatedBytes	DD 0;set by AllocAndInitMem()
 xms_mem_largest	DD 0	;largest free block in kB
 xms_mem_free	DD 0	;total free mem in kB
-xms_mem_highest	dd 0	;highest physical address
+xms_mem_highest	dd 0	;highest physical address; by XMS v3 (Jemm386) or Int15 (JemmEx)
 
 if ?INTEGRATED
 xms_max	DD 4095*1024	;MAXEXT= value
@@ -186,6 +186,9 @@ if ?INTEGRATED
  endif
 endif
     db " MIN=n         reserve up to <n> kB for EMS/VCPI memory on init (default=0)",LF
+if ?MOVEXBDA
+    db " MOVEXBDA      move XBDA into UMB. Some BIOSes won't allow this.",LF
+endif
     db " NOCHECK       disallow access to address space without RAM (MMIO)",LF
 if ?INTEGRATED
     db " NOE801        don't use Int 15h, E801h to get amount of ext. memory",LF
@@ -1073,6 +1076,7 @@ XMSGetMemoryStatus PROC c usev3:word
 		movzx edx, dx
 		mov xms_mem_largest, eax
 		mov xms_mem_free, edx
+		mov xms_mem_highest, (65535+1024)*1024-1 ;assume max extended memory for v2 (65535 kB)
 		jmp ok
 	.endif
 	xor ax,ax
