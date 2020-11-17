@@ -106,7 +106,8 @@
  ----------------------------------------------------------
  A20/NOA20  will set the A20 enable/disable emulation accordingly.
  ALTBOOT    this option is meant to select an alternate reboot handler,
-            if the standard handler doesn't work. Currently it does nothing.
+            if the standard handler doesn't work. The current implementation
+            sends a "system reset" command to the keyboard controller.
  B=xxxx     specify lowest segment address for EMS banking (default=4000,
             min=1000).
  D=nnn      this option will set the size of the DMA buffer to &lt;nnn&gt; kB.
@@ -273,14 +274,15 @@
  memory (note: for this to work line DOS=UMB is required in CONFIG.SYS). After
  the UMBs have been allocated, UMBM will be removed from memory automatically.
 
- UMBs based on "shadow" RAM, as it is supplied by UMBPCI+UMBM, may have
- limitations depending on the motherboard's chipset. Very often the memory
- is inaccessible for DMA. Read the documentation coming with UMBPCI for more
- details.
-
  Additionally, UMBM understands the /XBDA option. This will cause UMBM
  to move the XBDA into its first UMB, thus freeing even more low DOS memory.
  
+ UMBs based on "shadow" RAM, as it is supplied by UMBPCI+UMBM, may have
+ limitations depending on the motherboard's chipset. Sometimes the memory
+ is inaccessible for DMA (read the documentation coming with UMBPCI for more
+ details). OTOH, logical and physical addresses for these UMBs are identical,
+ which may be an advantage, especially for the XBDA. 
+
  Enter "UMBM" on the command line and read the example how to add UMBM
  to CONFIG.SYS. UMBM has been tested to run with MS-DOS 6/7 and FreeDOS.
 

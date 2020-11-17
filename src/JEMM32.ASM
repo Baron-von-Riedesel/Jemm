@@ -2417,6 +2417,11 @@ if ?FASTBOOT
 Reboot_2::
     mov dl,0    ;flag: do a "full" reboot
 endif
+    test [bV86Flags], V86F_ALTBOOT
+    jz Reboot_1
+
+    mov al,0FEh
+    out 64h,al	;should reboot
 
 Reboot_1::
     @DbgOutS <"Reboot_1 reached, int 19=">,?RBTDBG    

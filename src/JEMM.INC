@@ -213,7 +213,7 @@ endif
 NoEMS             db 0
 NoFrame           db 0
 NoPool            db 0
-AltBoot           db 0
+;AltBoot           db 0   ;v5.80: has become a bit in V86Flags
 NoVME             db 1
 NoVDS             db 0
 NoPGE             db 1
@@ -238,7 +238,7 @@ V86F_EMX        equ 4   ; EMX compat
 endif
 if ?FASTBOOT
 V86F_FASTBOOT   equ 8   ; fastboot active
-V86B_FASTBOOT   equ 3   ; bit 3
+V86F_FASTBOOT_B equ 3   ; bit 3
 endif
 if ?V86EXC0D
 V86F_V86EXC0D   equ 16  ; V86EXC0D active
@@ -246,6 +246,7 @@ endif
 if ?MOVEXBDA
 V86F_MOVEXBDA   equ 32  ; MOVEXBDA active
 endif
+V86F_ALTBOOT    equ 64  ; ALTBOOT active
 
 ;-- 120 MB max VCPI memory (in 16 kB units)
 ;-- keep this value low for buggy VCPI clients

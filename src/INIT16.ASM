@@ -1044,17 +1044,6 @@ endif
 	ret
 xmscall endp
 
-XMS_GETVERSION   equ  0h
-XMS_ENABLEA20    equ  5h
-XMS_DISABLEA20   equ  6h
-XMS_V2_QUERYMEM  equ  8h
-XMS_V2_ALLOCEMB  equ  9h
-XMS_FREEEMB      equ 0Ah
-XMS_LOCKEMB      equ 0Ch
-XMS_UNLOCKEMB    equ 0Dh
-XMS_V3_QUERYMEM  equ 88h
-XMS_V3_ALLOCEMB  equ 89h
-
 ;--- get status of XMS memory
 ;--- sets global variables xms_mem_largest, xms_mem_free
 
@@ -2934,7 +2923,7 @@ endif
 
 	invoke FindCommand, CStr("ALTBOOT")
 	.if ax
-		mov jemmini.AltBoot, TRUE
+		or jemmini.V86Flags, V86F_ALTBOOT
 	.endif
 	invoke FindCommand, CStr("NOHI")
 	.if ax

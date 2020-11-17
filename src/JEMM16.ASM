@@ -1222,23 +1222,29 @@ move_xbda proc
 	pop es
 	mov ax,es:[@XBDA]
 	mov dx,es:[@MEM_SIZE]
+if ?INITRMDBG
+	@DbgOutS <"move_xbda: xbda seg=">,1
+	@DbgOutW ax,1
+	@DbgOutS <", convmem=">,1
+	@DbgOutW dx,1
+	@DbgOutS <"kb",13,10>,1
+endif
 	shl dx,6
 	cmp ax,dx		;XBDA must be just above conventional memory
 	jnz nomovexbda	;else it a) has been moved already b) doesn't exist
 	mov es,ax
 	movzx si,byte ptr es:[0]
-	shl si,6	;convert kb to para
-	mov ax,4310h	;get driver addr
-	int 2Fh
-	push es
-	push bx
-	mov bp,sp
-	mov ah,10h	;alloc UMB
+	shl si,6		;convert kb to para
+	mov ah,XMS_ALLOCUMB	;alloc UMB
 	mov dx,si
-	call dword ptr [bp]
-	add sp,4
+	call [XMSdriverAddress]
 	cmp ax,1
 	jnz nomovexbda
+if ?INITRMDBG
+	@DbgOutS <"move_xbda: alloc umb ok, seg=">,1
+	@DbgOutW bx,1
+	@DbgOutS <13,10>,1
+endif
 	mov es,bx
 	push ds
 	push 0
@@ -1306,7 +1312,7 @@ ife ?A20XMS 					;if there is no XMS A20 trapping
 endif
 	@DbgOutS <"InstallXMSHandler: getting XMS UMB status",13,10>,?INITRMDBG
 	mov dx, -1
-	mov ah, 10h
+	mov ah, XMS_ALLOCUMB
 	call [XMSdriverAddress]
 	and ax, ax
 	jnz @@umbalreadythere

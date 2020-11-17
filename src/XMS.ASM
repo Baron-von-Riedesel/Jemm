@@ -637,7 +637,7 @@ if ?XMS35
 
 xms_sext_lock_emb proc
 
-	@DbgOutS <"xms_sext_lock_emb enter",10>
+	@DbgOutS <"xms_sext_lock_emb enter",10>,?EMBDBG
 	call xms_check_handle_ex	; check if dx holds "used" handle
     xor ax,ax                   ; flag error 
 	inc [esi].XMS_HANDLE.xh_locks; increase lock counter

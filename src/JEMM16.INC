@@ -30,6 +30,18 @@ endif
 EXECMODE_SYS equ 0	;launched as dos device driver
 EXECMODE_EXE equ 1	;launched as application
 
+XMS_GETVERSION   equ  0h
+XMS_ENABLEA20    equ  5h
+XMS_DISABLEA20   equ  6h
+XMS_V2_QUERYMEM  equ  8h
+XMS_V2_ALLOCEMB  equ  9h
+XMS_FREEEMB      equ 0Ah
+XMS_LOCKEMB      equ 0Ch
+XMS_UNLOCKEMB    equ 0Dh
+XMS_ALLOCUMB     equ 10h
+XMS_V3_QUERYMEM  equ 88h
+XMS_V3_ALLOCEMB  equ 89h
+
 InitJemm proto c
 IsJemmInstalled proto c
 EmmInstallcheck proto c

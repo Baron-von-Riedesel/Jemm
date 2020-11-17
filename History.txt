@@ -32,6 +32,7 @@
  - option I=TEST does now indeed what's documented. Previously it only
    scanned regions of "external" ROMs ( i.e., the ROM of the VGA card ).
    This means it's more "aggressive" now.
+ - ALTBOOT option sends "system reset" command to keyboard controller.
 
  02/02/2020: v5.79
  - if physical address of DMA buffer was beyond 16M, its size was reset
