@@ -34,6 +34,7 @@ if ?INTEGRATED
 else
 ?MOVEXBDA       EQU 1
 endif
+?MOVEXBDAPM     equ 1       ; 1=move XBDA in protected-mode
 
 ?STKSIZE        EQU 200H    ; Size monitor stack for non-reentrant execution
 ?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI

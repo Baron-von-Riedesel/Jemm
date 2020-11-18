@@ -19,6 +19,12 @@ wNew	dw ?
 wOld	dw ?
 INTMOD ends
 
+MCB struct
+sig db ?
+psp dw ?
+blsiz dw ?
+MCB ends
+
 ;--- @DefineBP: macro to define a v86-"breakpoint"
 
 @DefineBP macro _name
@@ -1053,12 +1059,13 @@ backinv86:
 
 	@DbgOutS <"V86 mode entered",13,10>,?INITRMDBG
 
-	call GetRes
+	call GetRes		;get Jemm resident part
 	mov bx,ax
 	push es
 if ?INTEGRATED
 	mov es,bx
 	mov word ptr es:[xms_handle_table.xht_pArray+2],bx
+	mov word ptr [XMSdriverAddress+2],bx	;v5.80 adjust XMS address
 endif
 if ?VDS
 	push 0
@@ -1095,7 +1102,7 @@ endif
 ife ?INTEGRATED
 	@DbgOutS <"calling InstallXMSHandler",13,10>,?INITRMDBG
 	call InstallXMSHandler
- if ?MOVEXBDA
+ if ?MOVEXBDA and not ?MOVEXBDAPM
 	call move_xbda ;must be called after InstallXMSHandler
  endif
 endif
@@ -1108,6 +1115,9 @@ endif
 	ret
 
 InitJemm ENDP
+
+;--- get Jemm resident segment address
+;--- may not be CS if Jemm has been moved in an UMB
 
 GetRes proc
 	mov ax,jemmini.ResUMB
@@ -1124,19 +1134,13 @@ GetRes endp
 ;--- 1. init XMS handle table for integrated version
 ;--- 2. link resident part in driver chain if moved high
 
-MCB struct
-sig db ?
-psp dw ?
-blsiz dw ?
-MCB ends
-
 endinit proc
 
 if ?INTEGRATED
 
 ;--- initialize XMS handles which haven't been set yet
 
-	call GetRes
+	call GetRes	;get Jemm resident segment address
 	mov es,ax
 	mov di, offset xms_handle_array
 	mov cx, xms_num_handles
@@ -1161,7 +1165,7 @@ if ?INTEGRATED
 endif
 
 if ?INTEGRATED
- if ?MOVEXBDA
+ if ?MOVEXBDA and not ?MOVEXBDAPM
 	call move_xbda
  endif
 endif
@@ -1170,7 +1174,7 @@ if ?ADDCONV
 
 ;--- if conventional memory has been increased (i.e. by I=A000-B7FF),
 ;--- increase last DOS MCB
-	mov ah,52h
+	mov ah,52h		;get LoL
 	int 21h
 	mov si, es:[bx-2]
 nextitem:
@@ -1206,7 +1210,7 @@ endif
 
 if ?MOVEHIGH
 	call GetRes
-	jc @F
+	jc @F               ;if carry set, we didn't move high
 	mov [wLow],0		;add the EMMXXXX0 driver to the driver chain
 	call LinkChain		;if we moved high
 @@:
@@ -1214,7 +1218,7 @@ endif
 	ret
 endinit endp
 
-if ?MOVEXBDA
+if ?MOVEXBDA and not ?MOVEXBDAPM
 move_xbda proc
 	test jemmini.V86Flags,V86F_MOVEXBDA
 	jz nomovexbda
@@ -1233,10 +1237,10 @@ endif
 	cmp ax,dx		;XBDA must be just above conventional memory
 	jnz nomovexbda	;else it a) has been moved already b) doesn't exist
 	mov es,ax
-	movzx si,byte ptr es:[0]
+	movzx si,byte ptr es:[0]	;byte 0 of XBDA contains size in kB
 	shl si,6		;convert kb to para
-	mov ah,XMS_ALLOCUMB	;alloc UMB
 	mov dx,si
+	mov ah,XMS_ALLOCUMB	;alloc UMB
 	call [XMSdriverAddress]
 	cmp ax,1
 	jnz nomovexbda
@@ -1245,11 +1249,14 @@ if ?INITRMDBG
 	@DbgOutW bx,1
 	@DbgOutS <13,10>,1
 endif
+;--- copy content of XBDA to new location
 	mov es,bx
+	pushf
+	cli
 	push ds
 	push 0
 	pop ds
-	xchg bx,ds:[@XBDA]
+	xchg bx,ds:[@XBDA]	;set new location of XBDA
 	mov ax,si
 	shr ax,6	;convert para to kb
 	add word ptr ds:[@MEM_SIZE],ax
@@ -1262,6 +1269,9 @@ endif
 	rep movsw
 	pop si
 	pop ds
+	popf
+
+;--- get last MCB and increase its size by size of XBDA
 	mov ah,52h
 	int 21h
 	mov ax, es:[bx-2]
@@ -1270,12 +1280,13 @@ nxtitem:
 	mov dx, es:[MCB.blsiz]	;get size of MCB
 	inc dx
 	add dx, ax		;dx = next block
-	cmp byte ptr es:[MCB.sig], 'M'
+	cmp es:[MCB.sig], 'M'
 	jnz @F
 	mov ax, dx
 	jmp nxtitem
 @@:
 	add es:[MCB.blsiz],si
+
 	cmp bVerbose,0
 	jz @F
 	invoke printf,CStr("XBDA moved to first UMB",10)

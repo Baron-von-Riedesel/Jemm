@@ -143,15 +143,14 @@
  MIN=nnn    preallocates &lt;nnn&gt; kB of XMS memory thus making sure this
             memory is truly available for EMS/VCPI. If MIN is higher than
             MAX, MAX will be adjusted accordingly. Default for &lt;nnn&gt; is 0.
- MOVEXBDA   move XBDA into UMB, thus increasing low DOS memory. This option
-            might require to also set option NOHI, because some BIOSes 
-            expect the XBDA to start at a kB boundary. If the option causes
-            a system "lock", use either MOVEXBDA.EXE or UMBPCI+UMBM instead.
+ MOVEXBDA   move XBDA into UMB, thus increasing low DOS memory. If this option
+            causes a system "lock", use either MOVEXBDA.EXE or UMBPCI+UMBM
+            instead.
  NOCHECK    disallows access via Int 15h, AH=87h to address regions which
             aren't backuped by RAM. As for Jemm386: be aware that some old 
             XMMs return wrong values for highest physical RAM - then this 
             option may cause strange results. Also, this option may prevent
-            real-mode programs to use the VESA LFB.
+            real-mode programs from using the VESA LFB.
  NODYN      disables XMS dynamic memory allocation. Jemm will allocate
             XMS memory for EMS/VCPI on initialization. Default is size
             of largest XMS block/2, but max. 32MB. With option MIN=xxx one
@@ -265,8 +264,8 @@
  UMBM is a small tool only useful in conjunction with Uwe Sieber's UMBPCI.
  The main purpose of UMBM is to allow DOS to load the XMM into upper memory.
  This driver must be loaded before Jemm386 and therefore DOS can't use UMBs 
- provided by Jemm386. For JemmEx, UMBM is less useful, since the XMM is 
- already included.
+ provided by Jemm386. For JemmEx, UMBM is usually not needed, since the XMM is 
+ included and needs no low memory.
 
  How does UMBM work? It expects to find a "shadow" RAM region activated by
  UMBPCI. Then it installs inself as a temporary XMS host which just provides
@@ -339,9 +338,6 @@
  MOVEXBDA is a device driver supposed to move the Extended BIOS Data
  Area ( XBDA or EBDA ) to low DOS memory. If an XBDA exists, it is usually
  located just below the A000 video segment, with a size of 1-12 kB.
- Moving the XBDA to low memory allows Jemm to increase DOS low memory up to
- 736 kB with commandline parameter I=A000-B7FF ( one should be aware of a
- few limitations of this setting - see below for more details ).
 
  Some DOS versions will move the XBDA on their own - at least if its size
  doesn't exceed 1 kB; then MOVEXBDA is not needed and will do nothing if 

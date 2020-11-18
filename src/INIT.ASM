@@ -1440,46 +1440,66 @@ if ?ADDCONV
 ;--- is used, which is bad if it is A000-B7FF.
 ;--- currently the workaround is to use MOVEXBDA.exe for XBDA
 ;--- moving.
-if 0;?MOVEXBDA
-	push ebx
-	test bV86Flags,V86F_MOVEXBDA
-	jz nomovexbda
-	movzx eax,word ptr ds:[@XBDA]	;does XBDA exist?
-	and eax,eax 
-	jz nomovexbda
-	cmp [ebx].UMBBLK.wSegm,0A000h	;first UMB starts at A000?
-	jnz @F
-	add ebx,sizeof UMBBLK
+if ?MOVEXBDA and ?MOVEXBDAPM
+    push ebx
+    test bV86Flags,V86F_MOVEXBDA
+    jz nomovexbda
+    movzx eax,word ptr ds:[@XBDA]   ;does XBDA exist?
+    and eax,eax 
+    jz nomovexbda
+    shl eax,4
+    cmp [ebx].UMBBLK.wSegm,0A000h   ;first UMB starts at A000?
+    jnz @F
+    add ebx,sizeof UMBBLK
 @@:
     mov cx, [ebx].UMBBLK.wSize
-	shr cx, 6	;convert para to kB
-	movzx dx,byte ptr [eax]
-	cmp dx,cx                       ;UMB large enough for XBDA?
-	jb nomovexbda
-	add ds:[@MEM_SIZE],dx
-	push esi
-	mov esi,eax
-	movzx edi,[ebx].UMBBLK.wSegm
-	mov ds:[@XBDA],di
-	shl edi,4
-	shl dx,6	;covert kb to para
-	sub [ebx].UMBBLK.wSize,dx
-	add [ebx].UMBBLK.wSegm,dx
-	movzx ecx,dx
-	shl ecx,2
-	rep movsd
+    shr cx, 6                       ;convert para to kB
+    movzx dx,byte ptr [eax]         ;get size of XBDA in kB
+    @DbgOutS <"XBDA/UMB size=">,?INITDBG
+    @DbgOutW dx,?INITDBG
+    @DbgOutS <"/">,?INITDBG
+    @DbgOutW cx,?INITDBG
+    @DbgOutS <" kB",10>,?INITDBG
+    cmp cx,dx                       ;UMB large enough for XBDA?
+    jb nomovexbda
+    add ds:[@MEM_SIZE],dx
+    push esi
+    mov esi,eax
+    movzx edi,[ebx].UMBBLK.wSegm
+    @DbgOutS <"moving XBDA to ">,?INITDBG
+    @DbgOutW di,?INITDBG
+    @DbgOutS <10>,?INITDBG
+    mov ds:[@XBDA],di
+    shl edi,4
+    shl dx,6    ;covert kb to para
+    sub [ebx].UMBBLK.wSize,dx
+    add [ebx].UMBBLK.wSegm,dx
+    movzx ecx,dx
+    shl ecx,2
+    rep movsd
+    pop esi
 nomovexbda:
-	pop ebx
+    pop ebx
 endif
+
+;--- is first UMB adjacent to "top of conv memory" in 40:13h?
+
 
     mov ax, ds:[@MEM_SIZE]  ;size in KB (640 kB = 280h)
     shl ax, 6           ;280h -> A000h
+
+    @DbgOutS <"[40:13]=">,?INITDBG
+    @DbgOutW ax,?INITDBG
+    @DbgOutS <" UMB=">,?INITDBG
+    @DbgOutW [ebx].UMBBLK.wSegm,?INITDBG
+    @DbgOutS <10>,?INITDBG
+
     cmp ax, [ebx].UMBBLK.wSegm
     jnz noinc_convmem
     mov cx, [ebx].UMBBLK.wSize
     shr cx, 6
     add ds:[@MEM_SIZE],cx
-    @DbgOutS <"BIOS memsize [413h] modified to">,?INITDBG
+    @DbgOutS <"new conv memsize [40:13]=">,?INITDBG
     @DbgOutW ds:[@MEM_SIZE],?INITDBG
     @DbgOutS <10>,?INITDBG
     or byte ptr [ebx].UMBBLK.wSize+1, UMB_ALLOCATED
