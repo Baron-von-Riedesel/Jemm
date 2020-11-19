@@ -2027,9 +2027,9 @@ endif
 	mov bx, ax		;EMMXXXX0 handle
 	mov handle,ax
 	@DbgOutS <"TryUnload, Jemm installed",10>,?UNLRMDBG
-	mov byte ptr resparm,4	;call function 4
+	mov byte ptr resparm,EMMDEV_GETRES	;get resident segment
 	lea dx,resparm
-	mov cx,4		;returns 4 byte
+	mov cx,sizeof resparm	;returns 2 words
 	mov ax,4402h	;read ioctl (get monitor's resident segment/size)
 	int 21h
 	jc @@nojemm2
@@ -2045,7 +2045,7 @@ endif
 
 ;--- check if any UMB is allocated
 
-	mov buff,7		;call "get umbs" function
+	mov buff,EMMDEV_GETUMBS		;call "get umbs" function
 	lea dx, buff
 	mov cx,UMB_MAX_BLOCKS * size UMBBLK
 	mov bx,handle
@@ -2164,7 +2164,7 @@ endif
 	mov handle,ax
 	mov bx, ax
 	lea dx, [buff]	;get version
-	mov byte ptr [buff],2
+	mov byte ptr [buff],EMMDEV_VERSION
 	mov cx,2
 	mov ax,4402h	;read ioctl (get version) [Emm386 compatible call]
 	int 21h
@@ -2176,7 +2176,7 @@ endif
 ;--- get EMS, VCPI, UMB, VME, A20 infos
 
 	lea dx, [buff]
-	mov byte ptr [buff],6
+	mov byte ptr [buff],EMMDEV_SYSVARS
 	mov cx,sizeof EMX06
 	mov bx, handle
 	mov ax,4402h	;read ioctl
@@ -2255,7 +2255,7 @@ if ?PGE
 endif
 
 	lea dx, [buff]
-	mov byte ptr [buff],7
+	mov byte ptr [buff],EMMDEV_GETUMBS
 	mov cx, UMB_MAX_BLOCKS * sizeof UMBBLK
 	mov bx, handle
 	mov ax,4402h	;read ioctl
@@ -2300,7 +2300,7 @@ EmmStatus endp
 ;--- pass options to an already installed Jemm386/JemmEx monitor
 
 CMD15 struct
-cmd db ?	;=15
+cmd db ?	;=EMMDEV_UPDATE
 	EMX15W <>
 CMD15 ends
 
@@ -2319,7 +2319,7 @@ local buff:CMD15
 
 ;--- fill structure to be send to running Jemm386/JemmEx
 
-	mov buff.cmd,15
+	mov buff.cmd,EMMDEV_UPDATE
 
 if ?VME
 	mov al, [jemmini.NoVME]

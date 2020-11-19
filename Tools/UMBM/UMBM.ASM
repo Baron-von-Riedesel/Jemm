@@ -189,14 +189,13 @@ deakt:
 	pop ds
 	ret
 
-oldint2f dd 0
-
 myint2f::
 	cmp ax,4300h
 	jz int4300
 	cmp ax,4310h
 	jz int4310
-	jmp dword ptr cs:[oldint2f]
+	db 0eah	;jmp far16 [oldint2f]
+oldint2f dd 0
 int4300:
 	or al,80h
 	iret

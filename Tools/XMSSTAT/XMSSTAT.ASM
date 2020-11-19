@@ -310,7 +310,7 @@ umbchk2:
 	jmp exit
 @@:
 	movzx ax,bl
-	invoke printf, CStr(<"request for UMB returned RC=%X",lf>),ax
+	invoke printf, CStr(<"request for UMB failed, BL=%X",lf>),ax
 	jmp exit
 umbchk1:
 	push bx 	 ;save UMB address

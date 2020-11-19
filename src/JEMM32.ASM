@@ -40,7 +40,7 @@
 ?NMI        equ 1       ; std=1, 1=allow NMIs inside the monitor
 ?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06
 ?ISRFLGS    equ 0       ; std=0, 1=display PIC ISR flags
-?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
+;?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
 ?CLEARCR4   equ 1       ; std=1, 1=clear CR4 at reboot
 
 if ?INTEGRATED
@@ -2260,21 +2260,21 @@ endif
     mov [OldInt19],eax  ;save the vector stored by DOS
     mov [esi-4],edx
 
-if 0    ;restoring the XBDA should be done by DOS (MS-DOS does)
-    mov dx,ds:[@XBDA]
-    and dx,dx
-    jz @@noxbda
-    movzx esi,dx
+if 0;?MOVEXBDA ;restoring the XBDA should be done by DOS (MS-DOS does)
+    movzx esi,word ptr ds:[@XBDA]
+    cmp si, 0A000h
+    jb @@noxbda
     shl esi, 4
-    mov al,[esi]            ;first byte of XBDA is size in KB
-    mov ah,0
+    movzx eax,byte ptr [esi];first byte of XBDA is size in KB
     sub ds:[@MEM_SIZE],ax   ;restore size of low memory
-    mov di,[@MEM_SIZE]
-    movzx edi,di
+    movzx edi,word ptr ds:[@MEM_SIZE]
     shl edi, 6
     mov ds:[@XBDA],di
     shl edi, 4
-    movzx ecx, al
+    @DbgOutS <"restore XBDA to ">,?RBTDBG
+    @DbgOutW di,?RBTDBG
+    @DbgOutS <10>,?RBTDBG
+    mov ecx, eax
     shl ecx,8
     rep movsd
 @@noxbda:

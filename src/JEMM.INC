@@ -146,7 +146,18 @@ endif
 
 if ?EMMXXXX0
 
-;--- structure returned by Jemm386 if an "INFO" request was made
+;--- ioctl read functions
+EMMDEV_GETAPI  equ 0
+EMMDEV_GEMMIS  equ 1
+EMMDEV_VERSION equ 2
+EMMDEV_GETRES  equ 4
+EMMDEV_SYSVARS equ 6
+EMMDEV_GETUMBS equ 7
+EMMDEV_GETSTAB equ 8    ;get VMM info
+;--- ioctl write functions
+EMMDEV_UPDATE  equ 15
+
+;--- structure returned by Jemm386 if an SYSVARS request was made
 ;--- for device "EMMXXXX0"
 
 EMX06 struct

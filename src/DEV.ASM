@@ -125,22 +125,22 @@ IoctlRead proc
 
     movzx edx, [ecx].request_hdr.rhCount
     mov al, [EBX+0]
-    cmp al, 0           ;get "API"
+    cmp al, EMMDEV_GETAPI  ;get "API"
     jz  @@func00
 if 0
-    cmp al, 1           ;GEMMIS not supported
+    cmp al, EMMDEV_GEMMIS  ;GEMMIS not supported
     jz @@func01
 endif
-    cmp al, 2           ;get version
+    cmp al, EMMDEV_VERSION ;get version
     jz @@func02
-    cmp al, 4           ;get Emm386 resident segment/size?
+    cmp al, EMMDEV_GETRES  ;get Emm386 resident segment/size?
     jz @@func04
-    cmp al, 6           ;get system vars
+    cmp al, EMMDEV_SYSVARS ;get system vars
     jz @@func06
-    cmp al, 7           ;get UMBs
+    cmp al, EMMDEV_GETUMBS ;get UMBs
     jz @@func07
 if ?SERVTABLE
-    cmp al, 8           ;get VMM service table info
+    cmp al, EMMDEV_GETSTAB ;get VMM service table info
     jz @@func08
 endif
     jmp @@error
@@ -262,7 +262,7 @@ IoctlRead endp
 
 ;--- all registers may be modified!
 ;--- inp: ECX=request header
-;--- the "update" command is 15
+;--- the "update" command is EMMDEV_UPDATE
 
 IoctlWrite proc
 
@@ -273,7 +273,7 @@ IoctlWrite proc
     add esi, eax
 
     lods byte ptr [esi]  ;function to call
-    cmp al, 15
+    cmp al, EMMDEV_UPDATE
     jz @@func15
 @@error:
     stc

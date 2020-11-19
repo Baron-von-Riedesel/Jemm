@@ -1484,7 +1484,6 @@ endif
 
 ;--- is first UMB adjacent to "top of conv memory" in 40:13h?
 
-
     mov ax, ds:[@MEM_SIZE]  ;size in KB (640 kB = 280h)
     shl ax, 6           ;280h -> A000h
 
@@ -1496,6 +1495,8 @@ endif
 
     cmp ax, [ebx].UMBBLK.wSegm
     jnz noinc_convmem
+
+;--- then add this UMB to conventional memory and mark UMB as allocated
     mov cx, [ebx].UMBBLK.wSize
     shr cx, 6
     add ds:[@MEM_SIZE],cx
