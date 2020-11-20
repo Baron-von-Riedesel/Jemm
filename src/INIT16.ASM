@@ -695,7 +695,8 @@ HandleITest proc uses si
 				inc bx
 			.endw
 			.if bx == 1000h
-				invoke SetMemoryType, es, 'I'
+;				invoke SetMemoryType, es, 'I'
+				invoke SetMemoryType, es, 'U'
 			.endif
 		.endif
 		inc si
@@ -904,36 +905,36 @@ local bWarning:byte
 
 	mov bSearching,1
 
-	mov di,0a0H
+;--- scan memory for a page frame
+;--- scan from high to low E800..A000
+	mov di,0E8H
 	.repeat
 		xor bx,bx
-		.repeat
-;--- v5.78: 'I' is also ok
-;			.break .if SystemMemory[bx][di] != 'U'
-			.break .if SystemMemory[bx][di] != 'U' && SystemMemory[bx][di] != 'I'
+;--- v5.78: accept both 'U' and 'I'
+;		.while SystemMemory[bx][di] == 'U'
+		.while bx < 16 && (SystemMemory[bx][di] == 'U' || SystemMemory[bx][di] == 'I')
 			inc bx
-		.until bx >= 16
+		.endw
 
-		.if bx == 16
-			mov si, di
-		.endif
+		.break .if bx == 16
 
-		add di,4        ;ensure that frame starts at an EMS "physical page"
-	.until di > 0E8h
+		sub di,4        ;ensure that frame starts at an EMS "physical page"
+	.until di < 0a0h
 
-	.if si == 0
+	.if bx != 16
 		invoke printf, CStr("%s: no suitable page frame found, EMS functions limited.", LF), addr szWarning
 		mov jemmini.NoFrame,1
 		xor ax,ax
 		jmp exit
 	.endif
+	mov si, di
 
 $frameset251:
 
 	.if bVerbose || bSearching
 		invoke printf, CStr("Using page frame %02x00", LF), si
 	.endif
-	.if bWarning && (!bSearching)
+	.if bWarning && (!bSearching) || di < 0C0h
 		invoke printf, CStr("%s: page frame %02x00 might not work reliably", LF), OFFSET szWarning, si
 	.endif
 

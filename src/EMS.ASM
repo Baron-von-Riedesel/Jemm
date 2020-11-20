@@ -1750,7 +1750,8 @@ endif
 
 ;--- calc mappable EMS pages
 ;--- if a frame is set, physical pages 0-3 have been reserved already.
-;--- segments A000-FFFF will get the next page numbers if NORAM is set.
+;--- segments A000-FFFF will get the next page numbers (up to v5.79: only if NORAM is set).
+;--- if A000-B7FF is added to conv. memory, then they get high numbers.
 
 ife ?LIM32
     mov ebx,[esi].JEMMINIT.PageMap
@@ -1773,21 +1774,27 @@ if ?INITDBG
     jnz @@nextitemx
 endif
 
+;--- up to v5.79:
 ;--- if NORAM, include 'IIII', then 'RRRR'
 ;--- if RAM,   include 'RRRR' only
+;--- since v5.80: NORAM isn't relevant anymore.
+;--- if A000 is included, then scan begins with C000-FC00, then 4000-BC00
+;--- if A000 is NOT included, then scan begins with A000-FC00, then 4000-9C00
 
-    push edi
-    mov edi,'IIII'
-    cmp [esi].JEMMINIT.NoRAM,1
-    jz noram_isset
-@@nextround:
-    mov edi,'RRRR'
-noram_isset:
-    mov dh,0            ;DH=num mappable pages below A000
-    movzx ecx,byte ptr [esi].JEMMINIT.Border+1
+    mov dh,0            ;DH=num mappable pages (below C000/A000?)
+    xor ecx,ecx
+    mov cl,0C0h
+    cmp dword ptr [ebx+0A0h], 'IIII'
+    jz @F
+    mov cl,0A0h
+@@:
+	mov dl,cl
 @@nextitem2:
-    cmp edi,[ebx+ecx]
+    cmp dword ptr [ebx+ecx], 'RRRR'
+    jz @F
+    cmp dword ptr [ebx+ecx], 'IIII'
     jnz @@skipitem
+@@:
     movzx eax,[bEmsPhysPages]
     cmp al,?MAXPHYSPG
     jnc @@skipitem
@@ -1803,12 +1810,12 @@ if 0        ;is not needed, since once the page is remapped, the bit is reset
     and byte ptr [eax+12+1],not 1   ;reset "global" attribute
 endif
 @@skipitem:
-    add ecx,4
-    cmp ch,0
-    jz @@nextitem2
-    cmp edi,'RRRR'
-    jnz @@nextround
-    pop edi
+    add cl,4
+    jnz @F
+    mov cl,byte ptr [esi].JEMMINIT.Border+1
+@@:
+    cmp cl,dl
+    jnz @@nextitem2
     mov [bPagesConv],dh
     movzx edx,dh
     add word ptr [EMSPagesMax],dx
