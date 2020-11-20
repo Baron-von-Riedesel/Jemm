@@ -1108,50 +1108,51 @@ endif
     mov esi, jemmini
 
 ;--- Pool init
+;--- esi->jemminit, edi=linear addr free space
+;--- out: edi=free space
 
     call Pool_Init1
 
-;--- EMS/VCPI init
+;--- EMS/VCPI init, init EMS SYSTEM handle
+;--- esi->jemminit, edi=linear addr free space
+;--- out: edi=free space
 
     call EMS_Init2
 
-;--- convert EDI back into a physical address
-;--- use the page directory for the conversion
+;--- get the (linear) page number into EAX
 
     mov eax, edi
     sub eax, ?SYSLINEAR
     shr eax, 12
 
-    and edi, 0FFFh
-
 if 0
-    setnz cl
-    movzx ecx,cl
-
-    @GETPTEPTR esi, ?PAGETABSYS+eax*4+?SYSPTE
-
 ;--- clear the PTEs which are not used in the heap
-
+    xor ecx,ecx
+    test di,0fffh
+    setnz cl
+    @GETPTEPTR esi, ?PAGETABSYS+eax*4+?SYSPTE
     lea esi,[esi+ecx*4]
     xor ecx, ecx
-@@nextptecl:
+@@:
     cmp ecx,[esi]
-    jz @@cldone
+    jz @F
     mov [esi],ecx
     add esi,4
-    jmp @@nextptecl
-@@cldone:
+    jmp @B
+@@:
 endif
 
+;--- convert EDI back into a physical address
+;--- use the page directory for the conversion
+
     @GETPTE eax, ?PAGETABSYS+eax*4+?SYSPTE
-    and ah, 0F0h
-    mov al, 0
+    and ax, 0F000h
+    and edi, 0FFFh
 
 if ?INITDBG
     @DbgOutS <"End of monitor: ">,1
-    @DbgOutD edi,1
-    @DbgOutS <", last physical page used: ">,1
-    @DbgOutD eax,1
+    lea ecx, [eax+edi]
+    @DbgOutD ecx,1
     @DbgOutS <10>,1
 endif
 
@@ -1185,7 +1186,7 @@ endif
 ; max VCPI/EMS memory to 0
 
 if ?INITDBG
-    @DbgOutS <"out of memory condition on init!, MonitorEnd=">,1
+    @DbgOutS <"ERROR: out of memory condition on init, MonitorEnd=">,1
     @DbgOutD [esi].JEMMINIT.MonitorEnd,1
     @DbgOutS <" EDI=">,1
     @DbgOutD edi,1
@@ -1224,7 +1225,11 @@ endif
     cmp [esi].JEMMINIT.NoRAM,0
     jnz @@noumbmapping
 
-    @DbgOutS <"UMB init start",10>,?INITDBG
+    @DbgOutS <"UMB init start, mem to map=">,?INITDBG
+    @DbgOutD edi,?INITDBG
+    @DbgOutS <", remaining mem=">,?INITDBG
+    @DbgOutD eax,?INITDBG
+    @DbgOutS <10>,?INITDBG
 
     push ebp
     mov ebp, eax
@@ -1263,7 +1268,9 @@ endif
     mov eax,ebp
     pop ebp
 
-    @DbgOutS <"UMBs mapped",10>,?INITDBG
+    @DbgOutS <"UMBs mapped, remaining mem=">,?INITDBG
+    @DbgOutD eax,?INITDBG
+    @DbgOutS <10>,?INITDBG
 
 @@noumbmapping:
 
@@ -1271,7 +1278,7 @@ endif
 ;   jnz @@noshadow
 
 ;-- shadow ROM page 0FFh to catch jumps to FFFF:0
-;-- to fill the the new page with the content of the ROM, map it
+;-- to fill the new page with the content of the ROM, map it
 ;-- at linear scratch pos and copy the content.
 
     cmp eax,1000h   ;is enough free space available?
@@ -1309,38 +1316,6 @@ endif
     shr eax,12                  ; convert bytes to 4k pages
     call Pool_Init2
 
-if ?INTEGRATED
-
-;--- for the integrated version the rest of the memory can be released now
-
-ife ?BUFFERED   ;avoid this if debug output is buffered
-
-;--- this code assumes that first entry in xms handle table is
-;--- the emb allocated for jemmex.
-
-	mov ebx,[XMS_Handle_Table.xht_pArray]
-	mov ecx, edi
-	shr ecx, 10
-;--- search the handle for the adjacent free memory
-	lea edx, [ebx+sizeof XMS_HANDLE]
-	mov eax, [ebx].XMS_HANDLE.xh_baseK
-	add eax, [ebx].XMS_HANDLE.xh_sizeK
-	.while [edx].XMS_HANDLE.xh_flags != XMSF_INPOOL && \
-			eax != [edx].XMS_HANDLE.xh_baseK
-		add edx,sizeof XMS_HANDLE
-	.endw
-	sub eax, ecx
-	jbe @F
-	sub [ebx].XMS_HANDLE.xh_sizeK, eax
-	add [edx].XMS_HANDLE.xh_sizeK, eax
-	mov [edx].XMS_HANDLE.xh_baseK, ecx
-@@:
-endif
-
-endif
-
-@@initdone:
-
 if ?INITDBG
     @DbgOutS <"EMS/VCPI memory handling initialised, MaxMem4K=">,1
     @DbgOutD [dwMaxMem4K],1
@@ -1348,6 +1323,25 @@ if ?INITDBG
     @DbgOutD edi,1
     @DbgOutS <10>,1
 endif
+
+if ?INTEGRATED
+
+;--- for the integrated version the rest of the memory can be released now
+
+ife ?BUFFERED   ;avoid this if debug output is buffered
+
+	mov ebx, edi
+	sub ebx, [esi].JEMMINIT.MonitorStart
+	shr ebx, 10
+	mov dx, [esi].JEMMINIT.XMSControlHandle
+	push esi
+	call xms_ext_realloc_emb
+	pop esi
+endif
+
+endif
+
+@@initdone:
 
 ;-- clear all dirty + accessed flags in page table 0
 
@@ -1375,54 +1369,7 @@ if ?VDS
 endif
 
 ;--- now clear the UMB pages and fill the UMB segment table
-
-    mov ebx,[esi].JEMMINIT.PageMap
-    mov ecx,0A0h
-    mov edi,offset UMBsegments - size UMBBLK
-    mov dl,0
-@@nextitem2:
-    mov al,[ebx+ecx]
-    call IsShadowRAM
-    jnc @@isshadow
-    cmp [esi].JEMMINIT.NoRAM,0
-    jnz @@skippage2
-    call IsUMBMemory
-    jc @@skippage2
-@@isshadow:
-    cmp dl,0
-    jz @@newumb
-if ?SPLIT
-    cmp al,'8'      ;is it a SPLIT ROM?
-    jb @@newumb    ;then it must be a new UMB
-endif
-    add [edi].UMBBLK.wSize,100h
-    call clearpage
-    jmp @@nextpage
-@@newumb:
-    add edi, size UMBBLK
-    cmp edi, offset UMBsegments + UMB_MAX_BLOCKS * size UMBBLK
-    jnc @@umbdone
-    inc [esi].JEMMINIT.NumUMBs
-    mov byte ptr [edi].UMBBLK.wSegm+1,cl
-    @DbgOutS <"new UMB at ">,?INITDBG
-    @DbgOutW [edi].UMBBLK.wSegm,?INITDBG
-    @DbgOutS <10>,?INITDBG
-    mov [edi].UMBBLK.wSize,100h
-if ?SPLIT
-    call clearpageEx
-else
-    call clearpage
-endif
-    mov dl,1
-    jmp @@nextpage
-@@skippage2:
-    mov dl,0
-@@nextpage:
-    inc ecx
-    cmp cl,0F8h
-    jb @@nextitem2
-@@umbdone:
-    @DbgOutS <"UMBs initialized",10>,?INITDBG
+    call UMB_Init
 
     mov ebx, offset UMBsegments
 
@@ -1448,8 +1395,10 @@ if ?MOVEXBDA and ?MOVEXBDAPM
     and eax,eax 
     jz nomovexbda
     shl eax,4
-    cmp [ebx].UMBBLK.wSegm,0A000h   ;first UMB starts at A000?
-    jnz @F
+    cmp [ebx].UMBBLK.wSegm,0C000h   ;first UMB in VGA region A000-BFFF?
+    jae @F
+    cmp [ebx+sizeof UMBBLK].UMBBLK.wSize,0  ;don't use it if there's another UMB.
+    jz @F
     add ebx,sizeof UMBBLK
 @@:
     mov cx, [ebx].UMBBLK.wSize
@@ -1583,61 +1532,6 @@ endif
 
 InitMonitor ENDP
 
-;--- clear an UMB "page"
-;--- in: ecx = page number
-;--- in: al = page type, if '1' <= al < '8' then split ROM
-;--- in: EDI -> UMBBLK 
-
-if ?SPLIT
-
-clearpageEx proc
-    cmp al,'8'
-    jnc clearpage
-    sub al,'0'  ;1,2,3,4,5,6,7
-    movzx eax,al
-    shl eax,5   ;20,40,60,80,A0,C0,E0
-    mov byte ptr [edi].UMBBLK.wSegm,al
-    sub word ptr [edi].UMBBLK.wSize,ax
-    @DbgOutS <"split page, UMB at ">,?INITDBG
-    @DbgOutW [edi].UMBBLK.wSegm,?INITDBG
-    @DbgOutS <" size=">,?INITDBG
-    @DbgOutW [edi].UMBBLK.wSize,?INITDBG
-    @DbgOutS <10>,?INITDBG
-    shl eax,4   ;1->200, 2->400, 3->600, 4->800, 5->A00, 6->C00, 7->E00
-    push edi
-    push ecx
-    mov edi,ecx
-    shl edi,12
-    add edi,eax
-    sub eax,1000h
-    neg eax
-    shr eax,2      ;added in v5.78
-    mov ecx,eax
-    xor eax,eax
-    rep stosd
-    pop ecx
-    pop edi
-    ret
-clearpageEx endp
-
-endif
-
-;--- clear a "page"
-;--- in: ecx = page number
-
-clearpage proc
-    push edi
-    push ecx
-    mov edi,ecx
-    shl edi,12
-    mov ecx,1000h/4
-    xor eax,eax
-    rep stosd
-    pop ecx
-    pop edi
-    ret
-clearpage endp
-
 ;--- copy ROM content to a shadow page
 ;--- ecx = linear page number to be shadowed (0=00000,1=01000,...)
 ;--- (max value 3FFh = address space 3FFxxxh)
@@ -1674,7 +1568,7 @@ CopyROM proc
     ret
 CopyROM endp
 
-IsUMBMemory proc
+IsUMBMemory proc public
 if ?SPLIT
     cmp al,'1'
     jb @@isnotumb
@@ -1698,29 +1592,6 @@ endif
     stc
     ret
 IsUMBMemory endp
-
-IsShadowRAM proc
-    cmp al,'S'
-    jnz @@isnotshadow
-    push ecx
-    shl ecx,12
-    mov ah,[ecx]
-    mov byte ptr [ecx],55h
-    cmp byte ptr [ecx],55h
-    jnz @@isnotshadow2
-    mov byte ptr [ecx],0AAh
-    cmp byte ptr [ecx],0AAh
-    jnz @@isnotshadow2
-    mov [ecx],ah
-    pop ecx
-    ret
-@@isnotshadow2:
-    mov [ecx],ah
-    pop ecx
-@@isnotshadow:
-    stc
-    ret
-IsShadowRAM endp
 
 .text$04 ENDS
 

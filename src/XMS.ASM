@@ -737,7 +737,7 @@ xms_get_handle_info endp
 ;--- dx=handle, ebx=new size
 ;--- modifies esi, edi, ax, bl
 
-xms_ext_realloc_emb proc
+xms_ext_realloc_emb proc public
 
     @DbgOutS <"xms_ext_realloc_emb enter, dx=">,?EMBDBG
     @DbgOutW dx,?EMBDBG

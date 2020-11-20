@@ -117,12 +117,15 @@ externdef Int67_V86Entry:near
 
 ;--- XMS/A20 publics
 
-externdef umb_handler:near
 externdef xms_handler:near
+externdef xms_ext_realloc_emb:near
 externdef A20_Set:near
 externdef A20_Handle60:near
 externdef A20_Handle64:near
 externdef A20_Handle92:near
+
+;--- UMB publics
+externdef umb_handler:near
 
 ;--- VDS publics
 
@@ -164,9 +167,11 @@ externdef Debug_Init:near
 externdef EMS_Init1:near
 externdef EMS_Init2:near
 externdef VDS_Init:near
+externdef UMB_Init:near
 externdef Pool_Init1:near
 externdef Pool_Init2:near
 externdef InitMonitor:near
+externdef IsUMBMemory:near
 externdef EMMXXXX0_Strategy:near
 externdef EMMXXXX0_Interrupt:near
 externdef vmm_service_table:VMM_SERV_TABLE

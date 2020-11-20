@@ -1812,9 +1812,14 @@ endif
     mov [bPagesConv],dh
     movzx edx,dh
     add word ptr [EMSPagesMax],dx
-    jns @@nopagelim
+    jns @F
     mov word ptr [EMSPagesMax],MAX_EMS_PAGES_POSSIBLE
-@@nopagelim:
+@@:
+if ?INITDBG
+    @DbgOutS <"EMS_Init1: phys EMS pages=">,1
+    @DbgOutD edx,1
+    @DbgOutS <10>,1
+endif
     shl edx,2
     add [dwMaxMem4K],edx
 endif   ;?LIM32
@@ -1833,7 +1838,7 @@ EMS_Init1 endp
 
 ;--- alloc the EMS management tables
 ;--- ESI -> JEMMINIT
-;--- EDI -> free space
+;--- EDI -> free space (linear address)
 
 EMS_Init2 proc public
 

@@ -960,39 +960,44 @@ exit:
 
 LocatePageFrame ENDP
 
+;--- check if a page is intended for UMB
+;--- out: AX=1 if yes, else AX=0
+
 IsUMBMemory PROC stdcall pg:word
 
 	cmp jemmini.NoRAM,0
-	jne $L567
+	jne notumb
 	mov bx, pg
 	mov al, SystemMemory[bx]
 	cmp al,'U'
-	je $I275
+	je isumb
 	cmp al,'I'
-	je $I275
+	je isumb
 if ?SPLIT
 	cmp al,'0'
 	jbe @F
 	cmp al,'8'
-	jb $I275
+	jb isumb
 @@:
 endif
 	cmp jemmini.NoEMS,0
 	jne @F
 	cmp jemmini.NoFrame,0
-	je $L567
+	je notumb
 @@:
 	cmp al,'P'
-	jne $L567
-$I275:
+	jne notumb
+isumb:
 	mov ax,1
-$EX272:
+exit:
 	ret
-$L567:
+notumb:
 	xor ax,ax
-	jmp $EX272
+	jmp exit
 
 IsUMBMemory ENDP
+
+;--- get the number of pages needed for UMBs
 
 UMBpageswanted PROC uses di si
 

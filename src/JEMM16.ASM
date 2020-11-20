@@ -1485,14 +1485,20 @@ I15AllocMemory proc stdcall public uses ds si dummy:WORD, kbneeded:DWORD
 
 ;--- scan handle table for a free block that is large enough
 	.while [bx].XMS_HANDLE.xh_flags != XMSF_INPOOL
-		.if si == 0 && \
-			[bx].XMS_HANDLE.xh_flags == XMSF_FREE && \
-			ecx <= [bx].XMS_HANDLE.xh_sizeK
-			mov si,bx
-		.endif
+		cmp si,0
+		jnz @F
+		cmp [bx].XMS_HANDLE.xh_flags, XMSF_FREE
+		jnz @F
+		cmp [bx].XMS_HANDLE.xh_sizeK, ecx
+		jb @F
+if ?XMS35
+		test word ptr [bx].XMS_HANDLE.xh_baseK+2, 0FFC0h
+		jnz @F
+endif
+		mov si,bx
+@@:
 		add bx,sizeof XMS_HANDLE
 	.endw
-	mov ax, si
 	.if si
 ;--- a block with sufficient size has been found, and
 ;--- bx points to a free handle now, which will hold
@@ -1500,7 +1506,8 @@ I15AllocMemory proc stdcall public uses ds si dummy:WORD, kbneeded:DWORD
 		mov eax, [si].XMS_HANDLE.xh_sizeK
 		sub eax, ecx
 		mov [si].XMS_HANDLE.xh_sizeK, ecx
-		mov [si].XMS_HANDLE.xh_locks, 1
+;--- v5.80: don't lock block, so it can be "reallocated" in monitor
+;		mov [si].XMS_HANDLE.xh_locks, 1
 		mov [si].XMS_HANDLE.xh_flags, XMSF_USED
 		add ecx, [si].XMS_HANDLE.xh_baseK
 ;--- if eax (=size) is zero, no new handle is needed
@@ -1510,8 +1517,8 @@ I15AllocMemory proc stdcall public uses ds si dummy:WORD, kbneeded:DWORD
 		mov [bx].XMS_HANDLE.xh_sizeK, eax
 		mov [bx].XMS_HANDLE.xh_baseK, ecx
 @@:
-		mov ax, si
 	.endif
+	mov ax, si
 	ret
 I15AllocMemory endp
 

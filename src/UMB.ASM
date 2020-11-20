@@ -245,4 +245,141 @@ UMB_findblock endp
 
 .text$03 ends
 
+.text$04 segment
+
+;--- UMB initialization code
+;--- in: ESI->JemmIni
+;--- preserves esi, ebp
+
+UMB_Init proc public
+    mov ebx,[esi].JEMMINIT.PageMap
+    mov ecx,0A0h
+    mov edi,offset UMBsegments - size UMBBLK
+    mov dl,0
+@@nextitem2:
+    mov al,[ebx+ecx]
+    call IsShadowRAM
+    jnc @@isshadow
+    cmp [esi].JEMMINIT.NoRAM,0
+    jnz @@skippage2
+    call IsUMBMemory
+    jc @@skippage2
+@@isshadow:
+    cmp dl,0
+    jz @@newumb
+if ?SPLIT
+    cmp al,'8'      ;is it a SPLIT ROM?
+    jb @@newumb    ;then it must be a new UMB
+endif
+    add [edi].UMBBLK.wSize,100h
+    call clearpage
+    jmp @@nextpage
+@@newumb:
+    add edi, size UMBBLK
+    cmp edi, offset UMBsegments + UMB_MAX_BLOCKS * size UMBBLK
+    jnc @@umbdone
+    inc [esi].JEMMINIT.NumUMBs
+    mov byte ptr [edi].UMBBLK.wSegm+1,cl
+    @DbgOutS <"new UMB at ">,?INITDBG
+    @DbgOutW [edi].UMBBLK.wSegm,?INITDBG
+    @DbgOutS <10>,?INITDBG
+    mov [edi].UMBBLK.wSize,100h
+if ?SPLIT
+    call clearpageEx
+else
+    call clearpage
+endif
+    mov dl,1
+    jmp @@nextpage
+@@skippage2:
+    mov dl,0
+@@nextpage:
+    inc ecx
+    cmp cl,0F8h
+    jb @@nextitem2
+@@umbdone:
+    @DbgOutS <"UMBs initialized",10>,?INITDBG
+    ret
+UMB_Init endp
+
+IsShadowRAM proc
+    cmp al,'S'
+    jnz @@isnotshadow
+    push ecx
+    shl ecx,12
+    mov ah,[ecx]
+    mov byte ptr [ecx],55h
+    cmp byte ptr [ecx],55h
+    jnz @@isnotshadow2
+    mov byte ptr [ecx],0AAh
+    cmp byte ptr [ecx],0AAh
+    jnz @@isnotshadow2
+    mov [ecx],ah
+    pop ecx
+    ret
+@@isnotshadow2:
+    mov [ecx],ah
+    pop ecx
+@@isnotshadow:
+    stc
+    ret
+IsShadowRAM endp
+
+;--- clear an UMB "page"
+;--- in: ecx = page number
+;--- in: al = page type, if '1' <= al < '8' then split ROM
+;--- in: EDI -> UMBBLK 
+
+if ?SPLIT
+
+clearpageEx proc
+    cmp al,'8'
+    jnc clearpage
+    sub al,'0'  ;1,2,3,4,5,6,7
+    movzx eax,al
+    shl eax,5   ;20,40,60,80,A0,C0,E0
+    mov byte ptr [edi].UMBBLK.wSegm,al
+    sub word ptr [edi].UMBBLK.wSize,ax
+    @DbgOutS <"split page, UMB at ">,?INITDBG
+    @DbgOutW [edi].UMBBLK.wSegm,?INITDBG
+    @DbgOutS <" size=">,?INITDBG
+    @DbgOutW [edi].UMBBLK.wSize,?INITDBG
+    @DbgOutS <10>,?INITDBG
+    shl eax,4   ;1->200, 2->400, 3->600, 4->800, 5->A00, 6->C00, 7->E00
+    push edi
+    push ecx
+    mov edi,ecx
+    shl edi,12
+    add edi,eax
+    sub eax,1000h
+    neg eax
+    shr eax,2      ;added in v5.78
+    mov ecx,eax
+    xor eax,eax
+    rep stosd
+    pop ecx
+    pop edi
+    ret
+clearpageEx endp
+
+endif
+
+;--- clear a "page"
+;--- in: ecx = page number
+
+clearpage proc
+    push edi
+    push ecx
+    mov edi,ecx
+    shl edi,12
+    mov ecx,1000h/4
+    xor eax,eax
+    rep stosd
+    pop ecx
+    pop edi
+    ret
+clearpage endp
+
+.text$04 ends
+
     END

@@ -213,7 +213,7 @@ MinMem16k         dd MINMEM16K_DEFAULT    ;MIN mem in 16 kB units (default 0)
 XMSHandleTable    dd 0    ;XMS handle table (FAR16)
 PageMap           dd 0    ;conventional memory page map (FLAT!)
 MaxEMSPages       dw 0    ;EMS max 16 kB pages (default 2048)
-XMSControlHandle  dw 0    ;XMS memory block handle (or 0000 if I15)
+XMSControlHandle  dw 0    ;XMS memory block handle (both Jemm386 & JemmEx)
 DMABufferSize     dw DMABUFFDEFAULT    ;DMA buffer size in kB
 Frame             dw 0E000h    ;EMS page frame
 Border            dw 04000h    ;EMS border for mappable pages
