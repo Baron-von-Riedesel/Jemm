@@ -29,7 +29,7 @@ endm
 ?BUFFERED equ 0 ;1=buffer output in a XMS memory block
 ?USEMONO equ 0  ;1=use monochrome monitor for dbg displays
 
-?DBGOUT  equ ?V86DBG + ?DMADBG + ?VDSDBG + ?EMSDBG + ?UMBDBG + ?A20DBG + ?EMBDBG + ?EMUDBG + ?I15DBG + ?VCPIDBG + ?USEMONO + ?INITDBG + ?POOLDBG + ?UNLDBG + ?RBTDBG + ?EXCDBG + ?PHYSDBG
+?DBGOUT  equ ?V86DBG + ?DMADBG + ?VDSDBG + ?EMSDBG + ?UMBDBG + ?A20DBG + ?EMBDBG + ?EMUDBG + ?I15DBG + ?VCPIDBG + ?USEMONO + ?POOLDBG + ?INITDBG + ?HLTDBG + ?UNLDBG + ?RBTDBG + ?EXCDBG + ?PHYSDBG
 
 @WaitKey macro keycode, bCond
 local sm1

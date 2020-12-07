@@ -51,6 +51,8 @@ else
 ?NAME       equ <"Jemm386">
 endif
 
+?SELINTLOG equ ?V86DBG
+
 MAXBLOCKSIZE equ 40000h ; std=256 kB
 
 ;--- publics/externals
@@ -551,6 +553,16 @@ endif
 ;--- the monitor entry
 ;--- it should not be at the very beginning of this segment
 
+if ?SELINTLOG
+logintbm label dword
+;--- selective logs of INTs. default: log INT 0-7 only
+;      -------+-------3-------+-------2-------+-------1-------+-------0
+    dq 0000000000000000000000000000000000000000000000000000000011111111b
+;      -------+-------7-------+-------6-------+-------5-------+-------4
+    dq 0000000000000000000000000000000000000000000000000000000000000000b
+    dq 0,0
+endif
+
 if ?FASTMON
 
 @FASTMON macro x
@@ -584,9 +596,9 @@ V86_Monitor PROC public
 
     @v86pushreg
 
-if ?V86DBG and ?V86XDBG
-    @DbgOutS <".">,?V86DBG
-endif
+;if ?V86DBG and ?V86XDBG
+;    @DbgOutS <".">,?V86DBG
+;endif
 
 ;-- we don't know for sure what size the stack is.
 ;-- There might exist other ring0 code which intruded in the
@@ -607,7 +619,11 @@ endif
     CMP EBP, ?TOS - size V86FRAME           ; int/irq in v86 mode?
     JNZ @@IRQOREXC
 
-if ?V86DBG and ?V86XDBG
+if ?V86DBG
+  if ?SELINTLOG
+    bt cs:[logintbm],ecx
+    jnc @F
+  endif
     @DbgOutS <"Int in v86-mode, #=">,1
     @DbgOutW cx,1
     @DbgOutS <", CS:EIP=">,1
@@ -617,6 +633,7 @@ if ?V86DBG and ?V86XDBG
     @DbgOutS <" EBP=">,1
     @DbgOutD ebp,1
     @DbgOutS <10>,1
+@@:
 endif
 
 ;--- simulate an int in v86 mode
@@ -658,6 +675,10 @@ endif
 @@IRQOREXC:
 
 if ?V86DBG
+  if ?SELINTLOG
+    bt cs:[logintbm],ecx
+    jnc @F
+  endif
     @DbgOutS <"V86 IRQ/EXC, #=">,1
     @DbgOutW cx,1
     @DbgOutS <" EBP=">,1
@@ -673,7 +694,8 @@ if ?V86DBG
     @DbgOutS <":">,1
     @DbgOutD [ebp].V86FRAME.fESP,1
     @DbgOutS <10>,1
-    @WaitKey 1,1
+;    @WaitKey 1,1
+@@:
 endif
 if ?NMI
     cmp ecx,2       ;NMI?
@@ -900,8 +922,12 @@ HandleException endp
 
 V86_Exception proc
 
-if ?V86DBG and ?V86XDBG
-;--- this happens quite often, so usually not good to activate
+if ?V86DBG
+;--- this happens quite often, so better activate selectively
+  if ?SELINTLOG
+    bt cs:[logintbm],ecx
+    jnc @F
+  endif
     @DbgOutS <"exception in v86-mode, #=">,1
     @DbgOutW cx,1
     @DbgOutS <", CS:IP=">,1
@@ -909,6 +935,7 @@ if ?V86DBG and ?V86XDBG
     @DbgOutS <":">,1
     @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EIP>,1
     @DbgOutS <10>,1
+@@:
 endif
     MOV EAX,SS
     MOV DS,EAX
