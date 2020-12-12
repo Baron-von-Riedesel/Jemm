@@ -20,6 +20,7 @@ TRUE equ 1
 NULL equ 0
 
 ?USEMEMSET equ 0
+?UMBPCI equ 1
 
 	include jemm.inc
 	include jemm16.inc
@@ -257,22 +258,6 @@ SystemMemory DB 100H DUP (?)
 
 	.code
 
-strlen proc c uses di string:ptr BYTE
-
-	mov cx,-1
-	mov di,string
-	push ds
-	pop es
-	mov al,0
-	cld
-	repnz scasb
-	mov ax,cx
-	inc ax
-	not ax
-	ret
-
-strlen endp
-
 handle_char proc
 
 	mov dl,al
@@ -288,10 +273,10 @@ handle_char proc
 
 handle_char endp
 
-;--- ltob(long n, char * s, int base);
+;--- ltoa(long n, char * s, int base);
 ;--- convert long to string
 
-ltob PROC stdcall uses edi number:dword, outb:word, base:word
+ltoa PROC stdcall uses edi number:dword, outb:word, base:word
 
 	mov ch,0
 	movzx edi, base
@@ -329,11 +314,12 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 	mov ax,bx
 	ret
 
-ltob ENDP
+ltoa ENDP
 
 ;--- little printf() implementation.
 ;--- understands type %c, %x, %d, %i, u%, %s 
 ;--- and modifier l(ong)
+;--- assumes DS=SS=DGROUP
 
 printf PROC c public uses si di fmt:ptr byte, args:VARARG
 
@@ -343,8 +329,6 @@ local longarg:byte
 local fill:byte
 local szTmp[12]:byte
 
-	push ds
-	pop es
 	lea di,[fmt+2]
 @@L335:
 	mov si,[fmt]
@@ -359,7 +343,9 @@ nextchar:
 done:
 	xor ax,ax
 	ret
+
 formatitem:
+	push @@L335
 	xor dx,dx
 	mov [longarg],dl
 	mov bl,1
@@ -376,22 +362,20 @@ formatitem:
 	inc si
 @@:
 	mov [fill],cl
-	mov [size_],dx
-	mov bx,dx
-	jmp @@L358
-@@FC250:
+	mov bx,dx	;bx=0
+nextdigit:
+	cmp BYTE PTR [si],'0'
+	jb donenumber
 	cmp BYTE PTR [si],'9'
-	jg	@@L362
+	ja donenumber
 	lodsb
 	sub al,'0'
 	cbw
 	imul cx,bx,10		;cx = bx * 10
 	add ax,cx
 	mov bx,ax
-@@L358:
-	cmp BYTE PTR [si],'0'
-	jge @@FC250
-@@L362:
+	jmp nextdigit
+donenumber:
 	mov [size_],bx
 	cmp BYTE PTR [si],'l'
 	jne @F
@@ -400,45 +384,41 @@ formatitem:
 @@:
 	lodsb
 	mov [fmt],si
-	cbw
 	cmp al,'x'
 	je handle_x
-	ja @@L359
-	or al,al
-	je done 	;\0?
-	sub al,'X'
+	cmp al,'X'
 	je handle_x
-	sub al,11
-	je handle_c	;'c'
-	dec al
-	je handle_d	;'d'
-	sub al,5
-	je handle_i	;'i'
-	sub al,10
-	je handle_s	;'s'
-	sub al,2
-	je handle_u	;'u'
+	cmp al,'c'
+	je handle_c
+	cmp al,'d'
+	je handle_d
+	cmp al,'i'
+	je handle_i
+	cmp al,'s'
+	je handle_s
+	cmp al,'u'
+	je handle_u
 	jmp @@L359
-handle_c:				;'c'
+handle_c:
 	mov ax,[di]
 	add di,2
 @@L359:
 	call handle_char
-	jmp @@L335
+	retn
 
-handle_s:				;'s'
+handle_s:
 	mov si,[di]
 	add di,2
 	jmp @@do_outputstring260
 
-handle_x:				;'X' + 'x'
+handle_x:
 	mov bx,16
 	jmp @@lprt262
-handle_d:				;'d'
-handle_i:				;'i'
+handle_d:
+handle_i:
 	mov bx,-10
 	jmp @@lprt262
-handle_u:				;'u'
+handle_u:
 	mov bx,10
 @@lprt262:
 	mov ax,[di]
@@ -454,47 +434,43 @@ handle_u:				;'u'
 	add di,2
 @@:
 	lea cx,[szTmp]
-	invoke ltob, dx::ax, cx, bx
+	invoke ltoa, dx::ax, cx, bx
 	mov si,ax
-@@do_outputstring260:
-	invoke strlen, si
-	sub [size_],ax
-	cmp BYTE PTR [flag],1
-	jne @@L360
-	mov bx,[size_]
-	jmp @@L363
-@@F270:
-	mov al,[fill]
-	call handle_char
-	dec bx
-@@L363:
-	or bx,bx
-	jg @@F270
-	mov [size_],bx
-	jmp @@L360
 
-@@F273:
-	mov al,[si]
-	call handle_char
-	inc si
-@@L360:
-	cmp BYTE PTR [si],0
-	jne @@F273
-	mov bx,[size_]
-@@:
-	or bx,bx
-	jle @@L335
-	mov al,[fill]
-	call handle_char
-	dec bx
-	jmp @B
+@@do_outputstring260:
+	mov ax,si
+	mov bx,size_
+	.while byte ptr [si]
+		inc si
+	.endw
+	sub si,ax
+	xchg ax,si
+	sub bx,ax
+
+	.if flag == 1
+		.while sword ptr bx > 0
+			mov al,[fill]
+			call handle_char
+			dec bx
+		.endw
+	.endif
+
+	.while byte ptr [si]
+		lodsb
+		call handle_char
+	.endw
+	
+	.while sword ptr bx > 0
+		mov al,[fill]
+		call handle_char
+		dec bx
+	.endw
+	retn
 
 printf ENDP
 
 if 0
 memcpy proc c uses si di dst:ptr byte, src:ptr byte, len:word
-	push ds
-	pop es
 	mov di,dst
 	mov si,src
 	mov cx,len
@@ -506,8 +482,6 @@ endif
 if ?USEMEMSET
 memset proc c uses di dest:ptr BYTE, value:WORD, len:WORD
 
-	push ds
-	pop es
 	mov di,dest
 	mov ax,value
 	mov cx,len
@@ -572,8 +546,7 @@ SetMemoryType ENDP
 ;--- 2. argument is index for "SystemMemory" where to start scan
 ;--- 3. argument is a pointer to WORD, will return region size in paragraphs
 ;--- may change memory type from 'U' to 'R'
-
-?UMBPCI equ 1
+;--- modifies ES
 
 TestForSystemRAM proc c uses si di pv:ptr BYTE, index:WORD, pi:ptr WORD
 
@@ -657,9 +630,9 @@ isumbpci:
 	mov di,es
 	mov bx,8
 	.while word ptr es:[bx]
-		mov si,es:[bx+0]
+		mov si,es:[bx+0]	;get segment address
 		mov dx,si
-		mov ax,es:[bx+2]
+		mov ax,es:[bx+2]	;get size (paragraphs)
 		add dx,ax
 		shr si,8
 		add si,pv
@@ -668,7 +641,12 @@ nextitem:
 		inc si
 		sub ax,100h
 		ja nextitem
-		add bx,2*2
+		mov ax,dx
+		dec ax
+		pusha
+		invoke printf, CStr("Memory activated by UMBPCI found at %X-%X, included", LF), es:[bx+0], ax
+		popa
+		add bx,2+2
 	.endw
 	sub dx,di
 	mov result,dx
@@ -679,6 +657,7 @@ TestForSystemRAM endp
 
 ;--- handle I=TEST option
 ;--- may change 'E' to 'I'
+;--- modifies ES
 
 HandleITest proc uses si
 	mov si,0C0h
@@ -719,7 +698,7 @@ HandleITest endp
 ;    - memory range C000-EFFF is also checked for RAM. if found pages are
 ;      regarded as "reserved" (must be explicitely included with I= or S=)
 
-ScanSystemMemory PROC uses si di
+ScanSystemMemory PROC uses es si di
 
 local i:word       ;size EPROM in 0.5kB units
 local romsize:word
@@ -798,15 +777,12 @@ endif
 			dec ax
 if ?UMBPCI
 			mov es,si
-			.if dword ptr es:[0] == "BMU$"
-				mov cx,CStr("Memory activated by UMBPCI found at %X-%X, included", LF)
-			.else
+			.if dword ptr es:[0] != "BMU$"
 endif
-				mov cx, CStr("System memory found at %X-%X, region might be in use", LF)
+				invoke printf, CStr("System memory found at %X-%X, region might be in use", LF), si, ax
 if ?UMBPCI
 			.endif
 endif
-			invoke printf, cx, si, ax
 			mov ax,mem
 			add ax,si
 			movzx ax,ah
@@ -943,8 +919,6 @@ if ?USEMEMSET
 	add ax,si
 	invoke memset, ax, 'P', 16
 else
-	push ds
-	pop es
 	mov di,offset SystemMemory
 	add di,si
 	mov cx,16
@@ -1114,8 +1088,6 @@ local mmap:E820MAP
 	xor ebx,ebx
 	lea di,mmap
 nextitem:
-	push ss
-	pop es
 	mov edx,SMAP
 	mov ecx, sizeof E820MAP
 	xor eax,eax
@@ -1193,8 +1165,6 @@ e820_nextitem:
 
 ;--- ebx offset is updated with each successive int 15h
 
-	push ss
-	pop es
 	mov edx,SMAP
 	mov ecx, sizeof E820MAP
 	lea di,mmap
@@ -1328,15 +1298,11 @@ I15GetMemoryStatus endp
 
 ;--- get A20 method
 
-GetA20Method PROC stdcall cmdline:ptr BYTE
+GetA20Method PROC stdcall uses si di cmdline:ptr BYTE
 
-	push si
-	push di
 	mov si,[cmdline]
 	mov di,offset a20_methods
 	xor bx,bx
-	push ds
-	pop es
 	cld
 @@nextitem:
 	mov cl,[di]
@@ -1364,8 +1330,6 @@ GetA20Method PROC stdcall cmdline:ptr BYTE
 	jnz @@nextchar2
 @@done:
 	mov ax,bx
-	pop di
-	pop si
 	ret
 
 GetA20Method ENDP
@@ -1471,12 +1435,7 @@ disable_enable_a20_dummy proc
 	ret
 disable_enable_a20_dummy endp
 
-get_a20_status proc
-	push ds
-	push es
-	push cx
-	push si
-	push di
+get_a20_status proc uses ds es cx si di
 	mov cx,-1
 	mov es,cx
 	mov si,10h
@@ -1485,11 +1444,6 @@ get_a20_status proc
 	mov di,20h
 	mov cl,4
 	repz cmpsd
-	pop di
-	pop si
-	pop cx
-	pop es
-	pop ds
 	ret
 get_a20_status endp
 
@@ -1549,9 +1503,9 @@ detect_fast endp
 ; check if BIOS flags PS/2 present, to try port 92h fast method used by PS/2's
 ;  shares enable/disable code with fast
 
-detect_PS2 proc
+detect_PS2 proc uses es
 
-	mov ah,0c0h 	; get system description vector
+	mov ah,0c0h 	; get system description vector in es:bx
 	stc
 	int 15h
 	jc @@fail		; not a PS/2
@@ -2439,8 +2393,6 @@ GetValue PROC stdcall uses esi di cmdline:ptr BYTE, base:WORD, usesuffix:WORD
 	push esi
 	mov si,bx
 	mov di, cmdline
-	push ds
-	pop es
 @@nextchar:
 	lodsb
 	stosb
@@ -2464,8 +2416,14 @@ GetValue ENDP
 FindCommand PROC stdcall uses di si searchstring:ptr BYTE
 
 	mov di, searchstring
-	invoke strlen, di 	;returns size in AX, sets ES=DS
-	mov bx,ax		;searchlen = bx
+	mov bx,di
+	.while byte ptr [di]
+		inc di
+	.endw
+	sub di,bx
+	xchg bx,di
+;	push ds
+;	pop es
 nextcmp:
 	xor ax,ax
 	cmp BYTE PTR [si],al
@@ -2519,8 +2477,6 @@ DisplayMemoryMap proc
 		sub ax,offset SystemMemory
 		shl eax,12
 		invoke printf, CStr(<"%05lX: ">), eax
-		push ss
-		pop es
 		mov al,' '
 		mov di,sp
 		add di,2
@@ -2570,12 +2526,12 @@ IsProtectedMode proc c
 	ret
 IsProtectedMode ENDP
 
-IsDPMI proc c uses si di
+IsDPMI proc c uses es si di
 	mov ax,1687h
 	int 2Fh
 	and ax,ax
 	setz al
-	mov ah,0
+	cbw
 	ret
 IsDPMI ENDP
 
@@ -2624,6 +2580,8 @@ hascpuid proc
 hascpuid endp
 endif
 endif
+
+;--- DS=ES=SS=dgroup
 
 mainex PROC c public uses di si mode:word, cmdline:ptr BYTE
 
@@ -2985,8 +2943,6 @@ if ?USEMEMSET
 	invoke memset, addr SystemMemory+0C0h, 'U', 48
 	invoke memset, addr SystemMemory+0F0h, 'E', 16
 else
-	push ds
-	pop es
 	mov di, offset SystemMemory
 	mov cx,160	;160*4 = 10*64 = 0000-9FFF
 	mov al,'R'	;RAM
@@ -3262,7 +3218,7 @@ endif
 if ?INTEGRATED eq 0
 	invoke xmscall, XMS_DISABLEA20	;local disable A20
 endif
-	xor	ax,ax
+	xor ax,ax
 $EX338:
 	ret
 exit1:

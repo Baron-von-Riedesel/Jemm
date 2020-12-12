@@ -63,7 +63,6 @@ endif
 mainex proto c :WORD, :ptr BYTE
 
 printf proto c :ptr byte, :VARARG
-strlen proto c :ptr BYTE
 _memicmp proto c :ptr BYTE, :ptr BYTE, :WORD
 
 externdef c jemmini:JEMMINIT

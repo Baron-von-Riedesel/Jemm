@@ -213,23 +213,38 @@ is386:
 	jc nocr4
 
 	mov eax, cr4	;priviledged instruction
-	test al,1
-	setnz cl
-	test al,2
-	setnz dl
-	test al,10h
-	setnz bl
-	test al,20h
-	setnz ch
-	movzx si,ch
-	test al,80h
-	setnz ch
-	movzx di,ch
-	test ax,200h
-	setnz ch
-	movzx bp,ch
 	mov ch,0
-	invoke printf, CStr("CR4: %lX (VME=%X, PVI=%X, PSE=%X, PAE=%X, PGE=%X, OSFXSR=%X)",lf), eax,cx,dx,bx,si,di,bp
+	mov bp,sp
+	test al,1		;VME?
+	setnz cl
+	push cx
+	test al,2		;PVI?
+	setnz cl
+	push cx
+	test al,8		;DE?
+	setnz cl
+	push cx
+	test al,10h		;PSE?
+	setnz cl
+	push cx
+	test al,20h		;PAE?
+	setnz cl
+	push cx
+	test al,40h		;MCE?
+	setnz cl
+	push cx
+	test al,80h		;PGE?
+	setnz cl
+	push cx
+	test ax,200h	;OSFXSR?
+	setnz cl
+	push cx
+	test ax,400h	;OSXMMEXP?
+	setnz cl
+	push cx
+	invoke printf, CStr("CR4: %lX (VME=%X, PVI=%X, DE=%X, PSE=%X, PAE=%X, MCE=%X, PGE=%X, OSFXSR=%X, OSXMMEX=%X)",lf), eax,
+		[bp-2],[bp-4],[bp-6],[bp-8],[bp-10],[bp-12],[bp-14],[bp-16],[bp-18]
+	mov sp,bp
 
 nocr4:
 	fnstsw ax

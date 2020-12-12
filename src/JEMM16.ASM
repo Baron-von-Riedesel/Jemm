@@ -445,7 +445,7 @@ RSEG_END equ $ - device_header
 
 if ?UNLOAD
 
-CheckIntHooks proc stdcall public uses si di wResSeg:WORD
+CheckIntHooks proc stdcall public uses es si di wResSeg:WORD
 
 	mov ax, wResSeg
 	shl eax, 16
