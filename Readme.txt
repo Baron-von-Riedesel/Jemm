@@ -347,7 +347,7 @@
 
  þ If Jemm halts or reboots the machine, the following combinations
    of parameters may help to find the reason. Generally, Jemm386 should be
-   loaded immediately after the XMM (HIMEMX.EXE, HIMEM.SYS), and the XMM
+   loaded immediately after the XMM (HIMEM[S]X.EXE, HIMEM.SYS), and the XMM
    itself should be the first device driver to be loaded. For testing, it
    might also help to prevent DOS from loading in the HMA and/or not to
    use UMBs at all.
@@ -388,7 +388,7 @@
    may also help to enter "set DPMIMEM=MAXMEM 16383" at the cmdline.
 
  þ The JEMM ;-) DOS Extender (used for "Strike Commander" and "Privateer")
-   requires the NOVME option to be set. This requirement is a strong sign
+   isn't compatible with the VME option. This requirement is a strong sign
    that this extender switches to V86 mode on its own, which is a bad idea
    for a VCPI client.
 
@@ -398,7 +398,7 @@
    - FreeDOS may require to set STACKS=0,0 in CONFIG.SYS.
      Also the XBDA most likely must not be moved.
 
-   - FreeDOS additionally needs JEMFBHLP.EXE to be installed prior to the
+   - older FreeDOS versions may need JEMFBHLP.EXE to be installed prior to the
      XMM (Himem). Possibly this might also be needed for MS-DOS versions < 5.
 
  þ If Jemm is installed from the commandline, loading the CTMOUSE driver
@@ -441,7 +441,7 @@
      adjacent to current memory. On newer machines, there's very often a
      "hole", caused by the Extended BIOS Data Area (XBDA or EBDA); thus
      the included region just becomes an UMB and won't increase lower memory.
-     Use tool MOVEXBDA to fix this issue!
+     Option MOVEXBDA or tool MOVEXBDA.EXE may fix this issue.
    - Once address space A000h is remapped, any attempts to run programs that
      use VGA graphics most likely will cause a crash.
    - Depending on the VGA-BIOS it may happen that some non-graphics functions

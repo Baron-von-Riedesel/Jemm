@@ -96,6 +96,87 @@ hascpuid proc
 	ret
 hascpuid endp
 
+myint0c:
+myint0d:
+	shr ecx,1
+	iret
+
+DispSegLimits proc
+
+local limitss:dword
+local limitds:dword
+local limites:dword
+local limitfs:dword
+local limitgs:dword
+
+	push ds
+	push es
+	push fs
+	push gs
+	xor ax,ax
+	mov ds,ax
+	mov es,ax
+	mov fs,ax
+	mov gs,ax
+
+	mov ax,cs
+	shl eax,16
+	mov ax,offset myint0d
+	cli
+	xchg eax,ds:[13*4]
+	push eax
+
+;--- SS limit violation creates an exception 0Ch!
+	mov ax,cs
+	shl eax,16
+	mov ax,offset myint0c
+	xchg eax,ds:[12*4]
+	push eax
+if 0
+	mov dx,ss
+	mov bx,sp
+	xor ax,ax
+	mov ss,ax
+	mov sp,400h
+endif
+	mov ecx,-1
+	mov al,ss:[ecx]
+if 0
+	mov ss,dx
+	mov sp,bx
+endif
+	mov limitss,ecx
+	pop eax
+	mov ds:[12*4],eax
+
+	mov ecx,-1
+	mov al,ds:[ecx]
+	mov limitds,ecx
+
+	mov ecx,-1
+	mov al,es:[ecx]
+	mov limites,ecx
+
+	mov ecx,-1
+	mov al,fs:[ecx]
+	mov limitfs,ecx
+
+	mov ecx,-1
+	mov al,gs:[ecx]
+	mov limitgs,ecx
+
+	pop eax
+	mov ds:[13*4],eax
+	sti
+	pop gs
+	pop fs
+	pop es
+	pop ds
+	invoke printf, CStr("SS-DS-ES-FS-GS limits: %lX-%lX-%lX-%lX-%lX",lf), limitss, limitds, limites, limitfs, limitgs
+	ret
+
+DispSegLimits endp
+
 main proc c argc:word, argv:word
 
 	mov si,80h
@@ -243,7 +324,7 @@ is386:
 	setnz cl
 	push cx
 	invoke printf, CStr("CR4: %lX (VME=%X, PVI=%X, DE=%X, PSE=%X, PAE=%X, MCE=%X, PGE=%X, OSFXSR=%X, OSXMMEX=%X)",lf), eax,
-		[bp-2],[bp-4],[bp-6],[bp-8],[bp-10],[bp-12],[bp-14],[bp-16],[bp-18]
+		word ptr [bp-2],word ptr [bp-4],word ptr [bp-6],word ptr [bp-8],word ptr [bp-10],word ptr [bp-12],word ptr [bp-14],word ptr [bp-16],word ptr [bp-18]
 	mov sp,bp
 
 nocr4:
@@ -262,6 +343,10 @@ nocr4:
 	pushfd
 	pop eax
 	invoke printf, CStr("EFL: %lX, ESP: %lX",lf), eax, esp
+
+	.if !(byte ptr _msw & 1)
+		call DispSegLimits
+	.endif
 
 optional:
 	.if (bGDT)
@@ -391,7 +476,7 @@ DispIDT proc
 	jcxz noidt
 	mov si, offset buffer
 	xor di,di
-	int 3
+
 nextitem:
 	push cx
 	mov ax,[si+6]

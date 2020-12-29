@@ -1386,7 +1386,7 @@ endif
 ;--- for the integrated version, init some variables
 ;--- for the EMM-only version, ensure that an XMS host is found
 
-XMSinit proc c public
+XMSinit proc c public uses es
 	mov ax, 4300h
 	int 2fh
 	cmp al, 80h
