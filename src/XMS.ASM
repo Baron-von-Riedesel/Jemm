@@ -36,6 +36,9 @@ if ?INTEGRATED
 x2max           dw  -1
 hmamin          dw  0
 hma_used        db  0
+ if ?XMS35
+xms_version     dw -1
+ endif
 endif
 
 if ?A20PORTS or ?A20XMS
@@ -167,7 +170,11 @@ xms_handler endp
 if ?INTEGRATED
 
 xms_get_version proc
+if ?XMS35
+    mov ax,xms_version
+else
     mov ax,INTERFACE_VER
+endif
     mov bx,DRIVER_VER
     mov dx,1                    ; HMA is always available
     ret
@@ -1379,6 +1386,10 @@ if ?INTEGRATED
   endif
     mov al, [esi].JEMMINIT.A20Method
     mov [A20Index],al
+ if ?XMS35
+    mov ax, [esi].JEMMINIT.xms_version
+    mov xms_version,ax
+ endif
 else
     mov ax, [esi].JEMMINIT.XMSControlHandle
     mov [XMSCtrlHandle],ax

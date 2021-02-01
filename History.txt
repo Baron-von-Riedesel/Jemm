@@ -1,7 +1,7 @@
 
  History
 
- __/__/2020: v5.80
+ __/__/2021: v5.80
  - for exceptions other than page faults, the monitor will display register
    CR4 instead of CR2, if it exists.
  - Jemm might have reduced last MCB by 16 byte when loaded while UMBs
@@ -26,8 +26,8 @@
  - emulation of Int 15h, ah=87 (move extended memory) has been enhanced
    to allow to access physical memory beyond the 4 GB border via PSE-36.
  - JemmEx XMM now implements XMS v3.5 (extended memory > 4 GB). Default XMS
-   handles changed to 48 (previously 32). Added JemmExL.exe, still supporting
-   XMS v3.0 only. 
+   handles changed to 48 (previously 32). Added MAXSEXT option for JemmEx,
+   and also added JemmExL.exe, that still supports XMS v3.0 only.
  - JemmEx: return DX=0 if XMS alloc functions fail (XMS spec).
  - option I=TEST does now indeed what's documented. Previously it only
    scanned regions of "external" ROMs ( i.e., the ROM of the VGA card ).

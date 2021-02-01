@@ -2745,6 +2745,10 @@ if ?INTEGRATED
 	.if ax
 		invoke GetValue, ax, 10, TRUE
 		mov xms_smax, eax
+		.if eax == 0
+			mov cs:xms_smax_noe820,0	;disable INT15, ax=e820h check
+			mov jemmini.xms_version,INTERFACE_VER_MAXSEXT0	;make XMM report v3.0 interface
+		.endif
 	.endif
  endif
 	invoke FindCommand, CStr("NOE801")

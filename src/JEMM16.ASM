@@ -218,6 +218,7 @@ if ?INTEGRATED
  if ?XMS35
 	CMP AX,0E820h	; memmap
 	JZ memmap
+xms_smax_noe820 equ $ - 1
  endif
 endif
 	db 0EAh

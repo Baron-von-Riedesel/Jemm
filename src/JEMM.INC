@@ -107,6 +107,7 @@ A20_PORT92  equ 5
 if ?XMS35
 DRIVER_VER      equ 350h+1
 INTERFACE_VER   equ 350h
+INTERFACE_VER_MAXSEXT0 equ 300h	;xms version if MAXSEXT=0 is set
 else
 DRIVER_VER      equ 300h+29
 INTERFACE_VER   equ 300h
@@ -221,6 +222,9 @@ ResUMB            dw 0    ;UMB para where the resident part was moved to
 if ?INTEGRATED
 HmaMin            dw 0    ;min request in KB for HMA
 X2Max             dw -1
+if ?XMS35
+xms_version       dw INTERFACE_VER
+endif
 endif
 NoEMS             db 0
 NoFrame           db 0

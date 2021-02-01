@@ -59,7 +59,8 @@
 
  Currently there's a third variant supplied, JemmExL. It's a stripped down
  version of JemmEx, missing the enhanced XMS capabilities added to JemmEx
- in v5.80. Might be removed in future releases.
+ in v5.80. Since the same effect can be achieved by setting MAXSEXT=0 (see
+ below), JemmExL will be removed in future releases.
 
 
  2. Jemm's Features
@@ -215,6 +216,7 @@
  HMAMIN=k      set minimum amount in kB to get the HMA (default=0, max=63).
  MAXEXT=l      limit extended memory controlled by XMM to &lt;l&gt; kB.
  MAXSEXT=l     limit extended memory beyond 4GB barrier to &lt;l&gt; kB.
+               setting MAXSEXT=0 will make JemmEx behave like a v3.0 XMM.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
  NOE820        for JemmEx, removed in v5.80, since required by XMS v3.5.
                JemmExL still understands this option, which tells it not to use
@@ -313,7 +315,7 @@
  6.5. XMSSTAT
 
  XMSSTAT can be used to display the current status of the installed XMM.
- It allows to control current values of JemmEx options X2MAX, MAXEXT and
+ It allows to check current values of JemmEx options X2MAX, MAXEXT and
  XMSHANDLES.
 
 
