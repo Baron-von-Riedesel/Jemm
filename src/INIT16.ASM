@@ -72,6 +72,8 @@ xms_maxhigh	dd -1		; mask for upper memory address limit
 xms_num_handles	DW ?XMS_DEFHDLS	;XMSHANDLES= value
  ife ?XMS35
 bNoE820	DB 0
+ else
+xms_smem_used db FALSE
  endif
 bNoE801	DB 0
 endif
@@ -1882,6 +1884,12 @@ if ?INTEGRATED eq 0
 else
 	invoke GetEMBBase, jemmini.XMSControlHandle
 	mov jemmini.MonitorStart, eax
+ if ?XMS35
+	.if xms_smem_used == FALSE
+		mov cs:xms_smax_noe820,0	;disable INT15, ax=e820h check
+		mov jemmini.xms_version,INTERFACE_VER_MAXSEXT0	;make XMM report v3.0 interface
+	.endif
+ endif
 endif
 if 0
 	mov ecx, xms_mem_free
@@ -2745,10 +2753,6 @@ if ?INTEGRATED
 	.if ax
 		invoke GetValue, ax, 10, TRUE
 		mov xms_smax, eax
-		.if eax == 0
-			mov cs:xms_smax_noe820,0	;disable INT15, ax=e820h check
-			mov jemmini.xms_version,INTERFACE_VER_MAXSEXT0	;make XMM report v3.0 interface
-		.endif
 	.endif
  endif
 	invoke FindCommand, CStr("NOE801")

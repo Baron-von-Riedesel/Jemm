@@ -1433,11 +1433,13 @@ I15SetHandle proc c public uses ds bx
 if ?XMS35
 	cmp edx, 400000h    ;beyond 4GB?
 	jc @F
-	sub xms_smax, ecx	;/SUPERMAX option set?
-	jnc beyond4g
+	sub xms_smax, ecx	;/MAXSEXT option set?
+	jnc smax_ok
 	add ecx, xms_smax	;limit to maximum
 	mov xms_smax,0
 	jecxz exit
+smax_ok:
+	mov xms_smem_used, 1
 	jmp beyond4g
 @@:
 endif

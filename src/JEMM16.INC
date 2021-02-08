@@ -78,6 +78,7 @@ if ?XMS35
 externdef c xms_smax:dword
 externdef c xms_maxhigh:dword
 externdef c xms_smax_noe820:byte
+externdef c xms_smem_used:byte
 ?XMS_DEFHDLS equ 48
 else
 ?XMS_DEFHDLS equ 32
