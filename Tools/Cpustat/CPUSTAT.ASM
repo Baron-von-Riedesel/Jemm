@@ -177,6 +177,23 @@ endif
 
 DispSegLimits endp
 
+getldtr proc
+	.586p
+	cli
+	mov ecx,cr0
+	inc cx
+	mov cr0,ecx
+	jmp @F
+@@:
+	sldt ax
+	str dx
+	dec cx
+	mov cr0,ecx
+	sti
+	ret
+	.586
+getldtr endp
+
 main proc c argc:word, argv:word
 
 	mov si,80h
@@ -277,8 +294,13 @@ is386:
 @@:
 	invoke printf, CStr("CR0: %lX",lf),dwCR0
 
-	invoke printf, CStr("GDTR: %lX,%X  "),gdta,gdtl
-	invoke printf, CStr("IDTR: %lX,%X",lf),idta,idtl
+	invoke printf, CStr("GDTR: %lX,%X, IDTR: %lX,%X",lf),gdta,gdtl,idta,idtl
+
+	test [_msw],1
+	jnz @F
+	call getldtr
+	invoke printf, CStr("LDTR: %X, TR: %X",lf), ax, dx
+@@:
 
 	mov eax, -1		;in case the next instr is "emulated"
 	mov eax, cr2

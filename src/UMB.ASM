@@ -31,7 +31,7 @@ UMBMCB ends
 
 .text$01 SEGMENT
 
-UMBsegments UMBBLK UMB_MAX_BLOCKS dup (<>)
+UMBsegments UMBBLK UMB_MAX_BLOCKS dup (<0,0>)
 UMBend  label byte
 
 .text$01 ends
