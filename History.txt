@@ -1,7 +1,7 @@
 
  History
 
- __/__/2021: v5.80
+ 18.06.2021: v5.80
  - for exceptions other than page faults, the monitor will display register
    CR4 instead of CR2, if it exists.
  - Jemm might have reduced last MCB by 16 byte when loaded while UMBs

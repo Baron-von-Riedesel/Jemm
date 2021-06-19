@@ -369,7 +369,9 @@
    - X=A000-FFFF NOHI NOINVLPG
 
      This is the safest combination. If this doesn't work, Jemm most
-     likely isn't compatible with the current DOS/BIOS.
+     likely isn't compatible with the current DOS/BIOS; for example,
+     the BIOS might try to unconditionally use "unreal" mode to access
+     USB mass storage devices - with Jemm, this will cause an exception.
 
    - X=TEST NOHI NOINVLPG
 
@@ -382,7 +384,7 @@
  þ Jemm can be loaded from the command line with option LOAD. This may be
    helpful if there are so many displays during the boot process that one
    cannot read them carefully. Also, option /V should be added to make
-   jemmm talkative. To load Jemm386 from the command line, ensure that a
+   Jemm talkative. To load Jemm386 from the command line, ensure that a
    XMM has been loaded previously. For JemmEx, no XMM must be loaded, since
    it is included.
 
