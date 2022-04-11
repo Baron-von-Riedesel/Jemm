@@ -1,7 +1,7 @@
 
-  XMS v3.5 API
+  1. XMS v3.5 API
   
-  XMS v3.5 has been created to allow accessing extended memory beyond the 4 GB
+   XMS v3.5 has been created to allow accessing extended memory beyond the 4 GB
   barrier. 
 
   To achieve this, the XMS v3.0 API has been extended:
@@ -20,14 +20,42 @@
 
   XMS function 00 (Get Version) will return ax=0350h, that is version 3.50.
 
-  Since the memory beyond the 4 GB limit must be managed exclusively,
+
+  2. XMS v3.51 API
+  
+  XMS v3.51 extends the v3.50 API by another function:
+
+  AH=0CBh: super-extended block move function. Register setup is like XMS
+           function 0Bh. However, the structure that holds source and
+           destination of the memory block to copy has been extended by two
+           1-byte fields that must be filled with bits 32-39 of the source
+           and destination address.
+
+           sxms_move struct
+           len           dd  ?   ;  +0: block length in bytes
+           src_handle    dw  ?   ;  +4: source handle
+           src_offset    dd  ?   ;  +6: offset into source
+           dst_handle    dw  ?   ; +10: destination handle
+           dst_offset    dd  ?   ; +12: offset into destination
+           src_high      db  ?   ; +16: NEW: bits 32-39 of source offset
+           dest_high     db  ?   ; +17: NEW: bits 32-39 of destination offset
+           sxms_move ends
+
+
+  3. BIOS Interrupt 15h, AX=E820h
+
+   Since the memory beyond the 4 GB limit must be managed exclusively,
   Int 15h, ax=E820h should be intercepted in a way that all memory blocks with
   addresses >= 100000000h are changed from "available" to "reserved".
 
-  In V86 mode, the XMM's 'move extended memory' function (AH=0Bh) will need the
-  help of the Expanded Memory Manager (EMM), since privileged code has to be
-  executed. The only EMMs that currently support accessing memory beyond 4 GB 
-  are Jemm386/JemmEx v5.80+. Their Int 15h API has been exhanced as well.
+
+  4. BIOS Interrupt 15h, AH=87h
+
+   In V86 mode, the XMM's 'move extended memory' functions (AH=0Bh & AH=0CBh)
+  will need the help of the Expanded Memory Manager (EMM), since privileged
+  code has to be executed. The only EMMs that currently support accessing
+  memory beyond 4 GB are Jemm386/JemmEx v5.80+. Their Int 15h API has been
+  exhanced as well.
   
   Register setup for Int 15h, AH=87h: 
    

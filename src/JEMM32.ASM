@@ -1636,7 +1636,7 @@ if ?XMS35COMPAT
 
 MapPhysPagesPSE proc uses ecx
 
-if ?I15DBG or ?EMBDBG
+if ?I15DBG or ?MAPDBG
     @DbgOutS <"MapPhysPagesPSE, ax::esi=">,1
     @DbgOutW ax,1
     @DbgOutD esi,1
@@ -1703,7 +1703,7 @@ donesrc:
 	.386p
 	lea ebx,[ebx+2*4]
 donedst:
-if ?I15DBG or ?EMBDBG
+if ?I15DBG or ?MAPDBG
     @DbgOutS <"MapPhysPagesPSE, esi=">,1
     @DbgOutD esi,1
     @DbgOutS <", edi=">,1
@@ -1721,7 +1721,7 @@ MapPhysPagesPSE endp
 ;--- the dst region is mapped at C00000h+x
 
 MoveMemoryPhysEx proc public
-if ?I15DBG or ?EMBDBG
+if ?I15DBG or ?MAPDBG
     @DbgOutS <"MoveMemoryPhysEx, ax::esi=">,1
     @DbgOutW ax,1
     @DbgOutD esi,1

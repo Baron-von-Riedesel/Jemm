@@ -5,7 +5,7 @@ LF              EQU 0AH
 CR              EQU 0DH
 
 ?VERSIONHIGH    equ 5
-?VERSIONLOW     equ 80
+?VERSIONLOW     equ 81
 
 ifndef ?INTEGRATED
 ?INTEGRATED     EQU 0       ; 1=integrated version (XMS + EMM)
@@ -95,6 +95,14 @@ XMS_MOVE struct
   dest_offset   dd  ?       ; +12 offset into destination
 XMS_MOVE ends
 
+if ?XMS35
+XMS_MOVEX struct
+                XMS_MOVE <>
+  src_hi        db  ?       ; bits 32-39 of src
+  dest_hi       db  ?       ; bits 32-39 of dst
+XMS_MOVEX ends
+endif
+
 ;--- A20 switch methods (must match order in "methods" table)
 
 A20_KBC     equ 0
@@ -105,8 +113,8 @@ A20_FAST    equ 4
 A20_PORT92  equ 5
 
 if ?XMS35
-DRIVER_VER      equ 350h+1
-INTERFACE_VER   equ 350h
+DRIVER_VER      equ 350h+2
+INTERFACE_VER   equ 351h
 INTERFACE_VER_MAXSEXT0 equ 300h	;xms version if MAXSEXT=0 is set
 else
 DRIVER_VER      equ 300h+29

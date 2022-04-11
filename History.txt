@@ -1,6 +1,9 @@
 
  History
 
+ __.__.2022: v5.81
+ - JemmEx: XMS extension v3.51 (super-extended block moves) implemented.
+
  18.06.2021: v5.80
  - for exceptions other than page faults, the monitor will display register
    CR4 instead of CR2, if it exists.

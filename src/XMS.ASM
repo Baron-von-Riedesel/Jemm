@@ -90,10 +90,12 @@ endif
     cmp al,8Eh/2        ; 8E-8F?
     jz @@ok3
 if ?XMS35
-	cmp al,0C8h/2		; C8-C9?
-	jz @@ok4
-	cmp ah,0CCh			; CC?
-	jz @@ok5
+    cmp al,0C8h/2       ; C8-C9?
+    jz @@ok4
+    cmp ah,0CBh         ; CB?
+    jz @@ok5
+    cmp ah,0CCh         ; CC?
+    jz @@ok5
 endif
     cmp ah,12h
     jbe umb_handler
@@ -101,9 +103,9 @@ endif
     mov bl,XMS_NOT_IMPLEMENTED
     jmp @@dispatcher_end
 @@ok5:
-	sub ah,2            ; CC    -> CA
+	dec ah              ; CB-CC -> CA-CB
 @@ok4:
-	sub ah,0C8h-14h		; C8-CA -> 14-16
+	sub ah,0C8h-14h		; C8-CC -> 14-17
 	jmp @@ok1
 @@ok3:
     sub ah,4            ; 8E-8F -> 8A-8B
@@ -147,7 +149,8 @@ xms_table label dword
  if ?XMS35
     dd xms_sext_query_free_mem  ; C8 14
     dd xms_sext_alloc_emb       ; C9 15
-    dd xms_sext_lock_emb        ; CC 16
+    dd xms_move_emb             ; CB 16
+    dd xms_sext_lock_emb        ; CC 17
  endif
 else
   if ?A20XMS
@@ -794,10 +797,12 @@ endif
 @@ext_growing:
 ; growing, try to allocate a new block
 
-	mov ah,11h				;11h is xms_ext_alloc_emb #
-	test word ptr [esi].XMS_HANDLE.xh_baseK+2, 0FFC0h
-	jz @F
-	mov ah,15h				;15h is for super-extended memory
+    mov ah,11h              ;11h is xms_ext_alloc_emb #
+    test word ptr [esi].XMS_HANDLE.xh_baseK+2, 0FFC0h
+    jz @F
+    mov ah,15h              ;15h is for super-extended memory
+;	test word ptr [esi].XMS_HANDLE.xh_sizeK+2, 0FFC0h   ;old size >= 4G
+;	jnz @@ext_failed                                    ;then fail for now
 @@:
     call xms_ext_alloc_emb  ;get a new handle in DX, size EDX
     and ax,ax
@@ -807,21 +812,57 @@ endif
 
 
 ; transfer old handle data to new location
+; since the block may be > 4G and max amount to copy is 4G-2,
+; the transfer is done with chunks of max. 4G - 1K.
+
+MAXCHUNK equ 4096 * 1024 - 1
 
     xor edi,edi
+if ?XMS35
+    push di             ; bits 32-39 of src/dst.offset
+endif
     push edi            ; dst.offset
     push dx             ; dst.handle
     push edi            ; src.offset
+if ?XMS35
+    movzx esi,word ptr [esp+12] ; get old handle
+else
     movzx esi,word ptr [esp+10] ; get old handle
+endif
     push si             ; src.handle
     add esi,[dwRes]
+if ?XMS35
+    mov ecx,[esi].XMS_HANDLE.xh_sizeK
+nextchk:
+    mov edi, ecx
+    cmp ecx, MAXCHUNK   ;remaining more than max.?
+    jb @F
+    mov edi, MAXCHUNK   ;load edi with 4G-1K
+@@:
+else
     mov edi,[esi].XMS_HANDLE.xh_sizeK
-    shl edi,0ah         ; K to byte
+endif
+    shl edi, 10         ; K to byte
     push edi            ; length
-    mov esi,esp
+    mov esi, esp
+if ?XMS35
+    mov ah, 16h         ; always use superext move
+endif
     call xms_move_emb_ex
-    add esp, size XMS_MOVE
-
+if ?XMS35
+    pop edi             ; get size of current chunk in edi
+    mov esi, esp
+    add [esi-4].XMS_MOVEX.src_offset, edi   ; adjust src and dest offsets
+    adc [esi-4].XMS_MOVEX.src_hi, 0         ; including bits 32-39
+    add [esi-4].XMS_MOVEX.dest_offset, edi
+    adc [esi-4].XMS_MOVEX.dest_hi, 0
+    shr edi, 10
+    sub ecx, edi
+    jnz nextchk
+    add esp, sizeof XMS_MOVEX - 4
+else
+    add esp, sizeof XMS_MOVE
+endif
     movzx esi,word ptr [esp]
     add esi,[dwRes]
 
@@ -946,24 +987,37 @@ xms_get_move_addr proc
 @@is_emb:               ; it's a handle:offset pair
     call xms_check_handle   ;check if SI holds a "used" handle
 
-	push ebx
-	xor ebx,ebx
-	mov eax,ecx 		; contains length
-	add eax,edx 		; assert length + offset < size    
-	adc ebx,ebx
-	add eax,1024-1		; round up to kB
-	adc ebx,0
-	shrd eax,ebx,10		; convert to kB units
-	pop ebx
+if ?XMS35
+    push ebx
+    xor ebx,ebx
+endif
+    mov eax,ecx         ; contains length
+    add eax,edx         ; assert length + offset < size    
+if ?XMS35
+    adc ebx,ebx
+else
+    jc @@wrong_size
+endif
+    add eax,1024-1      ; round up to kB
+if ?XMS35
+    adc ebx,0
+    shrd eax,ebx,10     ; convert to kB units
+    pop ebx
+else
+    jc @@wrong_size
+    shr eax,10          ; convert to kB units
+endif
     cmp eax,[esi].XMS_HANDLE.xh_sizeK    ; compare with max offset
     ja @@wrong_size
 
     mov eax,[esi].XMS_HANDLE.xh_baseK   ; get block base address
-	mov esi,eax 		; store in source index
-	shl eax,10			; convert from kb to linear
-	shr esi,22
-	add eax,edx 		; add offset into block
-	adc esi,0
+    mov esi,eax         ; store in source index
+    shl eax,10          ; convert from kb to linear
+    shr esi,22
+    add eax,edx         ; add offset into block
+if ?XMS35
+    adc esi,ebx
+endif
     ret
 
 @@wrong_size:
@@ -983,7 +1037,10 @@ xms_move_emb proc
     shl edi, 4
     movzx esi,si
     add esi,edi
-xms_move_emb_ex::           ; <--- entry for internal use
+xms_move_emb_ex::           ; <--- entry for internal use (realloc)
+if ?XMS35
+    mov byte ptr [ebp].Client_Reg_Struc.Client_Error+3,ah  ;abuse Error field to store AH
+endif
     xor ax,ax               ; default to error
     push ecx
     push edx
@@ -1008,22 +1065,40 @@ endif
     test cl,1                       ; is it even?
     jnz @@move_invalid_length
 
+if ?XMS35
+    xor ebx, ebx
+    cmp byte ptr [ebp].Client_Reg_Struc.Client_Error+3, 16h
+    jnz @F
+    mov bl,[esi].XMS_MOVEX.dest_hi
+@@:
+endif
     push esi
     mov edx,[esi].XMS_MOVE.dest_offset
     mov si,[esi].XMS_MOVE.dest_handle
     call xms_get_move_addr          ; get move address
-	mov edx,esi ;save lines 32-39 in DX, since BL must be preserved
+    mov edx,esi ;save lines 32-39 in DX, since BL must be preserved
     pop esi
     jc @@copy_dest_is_wrong
-	mov ebx,edx
     mov edi,eax                     ; store in destination index
-
+if ?XMS35
+    cmp byte ptr [ebp].Client_Reg_Struc.Client_Error+3, 16h
+    jnz @F
+    mov bl,[esi].XMS_MOVEX.src_hi
+@@:
+    push edx
+endif
     mov edx,[esi].XMS_MOVE.src_offset
     mov si,[esi].XMS_MOVE.src_handle
     call xms_get_move_addr          ; get move address
+if ?XMS35
+    pop edx
+endif
     jc @@copy_source_is_wrong
-	xchg eax,esi
-	mov bh,al
+    xchg eax,esi
+if ?XMS35
+    mov bh,al
+    mov bl,dl
+endif
 
 ;**************************************************
 ; setup finished with
@@ -1032,13 +1107,21 @@ endif
 ;   ECX = number of words to move
 ;**************************************************
 if ?EMBDBG
-    @DbgOutS <"xms_move_emb: siz=">,1
+    @DbgOutS <"xms_move_emb: siz(byt)=">,1
     @DbgOutD ecx,1
-    @DbgOutS <" src=">,1
+ if ?XMS35
+    @DbgOutS <" src(40bit)=">,1
     @DbgOutB bh,1
+ else
+    @DbgOutS <" src(32bit)=">,1
+ endif
     @DbgOutD esi,1
-    @DbgOutS <" dst=">,1
+ if ?XMS35
+    @DbgOutS <" dst(40bit)=">,1
     @DbgOutB bl,1
+ else
+    @DbgOutS <" dst(32bit)=">,1
+ endif
     @DbgOutD edi,1
     @DbgOutS <10>,1
 endif
@@ -1051,34 +1134,44 @@ endif
 ; or  >= start of source block + block length (BH.ESI+ECX)
 
 ; 1. check if BL.EDI <= BH.ESI
-	cmp bl,bh
-	jb @@move_ok_to_start
-	ja @F
-	cmp edi,esi
-	jbe @@move_ok_to_start
+if ?XMS35
+    cmp bl,bh
+    jb @@move_ok_to_start
+    ja @F
+endif
+    cmp edi,esi
+    jbe @@move_ok_to_start
+if ?XMS35
 @@:
 ; calculate source + block length: DL.EAX = BH.ESI + ECX
-	mov dl,bh
-	mov eax, esi
-	add eax, ecx
-	adc dl,0
+    mov dl,bh
+endif
+    mov eax, esi
+    add eax, ecx
+if ?XMS35
+    adc dl,0
 ; 2. check if BL.EDI >= DL.EAX
-	cmp bl,dl
-	ja @@move_ok_to_start
-	jb @@move_invalid_overlap
-	cmp edi,eax
-	jb @@move_invalid_overlap
+    cmp bl,dl
+    ja @@move_ok_to_start
+    jb @@move_invalid_overlap
+endif
+    cmp edi,eax
+    jb @@move_invalid_overlap
 
 @@move_ok_to_start:
 
+if ?XMS35
 	and bx,bx
 	jnz @F
+endif
     call MoveMemoryPhys
-	jmp @@xms_exit_copy
+if ?XMS35
+    jmp @@xms_exit_copy
 @@:
-	movzx ax,bh
-	movzx dx,bl
-	call MoveMemoryPhysEx ;copy ecx bytes from [ax:esi] to [dx:edi]
+    movzx ax,bh
+    movzx dx,bl
+    call MoveMemoryPhysEx ;copy ecx bytes from [ax:esi] to [dx:edi]
+endif
 @@xms_exit_copy:
     pop ebx
     pop eax

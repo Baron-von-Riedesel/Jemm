@@ -81,7 +81,7 @@
  - Exceptions in protected-mode are detected and displayed.
  - a (rudimentary) API is supplied which allows to extend Jemm. [ JLoad
    uses this API to add support for 32bit protected-mode extensions (JLMs). ]
- - JemmEx supports XMS v3.5, allowing access to extended memory beyond the
+ - JemmEx supports XMS v3.51, allowing access to extended memory beyond the
    4 GB barrier. See XMS35.txt for technical details.
 
 
