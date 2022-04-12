@@ -22,7 +22,7 @@
 
  1. About Jemm
 
- Jemm is an "Expanded Memory Manager", based on the source of FreeDOS
+ Jemm is an "Expanded Memory Manager" (EMM), based on the source of FreeDOS
  Emm386. It should work with MS-DOS and compatible DOSes, including FreeDOS.
  Like other EMMs it installs the following services:
 
@@ -38,8 +38,8 @@
 
  There exist 2 versions of Jemm:
 
- - Jemm386: standard version which needs an external XMM (HimemX.exe for
-            example) to be loaded.
+ - Jemm386: standard version which needs an external eXtended Memory Manager
+            (XMM; examples: Himem[S]X, MS Himem, XMGR ) to be loaded.
  - JemmEx:  extended version which has an XMM already included.
 
  JemmEx most likely is the better choice because it will need less DOS
@@ -81,7 +81,7 @@
  - Exceptions in protected-mode are detected and displayed.
  - a (rudimentary) API is supplied which allows to extend Jemm. [ JLoad
    uses this API to add support for 32bit protected-mode extensions (JLMs). ]
- - JemmEx supports XMS v3.51, allowing access to extended memory beyond the
+ - JemmEx supports XMS v3.5, allowing access to extended memory beyond the
    4 GB barrier. See XMS35.txt for technical details.
 
 
@@ -457,6 +457,9 @@
    - if MOVEXBDA.EXE causes a system lock during boot, add the /A option to 
      the line in CONFIG.SYS that loads the driver. This aligns the XBDA to 
      a kB boundary, which may cure the lock.
+   - the GRUB boot loader may, under certain conditions, allocate a chunk
+     of conventional memory BELOW the XBDA. In this case conventional memory
+     cannot be increased anymore, even if the XBDA is moved.
 
 
  8. License
