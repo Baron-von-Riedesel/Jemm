@@ -1394,6 +1394,12 @@ if ?MOVEXBDA and ?MOVEXBDAPM
     movzx eax,word ptr ds:[@XBDA]   ;does XBDA exist?
     and eax,eax 
     jz nomovexbda
+ if 1 ; v5.82: check similiar to jemm16.asm, move_xbda: is XBDA just above conv. memory?
+    movzx ecx, word ptr ds:[@MEM_SIZE]
+    shl ecx, 6                      ;kB to para
+    cmp ecx, eax
+    jnz nomovexbda
+ endif
     shl eax,4
     cmp [ebx].UMBBLK.wSegm,0C000h   ;first UMB in VGA region A000-BFFF?
     jae @F

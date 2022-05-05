@@ -817,18 +817,14 @@ endif
 
 MAXCHUNK equ 4096 * 1024 - 1
 
+    movzx esi,word ptr [esp] ; get old handle
     xor edi,edi
 if ?XMS35
-    push di             ; bits 32-39 of src/dst.offset
+    push edi            ; bits 32-39 of src/dst.offset (pushed as dword for alignment reasons)
 endif
     push edi            ; dst.offset
     push dx             ; dst.handle
     push edi            ; src.offset
-if ?XMS35
-    movzx esi,word ptr [esp+12] ; get old handle
-else
-    movzx esi,word ptr [esp+10] ; get old handle
-endif
     push si             ; src.handle
     add esi,[dwRes]
 if ?XMS35
@@ -850,16 +846,16 @@ if ?XMS35
 endif
     call xms_move_emb_ex
 if ?XMS35
-    pop edi             ; get size of current chunk in edi
     mov esi, esp
-    add [esi-4].XMS_MOVEX.src_offset, edi   ; adjust src and dest offsets
-    adc [esi-4].XMS_MOVEX.src_hi, 0         ; including bits 32-39
-    add [esi-4].XMS_MOVEX.dest_offset, edi
-    adc [esi-4].XMS_MOVEX.dest_hi, 0
+    pop edi                                 ; get size of current chunk in edi
+    add [esi].XMS_MOVEX.src_offset, edi     ; adjust src and dest offsets
+    adc [esi].XMS_MOVEX.src_hi, 0           ; including bits 32-39
+    add [esi].XMS_MOVEX.dest_offset, edi
+    adc [esi].XMS_MOVEX.dest_hi, 0
     shr edi, 10
     sub ecx, edi
     jnz nextchk
-    add esp, sizeof XMS_MOVEX - 4
+    add esp, sizeof XMS_MOVEX-2
 else
     add esp, sizeof XMS_MOVE
 endif

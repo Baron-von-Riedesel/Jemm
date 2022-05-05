@@ -1,6 +1,10 @@
 
  History
 
+ __.__.____: v5.82
+ - JemmEx: minor adjustment to always keep monitor stack dword-aligned.
+ - fixed: MOVEXBDA option didn't check that XBDA was adjacent to conv. mem.
+
  12.04.2022: v5.81
  - JemmEx: XMS extension v3.51 (super-extended block moves) implemented.
 
