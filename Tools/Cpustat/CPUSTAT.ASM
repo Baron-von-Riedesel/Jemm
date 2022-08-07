@@ -22,6 +22,16 @@ sym db y,0
 	exitm <offset sym>
 	endm
 
+DESCRIPTOR struct
+wLimit		dw ?
+wBase0015	dw ?
+bBase1623	db ?
+bAttrL		db ?
+bAttrH		db ?
+bBase2431	db ?
+DESCRIPTOR ends
+
+
 	.data
 
 dwCR0	dd 0
@@ -35,21 +45,7 @@ idtr	label fword
 idtl	dw 0
 idta	dd 0
 
-modflg	dw 0
-wSize	dw 0
-bGDT	db 0
-bIDT	db 0
-
 ;--- gdt for In15 ah=87 move
-
-DESCRIPTOR struct
-wLimit		dw ?
-wBase0015	dw ?
-bBase1623	db ?
-bAttrL		db ?
-bAttrH		db ?
-bBase2431	db ?
-DESCRIPTOR ends
 
 gdti15 label DESCRIPTOR
 		DESCRIPTOR <0,0,0,0,0,0>
@@ -59,9 +55,16 @@ i15dst	DESCRIPTOR <-1,0,0,093h,0,0>
 		DESCRIPTOR <0,0,0,0,0,0>
 		DESCRIPTOR <0,0,0,0,0,0>
 
+modflg	dw 0
+wSize	dw 0
+bGDT	db 0
+bIDT	db 0
+bPage	db 0
+
 	.data?
 
-buffer	db 800h dup (?)
+buffer	db 1000h dup (?)
+buffer2	db 80 dup (?)
 
 	.code
 
@@ -215,6 +218,8 @@ main proc c argc:word, argv:word
 				mov bIDT, 1
 			.elseif (al == 'g')
 				mov bGDT, 1
+			.elseif (al == 'p')
+				mov bPage, 1
 			.else
 				jmp usage
 			.endif
@@ -223,6 +228,7 @@ usage:
 			invoke printf, CStr("usage: CPUSTAT [ options ]",lf)
 			invoke printf, CStr("    -g: display GDT if in V86 mode",lf)
 			invoke printf, CStr("    -i: display IDT if in V86 mode",lf)
+			invoke printf, CStr("    -p: display PD if in V86 mode",lf)
 			jmp exit
 		.endif
 	.endw
@@ -281,6 +287,8 @@ is386:
 	cmp bGDT, 0
 	jnz optional
 	cmp bIDT, 0
+	jnz optional
+	cmp bPage, 0
 	jnz optional
 
 	mov eax, 0		;in case the next instr is "emulated"
@@ -385,6 +393,13 @@ optional:
 			invoke printf, CStr("no IDT in real-mode",lf)
 		.endif
 	.endif
+	.if (bPage)
+		.if byte ptr [_msw] & 1	;v86 mode?
+			call DispPD
+		.else
+			invoke printf, CStr("no paging tables in real-mode",lf)
+		.endif
+	.endif
 
 exit:
 	mov al,0
@@ -409,6 +424,7 @@ DispGDT proc
 @@:
 	mov wSize,cx
 	shr cx,1
+
 	mov eax, gdta
 	mov i15src.wBase0015,ax
 	shr eax, 16
@@ -448,9 +464,10 @@ nextitem:
 	or ax, dx
 	and eax, eax
 	jz @F
+	call getattr
 	mov di,si
 	sub di, offset buffer
-	invoke printf, CStr(<"GDT[%4X]: %08lX:%04X %04X",lf>), di, ebx, cx, dx
+	invoke printf, CStr("GDT[%4X]: %08lX:%04X %04X (%s)",lf), di, ebx, cx, dx, offset buffer2
 @@:
 	add si, 8
 	pop cx
@@ -458,9 +475,74 @@ nextitem:
 nogdt:
 	ret
 error:
-	invoke printf, CStr(<"Int 15h, ah=87h failed",lf>)
+	invoke printf, CStr("Int 15h, ah=87h failed",lf)
 	ret
 DispGDT endp
+
+getattr proc
+	pusha
+	mov di, offset buffer2
+	test dl, 10h
+	jz syssegs
+	mov si, CStr("code")
+	test dl, 8
+	jnz @F
+	mov si, CStr("data")
+@@:
+	call cpy
+	jmp done
+syssegs:
+	and dl, 0Fh
+	cmp dl, 2
+	jnz @F
+	mov si, CStr("LDT ")
+	call cpy
+	jmp done
+@@:
+	cmp dl, 5
+	jnz @F
+	mov si, CStr("task gate ")
+	call cpy
+	jmp done
+@@:
+	test dl, 111b
+	jnz @F
+	mov si, CStr("undef ")
+	call cpy
+	jmp done
+@@:
+	mov si, CStr("386 ")
+	test dl, 8
+	jz @F
+	mov si, CStr("386 ")
+@@:
+	call cpy
+
+	mov si, CStr("tss ")
+	test dl, 4
+	jz @F
+	mov si, CStr("gate ")
+@@:
+	call cpy
+
+done:
+	mov byte ptr [di], 0
+	dec di
+	cmp byte ptr [di], ' '
+	jnz @F
+	mov byte ptr [di], 0
+@@:
+	popa
+	ret
+cpy:
+	lodsb
+	stosb
+	and al, al
+	jnz cpy
+	dec di
+	retn
+
+getattr endp
 
 DispIDT proc
 	mov cx,idtl 
@@ -471,6 +553,7 @@ DispIDT proc
 @@:
 	mov wSize,cx
 	shr cx,1
+
 	mov eax, idta
 	mov i15src.wBase0015,ax
 	shr eax, 16
@@ -506,7 +589,7 @@ nextitem:
 	mov ax,[si+0]
 	mov bx,[si+2]
 	mov dx,[si+4]
-	invoke printf, CStr(<"IDT[%4X]: %04X:%08lX %04X",lf>), di, bx, eax, dx
+	invoke printf, CStr("IDT[%4X]: %04X:%08lX %04X",lf), di, bx, eax, dx
 @@:
 	inc di
 	add si, 8
@@ -515,9 +598,74 @@ nextitem:
 noidt:
 	ret
 error:
-	invoke printf, CStr(<"Int 15h, ah=87h failed",lf>)
+	invoke printf, CStr("Int 15h, ah=87h failed",lf)
 	ret
 DispIDT endp
+
+;--- copy a 4 kB page in EAX from extended memory into buffer
+
+getpage proc
+	and ax, 0F000h
+	mov i15src.wBase0015,ax
+	shr eax, 16
+	mov i15src.bBase1623,al
+	mov i15src.bBase2431,ah
+	mov ax, offset buffer
+	movzx eax, ax
+	mov dx, ds
+	movzx edx, dx
+	shl edx, 4
+	add eax, edx
+	mov i15dst.wBase0015, ax
+	shr eax, 16
+	mov i15dst.bBase1623, al
+	mov i15dst.bBase2431, ah
+	push ds
+	pop es
+	mov cx, 1000h shr 1
+	mov si, offset gdti15	;es:si=gdt to use
+	mov ah, 87h
+	stc
+	int 15h
+	ret
+
+getpage endp
+
+printpd proc
+	mov si, offset buffer
+	xor di, di
+nextitem:
+	lodsd
+	test al, 1
+	jz @F
+	mov dx, di
+	shl edx, 22
+	invoke printf, CStr("%8lX: %08lX",lf), edx, eax
+@@:
+	inc di
+	cmp di, 1024
+	jnz nextitem
+	ret
+printpd endp
+
+DispPD proc
+	mov eax, -1		;in case the next instr is "emulated"
+	mov eax, cr3
+	cmp eax, -1
+	jz done
+	and eax, eax
+	jz done
+	call getpage
+	jc error
+	invoke printf, CStr(lf,"page directory",lf)
+	invoke printf, CStr("------------------",lf)
+	call printpd
+done:
+	ret
+error:
+	invoke printf, CStr("Int 15h, ah=87h failed",lf)
+	ret
+DispPD endp
 
 start:
 	mov ax,@data

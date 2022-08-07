@@ -91,10 +91,17 @@ cpuid1_ecx_str label word
 	dw DStr("AVX - Advanced Vector Extensions",lf)
 	dw DStr("RDRAND",lf)
 
+FEATS struct
+pFeat  dw ?	;ptr DWORD
+pBitNo dw ?	;ptr BYTE
+pStr   dw ?	;ptr NEAR16 string ptr
+_size  dw ?	;size of pBitNo, pStr table
+FEATS ends
+
 cpuid1m label word
 	dw DStr("CPUID 1 features (EDX,ECX):",lf)
-	dw offset dwCPUIDedx,offset cpuid1_edx_bits,offset cpuid1_edx_str,sizeof cpuid1_edx_bits
-	dw offset dwCPUIDecx,offset cpuid1_ecx_bits,offset cpuid1_ecx_str,sizeof cpuid1_ecx_bits
+	FEATS <offset dwCPUIDedx,offset cpuid1_edx_bits,offset cpuid1_edx_str,sizeof cpuid1_edx_bits>
+	FEATS <offset dwCPUIDecx,offset cpuid1_ecx_bits,offset cpuid1_ecx_str,sizeof cpuid1_ecx_bits>
 
 cpuid1x_edx_bits db 11,22,26,29,31
 cpuid1x_edx_str label word
@@ -113,8 +120,8 @@ cpuid1x_ecx_str label word
 
 cpuid1xm label word
 	dw DStr("CPUID 80000001 features (EDX,ECX):",lf)
-	dw offset dwCPUIDedx,offset cpuid1x_edx_bits,offset cpuid1x_edx_str,sizeof cpuid1x_edx_bits
-	dw offset dwCPUIDecx,offset cpuid1x_ecx_bits,offset cpuid1x_ecx_str,sizeof cpuid1x_ecx_bits
+	FEATS <offset dwCPUIDedx,offset cpuid1x_edx_bits,offset cpuid1x_edx_str,sizeof cpuid1x_edx_bits>
+	FEATS <offset dwCPUIDecx,offset cpuid1x_ecx_bits,offset cpuid1x_ecx_str,sizeof cpuid1x_ecx_bits>
 
 cpuid7_ebx_bits db 0,1,2,3,4,5,7,8,18
 cpuid7_ebx_str label word
@@ -130,7 +137,7 @@ cpuid7_ebx_str label word
 
 cpuid7m label word
 	dw DStr("CPUID 7 features (EBX):",lf)
-	dw offset dwCPUIDebx,offset cpuid7_ebx_bits,offset cpuid7_ebx_str,sizeof cpuid7_ebx_bits
+	FEATS <offset dwCPUIDebx,offset cpuid7_ebx_bits,offset cpuid7_ebx_str,sizeof cpuid7_ebx_bits>
 
 	.code
 
@@ -168,36 +175,36 @@ hascpuid endp
 ;--- print features
 
 print_cpuid_regs proc stdcall uses ebx si di items:word, pp:ptr
-	mov si,pp
+
+	mov si, pp
 	lodsw
 	invoke printf, ax
-	mov cx,items
 nextreg:
 	push si
-	push cx
-	mov bx,[si+0]
-	mov di,[si+4]
-	mov cx,[si+6]
-	mov si,[si+2]
+	mov bx,[si].FEATS.pFeat
+	mov di,[si].FEATS.pStr
+	mov cx,[si].FEATS._size
+	mov si,[si].FEATS.pBitNo
 
 	mov ebx,[bx]
 nextitem:
-	push cx
 	lodsb
 	movzx eax,al
+	mov dx,[di]
+	add di,2
 	bt ebx, eax
 	jnc @F
-	mov cx,[di]
-	invoke printf, CStr("%2u %s"), ax, cx
-	add di,2
+	push cx
+	invoke printf, CStr("%2u %s"), ax, dx
+	pop cx
 @@:
-	pop cx
 	loop nextitem
-	pop cx
 	pop si
-	add si,4*2
-	loop nextreg
+	add si,sizeof FEATS
+	dec items
+	jnz nextreg
 	ret
+
 print_cpuid_regs endp
 
 main proc c
@@ -254,10 +261,10 @@ is386:
 @@:
 	mov eax,80000000h
 	cpuid
-	mov dwCPUIDeax, eax
+	mov di, ax
 	invoke printf, CStr("CPUID.80000000: EAX=%lX",lf), eax
 
-	cmp byte ptr dwCPUIDeax,1
+	cmp di, 1
 	jc nobrand
 	mov eax,80000001h
 	cpuid
@@ -268,7 +275,7 @@ is386:
 		eax, ebx, ecx, edx
 	invoke print_cpuid_regs, 2, offset cpuid1xm	;display values returned in edx, ecx
 
-	cmp byte ptr dwCPUIDeax, 5
+	cmp di, 5
 	jb nobrand
 	mov eax,80000002h
 	cpuid
@@ -292,9 +299,9 @@ is386:
 	mov cpubrand+12, edx
 	invoke printf, CStr("%s",lf), offset cpubrand
 nobrand:
-	cmp byte ptr dwCPUIDeax,8
+	cmp di, 8
 	jc no8ex
-	mov eax,80000008h
+	mov eax, 80000008h
 	cpuid
 	mov dwCPUIDeax, eax
 	invoke printf, CStr("CPUID.80000008: EAX-EBX-ECX-EDX=%lX-%lX-%lX-%lX",lf), \
