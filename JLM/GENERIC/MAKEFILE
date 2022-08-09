@@ -1,0 +1,28 @@
+
+# NMake/WMake Makefile to create GENERIC.DLL
+#
+#  tools                      alternatives
+#----------------------------------------------------------
+#  JWasm                      Masm v6.x
+#  JWLink                     WLink, ALink
+
+NAME = GENERIC
+OUTDIR=Release
+AOPT=-nologo -c -coff -nologo -Fl$*.lst -Fo$*.obj -I..\..\Include
+ASM=jwasm.exe
+#LINK=link.exe /NOLOGO /SUBSYSTEM:CONSOLE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /EXPORT:ddb /Entry:DllMain /OPT:NOWIN98
+LINK=jwlink format win nt hx dll ru console file $*.obj name $*.DLL op q,map=$*.MAP export _ddb.1
+
+ALL: $(OUTDIR) $(OUTDIR)\$(NAME).DLL $(OUTDIR)\TESTGEN.COM
+
+$(OUTDIR):
+	@mkdir $(OUTDIR)
+
+$(OUTDIR)\$(NAME).DLL: $(OUTDIR)\$(NAME).obj Makefile
+	@$(LINK)
+
+$(OUTDIR)\$(NAME).obj: $(NAME).asm
+	@$(ASM) $(AOPT) $(NAME).asm
+
+$(OUTDIR)\TESTGEN.COM: TESTGEN.ASM
+	@jwasm -nologo -bin -Fo$*.COM -Fl$* testgen.asm

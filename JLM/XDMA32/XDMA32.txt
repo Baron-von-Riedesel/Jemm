@@ -1,0 +1,71 @@
+
+ 1. About XDMA32
+
+ XDMA32 is a JLM based on Jack R. Ellis' XDMA Ultra-DMA HD driver.
+ It supports PCI IDE controllers running in "legacy" or "native" mode.
+ To load it, add the following line to your CONFIG.SYS:
+
+   DEVICE=JLOAD.EXE XDMA32.DLL [options]
+
+ options are:
+
+  /B   always use XMS buffer for file i/o. Might be useful in virtualized
+       environments which can't handle DMA properly for all addresses.
+       This switch is more restrictive than /L, and it disables /F.
+  /F   "fast", uses DMA "scatter/gather" method to allow transfers
+       which cross a physical 64 kB boundary. Might not work with all
+       controllers, so use with care! (The "fast" is a historical
+       remnant, on modern systems there will be no significant difference
+       in speed.)
+  /L   limits DMA to "low memory" below 640 kB. Addresses above are 
+       handled through the XMS buffer.
+  /Mn  set/restrict UDMA mode to n (0 <= n <= 7).
+  /P:VVVVDDDD set PCI vendor and device ID for IDE Busmaster controller
+       to search for. This option might be useful if the PCI Bios doesn't
+       support to find a PCI class code (Int 1Ah, AX=B103h).
+  /Q   quiet mode.
+  /W   handle (non-UDMA) drives which are capable of Multiword-DMA.
+
+
+  2. Hints
+
+  - if the driver is used in a Qemu (v0.8x or v0.9) VM, add option
+    /P:80867010 to make it find Qemu's IDE controller.
+
+
+  3. History
+
+  08.08.2022: v1.4
+
+   - option /M was implemented in such a way that it became obligatory
+     to set it to make the driver work.
+
+  07/26/2011: v1.3
+
+   - to determine the number of HDs in the system, an Int 13h, ah=08
+     is issued. BIOS variable 0040:0075 is ignored.
+
+  04/20/2011: v1.2
+
+   - bugfix: HDs attached to the "native" secondary channel were
+     ignored.
+
+  12/28/2007: v1.1
+
+   - bugfix: HDs attached to the "legacy" secondary channel didn't
+     work (wrong DMA ports).
+   - options /B, /M, /W and /P added, /UF option changed to /F.
+   - now max. 8 HDs are supported.
+   - usage of Jemm's new export 'MoveMemory' reduces interrupt latency,
+     and also makes this version incompatible with Jemm v5.68 and below.
+
+  12/03/2007: v1.0
+
+   - initial. Ported from XDMA v3.3. Added support for both "legacy"
+     and "native" IDE controllers.
+
+
+  4. License
+
+  XDMA32 is released under the GNU GPL v2. See GNU_GPL.TXT for details.
+

@@ -1,0 +1,86 @@
+
+ 1. About XCDROM32
+
+ XCDROM32 is a JLM based on Jack R. Ellis' XCDROM Ultra-DMA CD-ROM driver.
+ It supports PCI IDE controllers running in "legacy" or "native" mode.
+ To load it, add the following line to your CONFIG.SYS:
+
+   DEVICE=JLOAD.EXE XCDROM32.DLL [options]
+
+ Options are:
+
+  /32  use 32bit-IO in "PIO mode". This might not work with all devices,
+       but if it does, it usually gives a speed boost for that mode.
+  /AX  disable "audio" functions.
+  /D:name  set device name. If this option is missing, the default device
+       name is "XCDROM$$"
+  /F   "fast", uses DMA "scatter/gather" lists to allow transfers which 
+       cross a physical 64 kB address boundary. Might not work with all
+       controllers.
+  /L   limits DMA to "low memory" below 640 kB.
+  /Mn  set/restrict UDMA mode to n (0 <= n <= 7).
+  /P:VVVVDDDD set PCI vendor and device ID for IDE Busmaster controller
+       to search for. This option might be useful if the PCI Bios doesn't
+       support to find a PCI class code (Int 1Ah, AX=B103h).
+  /Q   quiet mode.
+  /UX  disables UltraDMA for all drives and uses "PIO mode" generally.
+  /W   handle (non-UDMA) drives which are capable of Multiword-DMA.
+
+  XCDROM32 has 3 modes of operation:
+  
+  1. "direct" mode: the target address is used for DMA input. This usually
+     is the fastest way and is used whenever possible.
+  2. "buffered" mode: the VDS DMA buffer is used for DMA input, then the
+     content is copied to the target address. This mode is used if "direct
+     mode" can't be used because target address is not aligned properly
+     or - if option /F isn't set - because the target region crosses a 64 kB
+     boundary. On modern CPUs the additional time needed for the memory copy 
+     should be negligible.
+  3. "PIO" mode: input is done without DMA. This mode should work with any
+     IDE controller and CDROM/DVD. It is used if
+     - /UX option is set.
+     - the IDE controller doesn't support PCI Busmaster DMA.
+     - the CD-ROM/DVD device is not in UDMA mode or /W option is set, but
+       CD-ROM/DVD device has no valid Multiword-DMA mode set.
+     - "buffered mode" cannot be used because VDS DMA buffer isn't
+       accessible or is too small.
+
+
+  2. Hints
+
+  - the best speed is achieved by setting both /F and /32.
+  - if the driver is used in a Qemu (v0.8x or v0.9) VM, add option
+    /P:80867010 to make it find Qemu's IDE controller.
+  - if the driver is used in a VirtualPC VM, set option /W to increase
+    speed.
+
+
+  3. History
+
+  06/20/2012: v1.4
+   - function "get q-channel info" did return track number in binary.
+   - function "get q-channel info" did return value of ADR as CONTROL 
+     and vice versa.
+   - function "get audio status" did return start and end address as
+     LBA sector numbers.
+
+  05/21/2012: v1.3
+   - scan for native (=SATA) controllers didn't succeed usually.
+
+  12/28/2007: v1.2
+   - /P, /W and /32 options added, /UF option changed to /F
+   - Jemm's VDS DMA buffer used if user buffer cannot be used.
+   - IDE/DMA ports are now displayed for each unit.
+
+  12/03/2007: v1.1
+   - now both "legacy" and "native" IDE controllers are supported.
+   - some bugfixes.
+
+  05/24/2007: v1.0
+   - initial. Ported from XCDROM v1.9.
+
+
+  4. License
+
+  XCDROM32 is released under the GNU GPL v2. See GNU_GPL.TXT for details.
+

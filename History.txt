@@ -4,7 +4,10 @@
  __.__.____: v5.82
  - JemmEx: minor adjustment to always keep monitor stack dword-aligned.
  - fixed: MOVEXBDA option didn't check that XBDA was adjacent to conv. mem.
+ - JLoad: fixed: hook int 2Fh (used to get JLM API entry) was incorrect.
  - CPUID: fixed: feature information incorrect.
+ - CPUSTAT: fixed: options -g and -i if physical != linear address.
+ - XDMA32: fixed: did reject many disks if /M option wasn't set.
 
  12.04.2022: v5.81
  - JemmEx: XMS extension v3.51 (super-extended block moves) implemented.
