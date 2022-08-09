@@ -17,7 +17,7 @@
 
 ?MAXBP	equ 32
 
-?APIINT equ 50h
+?APIINT equ 2Fh
 
 BPDYN	struc
 dwCallback	dd ?

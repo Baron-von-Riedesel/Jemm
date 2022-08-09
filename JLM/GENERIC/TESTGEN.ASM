@@ -16,7 +16,7 @@ szError db "GENERIC is NOT installed!",13,10,'$'
 start:
 	mov ax, 1684h	;get GENERIC's entry point
 	mov bx, 6660h
-	int 50h
+	int 2Fh
 	cmp al,0
 	jnz not_installed
 	push es
