@@ -407,6 +407,64 @@ exit:
 
 main endp
 
+;--- copy a 4 kB page in EAX from extended memory into buffer
+
+getpage proc stdcall physad:dword
+
+	mov eax, physad
+	and ax, 0F000h
+	mov i15src.wBase0015,ax
+	shr eax, 16
+	mov i15src.bBase1623,al
+	mov i15src.bBase2431,ah
+	mov ax, offset buffer
+	movzx eax, ax
+	mov dx, ds
+	movzx edx, dx
+	shl edx, 4
+	add eax, edx
+	mov i15dst.wBase0015, ax
+	shr eax, 16
+	mov i15dst.bBase1623, al
+	mov i15dst.bBase2431, ah
+	push ds
+	pop es
+	mov cx, 1000h shr 1
+	mov si, offset gdti15	;es:si=gdt to use
+	mov ah, 87h
+	stc
+	int 15h
+	ret
+
+getpage endp
+
+getphysaddr proc stdcall linad:dword
+	mov eax, -1		;in case the next instr is "emulated"
+	mov eax, cr3
+	cmp eax, -1
+	jz error
+	invoke getpage, eax
+	jc error
+	mov ebx, linad
+	shr ebx, 20
+	and bx, 0FFCh
+	mov eax, dword ptr [bx+buffer]
+	invoke getpage, eax
+	jc error
+	mov ebx, linad
+	shr ebx, 10
+	and bx, 0FFCh
+	mov eax, dword ptr [bx+buffer]
+	and ax,0f000h
+	mov edx, linad
+	and dx, 0FFFh
+	or ax, dx
+	ret
+error:
+	stc
+	ret
+getphysaddr endp
+
 ;--- the GDT/IDT is read with int 15h, ah=87h
 ;--- this is not really correct, since this function
 ;--- is supposed to read from physical addresses, while
@@ -416,6 +474,14 @@ main endp
 ;--- at 0x110000.
 
 DispGDT proc
+
+	invoke getphysaddr, gdta
+	jc nogdt
+	mov i15src.wBase0015,ax
+	shr eax, 16
+	mov i15src.bBase1623,al
+	mov i15src.bBase2431,ah
+
 	mov cx,gdtl 
 	inc cx
 	cmp cx,sizeof buffer
@@ -425,11 +491,6 @@ DispGDT proc
 	mov wSize,cx
 	shr cx,1
 
-	mov eax, gdta
-	mov i15src.wBase0015,ax
-	shr eax, 16
-	mov i15src.bBase1623,al
-	mov i15src.bBase2431,ah
 	mov ax, offset buffer
 	movzx eax,ax
 	mov dx,ds
@@ -545,20 +606,27 @@ cpy:
 getattr endp
 
 DispIDT proc
+
+	invoke getphysaddr, idta
+	jc noidt
+	mov i15src.wBase0015,ax
+	shr eax, 16
+	mov i15src.bBase1623,al
+	mov i15src.bBase2431,ah
+
 	mov cx,idtl 
 	inc cx
 	cmp cx,sizeof buffer
 	jc @F
 	mov cx,sizeof buffer
 @@:
+	cmp cx, 8*100h
+	jbe @F
+	mov cx, 8*100h
+@@:
 	mov wSize,cx
 	shr cx,1
 
-	mov eax, idta
-	mov i15src.wBase0015,ax
-	shr eax, 16
-	mov i15src.bBase1623,al
-	mov i15src.bBase2431,ah
 	mov ax, offset buffer
 	movzx eax,ax
 	mov dx,ds
@@ -602,35 +670,6 @@ error:
 	ret
 DispIDT endp
 
-;--- copy a 4 kB page in EAX from extended memory into buffer
-
-getpage proc
-	and ax, 0F000h
-	mov i15src.wBase0015,ax
-	shr eax, 16
-	mov i15src.bBase1623,al
-	mov i15src.bBase2431,ah
-	mov ax, offset buffer
-	movzx eax, ax
-	mov dx, ds
-	movzx edx, dx
-	shl edx, 4
-	add eax, edx
-	mov i15dst.wBase0015, ax
-	shr eax, 16
-	mov i15dst.bBase1623, al
-	mov i15dst.bBase2431, ah
-	push ds
-	pop es
-	mov cx, 1000h shr 1
-	mov si, offset gdti15	;es:si=gdt to use
-	mov ah, 87h
-	stc
-	int 15h
-	ret
-
-getpage endp
-
 printpd proc
 	mov si, offset buffer
 	xor di, di
@@ -655,7 +694,7 @@ DispPD proc
 	jz done
 	and eax, eax
 	jz done
-	call getpage
+	invoke getpage, eax
 	jc error
 	invoke printf, CStr(lf,"page directory",lf)
 	invoke printf, CStr("------------------",lf)
