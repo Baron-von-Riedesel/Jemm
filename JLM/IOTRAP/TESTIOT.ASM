@@ -7,6 +7,8 @@
 
 	.286
 	.model tiny
+	.stack 2048
+	.dosseg
 	.386
 
 	.data
@@ -24,12 +26,9 @@ szErr3  db "register callback failed!",13,10,'$'
 start:
 	mov ax, 1684h	;get IOTRAP's entry point
 	mov bx, 6661h
-	xor di,di
-	mov es,di
 	int 2Fh
-	mov ax,es       ;IOTRAP installed?
-	or ax,di
-	jz not_installed
+	cmp al,0        ;IOTRAP installed?
+	jnz not_installed
 	push es
 	push di
 	mov bp,sp

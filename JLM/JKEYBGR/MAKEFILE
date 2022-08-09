@@ -1,0 +1,22 @@
+
+# Makefile for NMAKE
+#  tools                      Alternatives
+#----------------------------------------------------------
+#  JWasm                      Masm v6.x
+#  JWLink                     MS Link, PoLink
+# 
+# PatchPE: HX tool to patch a PE binary to PX (not required for jwlink)
+
+NAME = KEYBGR
+AOPTM=-c -coff -Fl$*.lst -Fo$*.obj -I..\..\Include
+AOPTW=-nologo -coff -Fl$*.lst -Fo$*.obj -I..\..\Include
+OUTDIR=Release
+
+$(OUTDIR)\$(NAME).DLL: $(OUTDIR)\$(NAME).obj Makefile
+#	@link /NOLOGO/SUBSYSTEM:CONSOLE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /Entry:DllMain /OPT:NOWIN98 
+#	@\hx\bin\patchpe $*.DLL
+	@jwlink format win pe hx dll file $*.obj name $*.DLL op q,MAP=$*.MAP 
+
+$(OUTDIR)\$(NAME).obj: $(NAME).asm
+#	@ml $(AOPTM) $(NAME).asm
+	@jwasm $(AOPTW) $(NAME).asm
