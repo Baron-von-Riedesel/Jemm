@@ -17,6 +17,8 @@
 
 ?MAXBP	equ 32
 
+?APIINT equ 50h
+
 BPDYN	struc
 dwCallback	dd ?
 dwRefData	dd ?
@@ -24,7 +26,7 @@ BPDYN	ends
 
 ;--- v86-hook
 
-HOOKV86	struc
+HOOKV86 struc
 dwHook	 dd ?
 dwOldVec dd ?
 HOOKV86 ends
@@ -50,7 +52,12 @@ oldbp1			dd 0	;saved Jemm's breakpoint 1 (the "reboot" bp)
 IO_Handler_Region dd 0	;linear address IO handler array (256 kB)
 IO_Handler_Pages dq 0	;64 pages reserved for IO handlers
 Int2fHooked     dd 0
+ifndef _DEBUG
 prevint2f       dd 0
+else
+prevint2f       dd offset finalint2f
+trueprevint2f   dd 0
+endif
 
 ;--- generic "control block" returned by Get_Cur_VM_Handle
 
@@ -717,16 +724,27 @@ Hook_V86_Int_Chain proc
 @@error2:
 	pop eax
 @@error:
+	@DbgOutS <"Hook_V86_Int_chain: exit error",10>, ?JLMDBG
 	stc
 	ret
 @@newhook:
+	@DbgOutS <"Hook_V86_Int_chain: new hook",10>, ?JLMDBG
 	mov [edx+eax*8].HOOKV86.dwHook, esi
 	push ebx
 	push esi
 
+if 0
 	mov ecx, [esi-4]
 	mov dword ptr [ecx], 0
+endif
 
+;--- the IDT is modified. EAX=Int#
+;--- 1. store the current offset in IDT in HOOKV86.dwOldVec
+;--- 2. set the offset in IDT to the thunk code for this int
+;--- 3. generate the thunk code: "push #int" & "jmp near32 v86hook"
+;--- 4. modify the int bitmap in TSS
+
+	@DbgOutS <"Hook_V86_Int_chain: modifying IDT",10>, ?JLMDBG
 	mov ecx, [g_dwIDT]
 	mov si, [ecx+eax*8+6]
 	shl esi,16
@@ -744,18 +762,21 @@ Hook_V86_Int_Chain proc
 	mov byte ptr [edx], 0E9h		;jmp near32
 	mov ecx, offset v86_hook
 	sub ecx, edx
+	sub ecx, 5						; v5.82: adjust size of "jmp near32"
 	mov dword ptr [edx+1], ecx
 
+	@DbgOutS <"Hook_V86_Int_chain: modifying Int bitmap",10>, ?JLMDBG
 	mov ebx, [dwTSSbase]
 	movzx ecx, [ebx].TSSSEG.tsOfs
 	add ebx, ecx
-	sub ebx, 32
+	sub ebx, 32    ;=256/8
 	bts [ebx],eax
 	setc byte ptr [edx+5]	;save previous bit state
 
 	pop esi
 	pop ebx
 @@done:
+	@DbgOutS <"Hook_V86_Int_chain: exit ok",10>, ?JLMDBG
 	clc
 	ret
 	align 4
@@ -763,11 +784,17 @@ Hook_V86_Int_Chain endp
 
 ;--- the generic v86 hook proc
 ;--- installing a hook proc for a v86 int creates the following code:
+;--- push byte ptr int#
+;--- jmp near32 v86_hook
 
 v86_hook proc
-	cmp esp, ?TOS - (size IRETDV86 + 4)
+
+;--- ?TOS: top of ring0 stack
+;--- IRETDV86: struct of an IRETD in v86 mode ( eip, cs, efl, esp, ss, es, ds, fs, gs )
+	cmp esp, ?TOS - (sizeof IRETDV86 + 4)
 	jnz @@nov86
-	push 0
+
+	push 0					;adjust to match Client_Reg_Struc ()
 	pushad
 	mov ebp,esp 			;ebp -> Client_Reg_Struc
 	push ss
@@ -778,14 +805,22 @@ v86_hook proc
 	mov eax,[lpStackCurr]
 	mov ecx,[lpHooks]
 	mov esp,[eax]
-	movzx eax,byte ptr [ebp].Client_Reg_Struc.Client_Error
+
+;--- get the old vector in IDT and store it in int# member of client struct
+
+	movzx eax,byte ptr [ebp].Client_Reg_Struc.Client_Error  ; eax=int#
+
+	@DbgOutS <"v86_hook: int=">, ?JLMDBG
+	@DbgOutW ax, ?JLMDBG
+	@DbgOutS <10>, ?JLMDBG
+
 	mov edx, [ecx+eax*8].HOOKV86.dwOldVec
 	mov [ebp].Client_Reg_Struc.Client_Int, edx
-	call CallV86Hooks
+	call CallV86Hooks  ; expects eax=int#
 	mov esp,ebp
 	popad
 	jnc @@done
-	ret 4
+	ret 4   ; exit by jumping to old vector
 @@done:
 	add esp,4+4
 	iretd
@@ -1466,7 +1501,10 @@ FindDevice endp
 ;--- new v5.74: alloc v86 breakpoint if v86 api is to be installed
 
 VMM_Add_DDB proc public
+	@DbgOutS <"VMM_Add_DBB, ID=">, ?JLMDBG
 	movzx eax, [esi].VxD_Desc_Block.DDB_Req_Device_Number
+	@DbgOutW ax, ?JLMDBG
+	@DbgOutS <10>, ?JLMDBG
 	mov edx, offset ddb_list
 @@nextitem:
 	and eax,eax
@@ -1482,6 +1520,7 @@ VMM_Add_DDB proc public
 	jz done
 	cmp [esi].VxD_Desc_Block.DDB_V86_API_Proc,0		;v86 API?
 	jz done
+	@DbgOutS <"VMM_Add_DBB: JLM with API",10>, ?JLMDBG
 	push ecx
 	push esi
 	mov esi,[esi].VxD_Desc_Block.DDB_V86_API_Proc
@@ -1490,14 +1529,18 @@ VMM_Add_DDB proc public
 	pop esi
 	pop ecx
 	jc error
+	@DbgOutS <"VMM_Add_DBB: callback allocated",10>, ?JLMDBG
 	mov [esi].VxD_Desc_Block.DDB_V86_API_CSIP, eax
 	cmp [Int2fHooked],0
 	jnz done
 	inc [Int2fHooked]
 	pushad
-	mov eax, 2Fh
+	mov eax, ?APIINT
 	mov esi, offset Int2fHook
 	call Hook_V86_Int_Chain
+	@DbgOutS <"VMM_Add_DBB: Int 2F hooked, addr=">, ?JLMDBG
+	@DbgOutD esi, ?JLMDBG
+	@DbgOutS <10>, ?JLMDBG
 	popad
 done:
 	mov [ecx].VxD_Desc_Block.DDB_Next, esi
@@ -1508,14 +1551,33 @@ error:
 	align 4
 VMM_Add_DDB endp
 
+ifdef _DEBUG
+	dd offset trueprevint2f
+finalint2f proc
+	@DbgOutS <"finalint2f: ax=">, ?JLMDBG
+	@DbgOutW word ptr [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
+	@DbgOutS <10>, ?JLMDBG
+done:
+	stc
+	ret
+finalint2f endp
+endif
 ;--- a hook proc must be prefixed by the flat address
 ;--- of the variable where the previous value is stored
 
 	dd offset prevint2f
 Int2fHook proc
+
+	@DbgOutS <"Int2fHook: client_ax=">, ?JLMDBG
+	@DbgOutW word ptr [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
+	@DbgOutS <10>, ?JLMDBG
+
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 1684h
 	jnz not_ours
+	@DbgOutS <"Int2FHook: ax=1684h detected, ID=">, ?JLMDBG
 	movzx eax,word ptr [ebp].Client_Reg_Struc.Client_EBX
+	@DbgOutW ax, ?JLMDBG
+	@DbgOutS <10>, ?JLMDBG
 	mov edx, offset ddb_list
 @@nextitem:
 	cmp ax, [edx].VxD_Desc_Block.DDB_Req_Device_Number
@@ -1526,11 +1588,13 @@ Int2fHook proc
 	xor eax, eax
 	jmp @F
 found:
+	mov byte ptr [ebp].Client_Reg_Struc.Client_EAX, 0	;v5.82: set AL to 0 if ok
 	mov eax, [edx].VxD_Desc_Block.DDB_V86_API_CSIP
 @@:
 	mov word ptr [ebp].Client_Reg_Struc.Client_EDI, ax
 	shr eax, 16
 	mov word ptr [ebp].Client_Reg_Struc.Client_ES, ax
+
 	clc
 	ret
 not_ours:

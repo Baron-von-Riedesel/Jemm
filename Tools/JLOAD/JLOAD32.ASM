@@ -466,13 +466,13 @@ if ?TRACE
 
 ;--- display DWORD in eax
 
-VDWORDOUT proc
+VDWORDOUT proc public
 	push eax
 	shr eax,16
 	call VWORDOUT
 	pop eax
 VDWORDOUT endp
-VWORDOUT proc
+VWORDOUT proc public
 	push eax
 	mov al,ah
 	call VBYTEOUT
@@ -593,7 +593,7 @@ endif
 VPUTCHR ENDP
 
 
-VPRINTSTR PROC
+VPRINTSTR PROC public
 	XCHG EBX,[ESP]
 	PUSH EAX
 @@NEXTCHAR:

@@ -8,66 +8,53 @@
 ?PEDBG   = 0	;trace PE loader
 ?IODBG   = 0	;trace IO trapping
 ?PAGEDBG = 0	;trace page memory
+?JLMDBG  = 1	;trace jlm handling
 
-?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG
+ifdef _DEBUG
+?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG + ?JLMDBG
+else
+?TRACE = 0
+endif
+
+VPRINTSTR proto
+VDWORDOUT proto
+VWORDOUT  proto
 
 @DbgOutS macro string, bCond
-local bDisp
-bDisp = 0
 ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-externdef VPRINTSTR:near
+ if bCond
 	call VPRINTSTR
 	db string
 	db 0
+ endif
 endif
 	endm
 
 ;--- display DWORD in V86
 
 @DbgOutD macro _dword, bCond
-local bDisp
-bDisp = 0
 ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-externdef VDWORDOUT:near
+ if bCond
 	push eax
 	mov eax, _dword
 	call VDWORDOUT
 	pop eax
+ endif
 endif
 	endm
 
 ;--- display WORD in V86
 
 @DbgOutW macro _word, bCond
-local bDisp
-bDisp = 0
 ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-externdef VWORDOUT:near
+ if bCond
 	push eax
 	mov ax, _word
 	call VWORDOUT
 	pop eax
+ endif
 endif
 	endm
-
 
 @tracejmp macro target
 if ?TRACE

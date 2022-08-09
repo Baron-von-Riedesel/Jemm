@@ -3,6 +3,16 @@
 ;--- JLoad loads a 32bit PE binary in Jemm's address space
 ;--- best viewed with TABSIZE 4
 
+;--- these segment definitions must be BEFORE .model since alignment is 4
+
+_TEXT segment dword public 'CODE'
+_TEXT ends
+_DATA segment dword public 'DATA'
+_DATA ends
+
+	.model tiny
+	.dosseg
+
 	.386
 
 	option casemap:none
@@ -36,7 +46,7 @@ lf				equ 0ah
 
 ;*** define segments ***
 
-_TEXT segment dword use16 public 'CODE'
+	.code
 
 ; device driver header
 
@@ -50,8 +60,6 @@ strategy:
 	mov word ptr cs:[dwRequest+0],bx
 	mov word ptr cs:[dwRequest+2],es
 	retf
-
-_TEXT ends
 
 CCONST segment dword use16 public 'CODE'
 CCONST ends
@@ -213,10 +221,10 @@ _TEXT segment
 	align 4
 
 vmmcode label byte
-	include Release\JLoad32.inc
+%	include OUTD\JLoad32.inc
 	align 4
         
-SIZEVMM equ $ - vmmcode
+SIZEVMM equ $ - offset vmmcode
 
 _IsJemmInstalled proc
 

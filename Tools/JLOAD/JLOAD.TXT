@@ -91,6 +91,10 @@
 
  5. History
 
+ v5.82:
+   - fixed: JLMs with API didn't work correctly.
+   - int 2Fh, ax=1684h: when a JLM entry point is returned ( in ES:DI ),
+     AL is set to 0 to indicate success.
  v5.76:
    - linker changed from Digital Mars OPTLINK to jwlink
    - VMM.ASM: bugfix in _PageFree()
