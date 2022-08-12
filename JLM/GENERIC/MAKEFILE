@@ -4,7 +4,7 @@
 #  tools                      alternatives
 #----------------------------------------------------------
 #  JWasm                      Masm v6.x
-#  JWLink                     WLink, ALink
+#  JWLink                     Link, WLink, ALink
 
 NAME = GENERIC
 OUTDIR=Release

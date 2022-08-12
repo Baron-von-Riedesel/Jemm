@@ -35,6 +35,10 @@
 
   3. History
 
+  __.__.2022: v1.5
+
+   - ensure that busmaster flag in PCI command register is set.
+ 
   08.08.2022: v1.4
 
    - option /M was implemented in such a way that it became obligatory

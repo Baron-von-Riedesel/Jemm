@@ -66,6 +66,7 @@ iocb:
 ;--- BX=value when callback was "registered"
 ;--- DS=data segment
 ;--- ES=flat segment
+;--- SS:ESP=flat host stack!
 
 	push esi
 	mov esi,0B8000h

@@ -1,13 +1,11 @@
 @echo off
-rem JWasm, Masm and PoAsm are supported
 rem
-rem ml -c -coff -Fl -I..\..\Include hello.asm
-rem poasm -I..\..\Include HELLO.ASM
-rem polink HELLO.OBJ /subsystem:console /FIXED:NO /map /out:HELLO.EXE
+rem JWasm/JWlink or Masm/Link are supported
 rem
-jwasm -nologo -coff -I..\..\Include HELLO.ASM
-rem wlink creates a "dummy" import directory entry which jload doesnt like
-rem wlink system nt file HELLO.OBJ name HELLO.EXE
-link HELLO.OBJ /subsystem:console /FIXED:NO /map /out:HELLO.EXE /ENTRY:_main /OPT:NOWIN98
-rem
-..\patchpe HELLO.EXE
+jwasm -nologo -coff -Fl=Release\Hello -Fo=Release\Hello -I..\..\Include Hello.asm
+jwlink format win pe hx file Release\Hello.obj name Release\Hello.exe op m=Release\Hello,q
+
+rem using MS tools
+rem ml -c -coff -FlRelease\Hello -FoRelease\Hello -I..\..\Include Hello.asm
+rem link HELLO.OBJ /subsystem:console /FIXED:NO /map /out:Release\Hello.exe /ENTRY:_main /OPT:NOWIN98
+rem \hx\bin\patchpe Release\Hello.exe

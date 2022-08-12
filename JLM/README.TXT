@@ -7,6 +7,7 @@
  HELLO:    "hello world" JLM in ASM (Masm/JWasm)
  HELLO2:   "hello world" JLM in C (MS VC, Open Watcom)
  IOTRAP:   sample how to trap IO port access.
+ JCLOCK:   shows clock in text mode.
  JKEYBGR:  German keyboard driver.
  XDMA32:   UltraDMA HD driver (GNU GPL 2).
  XCDROM32: UltraDMA DVD/CD-ROM driver (GNU GPL 2).
@@ -20,7 +21,7 @@
  -----------------------------------------
  assembler:
  Masm               6.15      ok
- JWasm              1.95      ok
+ JWasm              2.15      ok
  Fasm               1.67      ok
 
  C compiler:

@@ -47,7 +47,7 @@
 ;
 ; General Program Equations.
 ;
-VERSION equ <' V1.3, 07-26-2011'>
+VERSION equ <' V1.5, 12-08-2022'>
 RDYTO   equ 08h         ;389-msec minimum I-O timeout.
 BIOSTMR equ 046Ch       ;BIOS "tick" timer address.
 HDISKS  equ 0475h       ;BIOS hard-disk count address.
@@ -105,9 +105,9 @@ DME     equ 002h        ;DMA error occurred.
 DRCMD   equ 0C8h        ;DMA read command (write is 0CAh,
                         ;    LBA48 commands are 025h/035h).
 SETM    equ 003h        ;Set Mode subcommand.
-SETF    equ 0EFh        ;Set Features command.
+SETFEAT equ 0EFh        ;Set Features command.
 ;
-; LBA "Device Address Packet" Layout.
+; LBA "Disk Address Packet" Layout.
 ;
 DAP struc
 DapPL   db  ?       ;Packet length.
@@ -115,11 +115,13 @@ DapPL   db  ?       ;Packet length.
 DapSC   db  ?       ;I-O sector count.
         db  ?       ;(Reserved).
 DapBuf  dd  ?       ;I-O buffer address (segment:offset).
-DapLBA  dw  ?       ;48-bit logical block address (LBA).
-DapLBA1 dd  ?
+LBA01   dw  ?       ;48-bit logical block address (LBA).
+LBA25   dd  ?
+LBA67   dw  ?       ; it's actually a QWORD
 DAP ends
 ;
 ; DPTE "Device Parameter Table Extension" Layout
+; that's the structure the lpCfg member in EDD20 points to.
 ;
 DPTE struc
 wIDEBase    dw ?    ;IDE port base
@@ -127,6 +129,7 @@ wIDEAlt     dw ?    ;alternate control port
 bFlags      db ?    ;drive flags (bit 4=1 -> drive is slave)
             db ?    ;proprietary info
 bIRQ        db ?    ;IRQ for drive
+;--- there's some more fields...
 DPTE ends
 
 ;--- structure used by Int 13h, ah=48h
@@ -143,21 +146,21 @@ EDD10 ends
 
 EDD20 struc
       EDD10 <>
-lpCfg dd ?	;+26 EDD configuration parameters
+lpCfg dd ?	;+26 EDD configuration parameters ( or -1 if invalid )
 EDD20 ends
 
 EDD30 struct
         EDD20 <>
-wSig    dw ?			;+1E
-bLength db ?			;+20 length of path
-        db 3 dup (?)	;    reserved        
-szBus   db 4 dup (?)	;+24
-szIFType db 8 dup (?)	;+28
-qwIFPath db 8 dup (?)	;+30
+wSig      dw ?			;+1E
+bLength   db ?			;+20 length of path
+          db 3 dup (?)	;    reserved        
+szBus     db 4 dup (?)	;+24
+szIFType  db 8 dup (?)	;+28
+qwIFPath  db 8 dup (?)	;+30
 szDevPath db 8 dup (?)	;+38
           db ?			;+40
 bChecksum db ?			;+41
-;          db 8 dup (?)  ;+42
+          db 8 dup (?)  ;+42
 EDD30 ends
 
 ;--- bits for flags above
@@ -231,14 +234,14 @@ endm
 
 startcode label byte
 
-dwBase      dd 0    ;linear address driver base
+dwBase      dd 0    ;linear address driver base ( conv. memory )
 dwCmdLine   dd 0
 dwBufferLin dd 0    ;linear address XMS buffer
 dwBufferPhy dd 0    ;physical address XMS buffer (64 kb aligned)
 PrvI13      dd 0    ;old real-mode int 13 vector
 XMSEntry    dd 0    ;XMS "entry" address, set by Init
 XMSHdl      dd 0    ;XMS memory "handle", set by Init
-wBaseSeg    dd 0
+wBaseSeg    dd 0    ;conventional memory segment ( supplied by loader)
 if SETVD
 dwVD        dd 0
 endif
@@ -266,7 +269,7 @@ HDCount db  0       ;(BIOS hard-disk count, during Init).
 
     align 4
 
-PRDAd   dd  offset IOAdr - offset startcode     ;PRD 32-bit command addr. (Init set).
+PRDAd   dd  0       ;PRD 32-bit command addr. (Init set).
 
 ;--- the following is written to the IDE port
 ;--- and has to be kept in this order!
@@ -282,8 +285,10 @@ IOCmd   db  0       ;IDE command byte.
 
 VDSLn   dd  0           ;buffer length
 VDSOf   dd  0           ;linear address of buffer
+
+;--- values for DMA controller - must be consecutive
 IOAdr   dd  0           ;DMA physical address
-IOLen   dd  080000000h  ;DMA byte count and "end" flag.
+IOLen   dd  80000000h   ;DMA byte count and "end" flag.
 if SCATTER
 IOAdr2  dd  0
 IOLen2  dd  80000000h
@@ -293,12 +298,12 @@ IDEAd   dw  1F0h, 1F0h, 170h, 170h
 if NUMDSK gt 4
         dw  NUMDSK-4 dup (-1);IDE port base
 endif
-if 0
+
 IDEAlt  dw  3F6h, 3F6h, 376h, 376h
 if NUMDSK gt 4
         dw  NUMDSK-4 dup (-1);IDE port base
 endif
-endif
+
 DMAAd   dw  NUMDSK dup (-1) ;DMA port base
 
 Units   db  NUMDSK dup (-1) ;IDE "active units" table (Init set).
@@ -323,7 +328,7 @@ iftab label byte
     db 08Ah, 080h   ;legacy, BM
     db 08Fh, 085h   ;native, BM
     db 0FAh, 0F0h
-    db 0BAh, 0B0h
+    db 0BAh, 0B0h   ;???
 endiftab label byte
 
     align 4
@@ -382,10 +387,10 @@ NextU:
     jc IsBusy                   ;exit with error AH=01 if driver is busy
     mov eax,[ebp].Client_Reg_Struc.Client_EAX
     mov dl,0BEh     ;Mask out LBA and write request bits.
-    and dl,ah
+    and dl,ah       ; 02/03/42/43 -> 2
     cmp dl,002h     ;Is this a CHS or LBA read or write?
     jne Pass        ;No, let BIOS handle this request.
-    shl ah,1        ;Is this an LBA read or write request?
+    shl ah,1        ;02/03 -> 04/06   42/43 -> 84/86
     jns ValCHS      ;No, handle CHS
 
     movzx ecx,@word [ebp].Client_Reg_Struc.Client_DS
@@ -397,11 +402,11 @@ NextU:
     movzx edx, @word [esi].DAP.DapBuf+0
     shl ebx, 4
     add ebx, edx
-    mov edx,[esi.DAP.DapLBA1]       ;Get DAP LBA bits 16-47
+    mov edx,[esi.DAP.LBA25]         ;Get DAP LBA bits 16-47
     mov al,[esi.DAP.DapSC]          ;Get "DAP" I-O sector count.
     
-    cmp @dword [esi.DAP.DapBuf],-1  ;64-bit buffer address?
-    mov si,[esi.DAP.DapLBA]         ;(Get "DAP" LBA bits 0-15).
+    cmp [esi.DAP.DapBuf],-1         ;64-bit buffer address?
+    mov si,[esi.DAP.LBA01]          ;(Get "DAP" LBA bits 0-15).
     jne ValSC                       ;No, go validate "DAP" sector count.
 Pass:
     btr @dword [bFlags],FLB_BUSY    ;Reset driver "busy" flag
@@ -469,17 +474,18 @@ ValSC:
     or si,dx            ;Anything in LBA bits 28-47?
     jnz LBA48           ;Yes, use LBA48 read/write command.
     xchg dh,[LBA2447]   ;LBA28 -- reload & reset bits 24-27.
+
     or ah,(DRCMD+1)     ;Get LBA28 read/write command + 5.
     jmp GetAdr          ;Go get IDE and LBA address bytes.
     align 4
 LBA48:
-    shl ah,3            ;LBA48 -- get command as 020h/030h.
+    shl ah,3            ;LBA48 -- translate command 04h/84h -> 20h, 06h/86h -> 30h.
 GetAdr:
     mov dl,[edi+SelCmd]
     or dl,dh            ;"Or" in LBA28 bits 24-27 (if any).
     mov dh,005h         ;Get final IDE command byte.
     xor dh,ah           ;(LBA28 = C8h/CAh, LBA48 = 25h/35h).
-    mov @word [DSCmd],dx;Set IDE command bytes.
+    mov @word [DSCmd],dx;Set IDE command bytes (DSCmd + IOCmd).
     mov [SecCt],al      ;Set I-O sector count.
     movzx eax,al
     shl eax,9
@@ -501,12 +507,12 @@ if SCATTER
 else
     mov dl,1            ;check for 64 kB boundary crossing
 endif
-    VxDCall VDMAD_Lock_DMA_Region
+    VxDCall VDMAD_Lock_DMA_Region   ; lock region esi, size ecx, dl[0] check 64 kb crossing
     jc BufIO            ;Error -- do buffered I-O.
     mov [IOAdr], edx
 
     cmp @word [IOAdr+2],-1  ;DMA I-O above our limit?
-@DMALmt equ $-1         ;(If 640K limit, set to 009h by Init).
+@DMALmt equ $-1         ;(If 640K limit, ffff is patched to 9fff by Init).
     ja BufIO            ;Yes, use buffered I-O routines below.
 if SCATTER
     test [bFlags],FL_F  ;/F option set?
@@ -548,6 +554,16 @@ GoOut:
 BufIO:
     test [IOCmd],012h   ;Is this a write request?
     jnz BufOut          ;Yes, use output routine
+
+if 0;def _DEBUG
+	push edi
+	mov edi, dwBufferLin
+	mov ecx, VDSLn
+	shr ecx, 2
+	mov eax, 0f6f6f6f6h
+	rep stosd
+	pop edi
+endif
 
 ;--- buffered read: read into DMA buffer, then copy to conv. memory
 
@@ -599,66 +615,82 @@ BufDMA:
 DoDMA:
     mov dx,[edi*2+DMAAd]    ;Ensure any previous DMA is stopped!
     in al,dx                ;(On some older chipsets, if DMA is
-    and al,0FEh             ;  running, reading an IDE register
+    and al,0F6h             ;  running, reading an IDE register
     out dx,al               ;  causes the chipset to "HANG"!!).
+
 ;   mov al,[edi+SelCmd]     ;Select our desired disk.
     mov al,[DSCmd]
     mov dx,[edi*2+IDEAd]
     add edx,CDSEL
     out dx,al
+
     mov cx,(RDYTO*256)+FLT  ;Get timeout & "fault" mask.
+
     mov esi,BIOSTMR
+
     add ch,[esi]            ;Set timeout limit in CH-reg.
     call ChkRdy             ;Await controller- and disk-ready.
     jc _ret                 ;If any errors, exit!
 
-    mov ds:[HDIOFS],al      ;AL is 0. reset BIOS flag for HD IRQ
+;    mov ds:[HDIOFS],al      ;AL is 0. reset BIOS flag for HD IRQ
+    mov byte ptr ds:[HDIOFS],0
 
-    mov esi,offset PRDAd    ;Point to parameters we will output.
+    mov dx,[edi*2+DMAAd]    ;Reset DMA commands and set DMA mode.
     test [IOCmd],012h       ;Is this a write request?
     jnz @F                  ;Yes, reset DMA command register.
-    mov al,008h             ;Get "DMA read" command bit.
+    in al, dx
+    or al, 8                ;set "DMA read" command bit.
+    out dx, al
 @@:
-    mov dx,[edi*2+DMAAd]    ;Reset DMA commands and set DMA mode.
-    out dx,al
-    inc edx         ;Point to DMA status register.
-    inc edx
-    in al,dx        ;Reset DMA status register.
-    or al,006h      ;(Done this way so we do NOT alter
-    out dx,al       ;  the "DMA capable" status flags!).
-    inc edx         ;Set PRD pointer to our DMA address.
-    inc edx
-    outsd
-    mov ax,001F7h   ;Set IDE parameter-output flags.
-if NOHIGHLBA
-    cmp @dword [esi],0  ;for LBA28, avoid the first 4 OUTs
-    jnz NxtPar
-    shr eax,4
-    add esi,4
-endif
-NxtPar:
+    add edx, 2      ;Point to DMA status register.
+    in al, dx       ;Reset DMA status register.
+    or al, 6        ;(Done this way so we do NOT alter
+    out dx, al      ;  the "DMA capable" status flags!).
+    add edx, 2      ;Set PRD pointer to our DMA address.
+    mov eax, [PRDAd]
+    out dx, eax
+
+	mov eax, dword ptr [SecCt2]
     mov dx,[edi*2+IDEAd]
-    add edx,1       ;pos at sector count
+    add edx, 2
+	and eax, eax
+	jz skip4
+	mov cl,4         ;(1st 4 overlayed by 2nd 4 if LBA28!).
 @@:
-    inc edx         ;Output all ten LBA48 parameter bytes.
-    outsb           ;(1st 4 overlayed by 2nd 4 if LBA28!).
-    shr ax,1        ;More parameters to go in this group?
-    jc @B           ;Yes, loop back and output next one.
-    jnz NxtPar      ;If first 4 done, go output last 6.
-    mov esi, BIOSTMR
-if 0
+	out dx, al
+	inc edx
+	shr eax, 8
+	dec cl
+	jnz @B
+	sub edx, 4
+skip4:
+	mov eax, dword ptr [SecCt]
+	mov cl,4
+@@:
+	out dx, al
+	inc edx
+	shr eax, 8
+	dec cl
+	jnz @B
+
+	mov al,[IOCmd]
+	inc edx
+	out dx, al
+
+if 1  ;was deactivated until v1.4?
     mov dx,[edi*2+IDEAlt]
-ChkDRQ:
+@@:
     cmp ch,[esi]    ;Too long without 1st data-request?
     je DMAEnd       ;Yes?  Return carry and DMA timeout!
     in al,dx        ;Read IDE alternate status.
     and al,DRQ      ;Has 1st data-request arrived?
-    jz ChkDRQ       ;No, loop back and check again.
+    jz @B           ;No, loop back and check again.
 endif
-    mov dx,[edi*2+DMAAd]
-    in al,dx        ;Set DMA Start/Stop bit (starts DMA).
-    or al,1
-    out dx,al
+
+    mov dx, [edi*2+DMAAd]
+    in al, dx       ;Set DMA Start/Stop bit (starts DMA).
+    or al, 1
+    out dx, al
 ChkDMA:
     VMMCall Yield
     inc edx         ;Point to DMA status register.
@@ -668,8 +700,8 @@ ChkDMA:
     dec edx
     and al,DMI+DME  ;DMA interrupt or DMA error?
     jnz HltDMA      ;Yes, halt DMA and check results.
-    cmp ch,[esi]    ;Has our DMA transfer timed out?
-    je HltDMA       ;No, loop back and check again.
+;    cmp ch,[esi]    ;Has our DMA transfer timed out?
+;    je HltDMA       ;No, loop back and check again.
     test @byte ds:[HDIOFS],80h
     jz ChkDMA
     mov al,DMI
@@ -687,9 +719,12 @@ HltDMA:
     test al,DME     ;Any "late" DMA error after DMA end?
     jnz DMAEnd      ;Yes?  Return carry and DMA error!
     inc cl          ;Check "fault" and hard-error at end.
+
+;--- EDI=drive,ESI=BIOS timer counter, CH=max
+
 ChkRdy:
     mov dx,[edi*2+IDEAd]  ;Read IDE primary status.
-    add edx,7
+    add edx,CSTAT
     in al,dx
     test al,BSY+RDY ;Controller or disk still busy?
     jg ChkErr       ;No, go check for "fault" or error.
@@ -704,9 +739,6 @@ endif
 ChkErr:
     and al,cl       ;Disk "fault" or hard-error?
     jz ChkExit      ;No, all is well -- go exit below.
-if 0
-    int 3
-endif
     test al,FLT     ;BAAAD News!  Is the disk "faulted"?
     mov ax,(256*FAULTED)+HARDERR ;(Get hardware error codes).
 WhichE:
@@ -839,7 +871,7 @@ WaitRdy endp
 ; On error, Carry is set and ESI -> error msg
 ; modifies EAX, EBX, ECX, EDX, ESI, EDI
 ;
-I_ValD proc
+I_ValDisk proc
     mov dx,[edi*2+IDEAd]
     mov al,[edi+SelCmd]
     add edx,CDSEL
@@ -877,9 +909,11 @@ if LBACHECK
     cmp al,3
     jnz I_SErr
 endif
+    dbgmsg1 "ValDisk: disk supports DMA & LBA, 53=", word ptr [edi+53*2], \
+            " 88=", word ptr [edi+88*2]
 
     mov bl,[edi+53*2]       ;copy "UltraDMA valid" flag to BL
-    mov bh,[edi+88*2+1]     ;copy "UltraDMA mode" flags in BH-reg.
+    mov bh,[edi+88*2+1]     ;copy "UltraDMA mode active" flags in BH-reg.
 
 if SETMODE
     test bl,4           ;values in word at pos 88 valid?
@@ -898,6 +932,28 @@ if SETMODE
     bts ecx,eax
     cmp cl,bh           ;is this mode set already?
     jz nosetm
+
+;--- check/set multi-word DMA
+	test [bFlags], FL_W
+	jz @F
+    inc edx             ;Point to IDE "features" register.
+    mov al,SETM         ;Set mode-select subcode.
+    out dx,al
+    inc edx				;Point to IDE sector-count register.
+    mov al,[edi+63*2+1] ;get current MW mode
+    or al,020h
+    jmp setumw
+@@:
+;--- v1.4: if any UDMA mode is active and no /M option given,
+;--- don't modify mode.
+
+	cmp bh, 0
+	jz @F
+	cmp [MaxUM],-1
+	jz nosetm
+@@:
+    dbgmsg1 "ValDisk: setting UDMA mode"
+
     mov bh,cl           ;save it in BH for later
     push eax
     inc edx             ;Point to IDE "features" register.
@@ -906,13 +962,15 @@ if SETMODE
     inc edx             ;Point to IDE sector-count register.
     pop eax
     or al,040h
+setumw:
     out dx,al
     add edx,5           ;Point to IDE cmd register.
-    mov al,SETF         ;Issue "set features" command.
+    mov al,SETFEAT      ;Issue "set features" command.
     out dx,al
     call WaitRdy        ;Await controller-ready.
     mov esi,CStr(' UDMA mode set failed')
     jc I_SErr
+    dbgmsg1 "ValDisk: UDMA mode set successful"
 nosetm:
 endif
 
@@ -922,18 +980,16 @@ if MWDMA
     jz @F 
     mov ch,[edi+63*2+1]     ;copy multiword flags to AH
     and ch,ch               ;is a MW-DMA mode set?
-    jnz I_MWYes
+    jz I_MWYes
+	mov bh,0
+	jmp I_MWYes
 @@:
 endif
-    dbgmsg " UDMA not valid"
     test bl,04h             ;UltraDMA bit set?
     jz I_SErr
-    dbgmsg " no UDMA mode is set"
     or bh,bh                ;any UltraDMA mode set?
     jz I_SErr               ;No?  Exit & display message!
 I_MWYes:
-    test [bFlags],FL_Q
-    jnz I_Exit
 
 if MWDMA
     mov eax,offset UModes   ;Point to UltraDMA mode table.
@@ -968,6 +1024,8 @@ I_NxtN:
 I_Name:
     mov @dword [ebx],"-ATA" ;Set "ATA-" and null after name.
     mov @byte [ebx+4],0
+    test [bFlags],FL_Q
+    jnz I_Exit
     mov esi,offset DNMsg    ;Display "name" of this disk.
     call DsplyM
     mov ax,[edi]            ;Get disk "mode" value.
@@ -988,18 +1046,33 @@ I_SErr:
     ret
     align 4
 
-I_ValD endp
+I_ValDisk endp
 
 ;--- get DMA and IDE controller ports for a HD
 ;--- EBX=bus/device/func
 ;--- EDI=drive
 ;--- for a "native" controller, IDE port bases are in registers 0-3
 ;--- 0+1=primary base+alternate, 2+3=secondary base+alternate
+;--- out: DMA port in CX
 
 I_GetPorts proc
 
+;--- v1.5: ensure that Busmaster flag is set in command register
+    mov word ptr [ebp].Client_Reg_Struc.Client_EBX, bx
+    mov word ptr [ebp].Client_Reg_Struc.Client_EDI, 4
+    mov ax, 8               ;read command register (byte)
+    call Int1AahB1
+    bts word ptr [ebp].Client_Reg_Struc.Client_ECX, 2  ; enable busmaster
+    jc @F
+    mov word ptr [ebp].Client_Reg_Struc.Client_EBX, bx
+    mov word ptr [ebp].Client_Reg_Struc.Client_EDI, 4
+    mov ax, 0Bh             ;write command register (byte)
+    call Int1AahB1
+@@:
+
     mov ax, 8               ;get class code
     call Int1AaxB10A
+    dbgmsg1 "GetPorts: get class code for BX=", bx, " CX=", word ptr [ebp].Client_Reg_Struc.Client_ECX
 if CLSBM
     test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,80h   ;BusMaster?
     stc
@@ -1007,7 +1080,7 @@ if CLSBM
 endif
     test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,1 ;native controller?
     jz islegacy
-    dbgmsg1 <"is a native IDE controller">
+    dbgmsg1 "GetPorts: native IDE controller"
     mov ax,16+0*4           ;Get primary IDE base address
     call Int1AaxB10A
     dbgmsg1 "primary base=", word ptr [ebp].Client_Reg_Struc.Client_ECX, " - ", word ptr [edi*2+IDEAd]
@@ -1028,12 +1101,12 @@ endif
     clc
     ret
 islegacy:
-    dbgmsg1 "is a legacy IDE controller"
     call getDMA
     cmp [edi*2+IDEAd],1F0h
     jz @F
     add ecx,8
 @@:
+    dbgmsg1 "GetPorts: legacy IDE controller, DMA port=", cx
     clc
 exit:
     ret
@@ -1050,6 +1123,7 @@ I_GetPorts endp
 ;--- inp: EDI=drive
 ;--- out: NC + DMA controller port base in CX
 ;--- C on errors
+;--- scans iftab
 
 ;--- PCI command register
 ;--- 0001: I/O access enabled
@@ -1061,34 +1135,34 @@ I_GetUDMAC proc
 if SETVD
     test [bFlags],FL_P
     jz @F
-    dbgmsg1 "using vendor/device of /P switch"
+    dbgmsg1 "GetUDMAC: using vendor/device of /P switch"
     mov eax,[dwVD]
     mov [ebp].Client_Reg_Struc.Client_ECX,eax
     shr eax,16
     mov [ebp].Client_Reg_Struc.Client_EDX,eax
     mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
-    mov al,2                ;find vendor/device
+    mov al,2                ;int 1ah, ax=b102: find CX=device/DX=vendor/SI=index
     call Int1AahB1
-    mov esi,offset endiftab
+    mov esi,offset endiftab	;8A-80/8F-85/FA-F0/BA-B0
     jmp testdev
 @@:
 endif
     mov esi,offset iftab    ;Point to interface byte table.
-I_Next:
-    mov ecx,000010100h      ;We want class 1 storage, subclass 1 IDE.
+NextIF:
+    mov ecx,000010100h      ;We want class 1 [16-23], storage), subclass 1 ([8-15], IDE).
     lodsb                   ;Get next "valid" PCI interface byte.
     mov cl,al
     mov [ebp].Client_Reg_Struc.Client_ECX, ecx
     mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
-    mov al,3                ;Returns bus/device/function in BX.
+    mov al,3                ;int 1ah, ax=b103: find ECX=class code (out: BX=bus/device/function).
     call Int1AahB1
 testdev:
     jc I_Continue           ;Succeeded?
     mov ebx, [ebp].Client_Reg_Struc.Client_EBX
-    dbgmsg1 "IDE controller found, BUS/FUNC=", ebx
+    dbgmsg1 "GetUDMAC: IDE controller found, BUS/FUNC=", ebx
     mov ax,4                ;Get PCI command + status register
     call Int1AaxB10A
-    dbgmsg1 "cmd+status register=", [ebp].Client_Reg_Struc.Client_ECX
+    dbgmsg1 "GetUDMAC: cmd+status register=", [ebp].Client_Reg_Struc.Client_ECX
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
 if CLSBM
     and ecx,1               ;Mask I-O Space bits.
@@ -1102,7 +1176,7 @@ endif
     jnc exit
 I_Continue:
     cmp esi,offset endiftab ;More interface bytes to try?
-    jb I_Next               ;Yes, go try next one.
+    jb NextIF               ;Yes, go try next one.
     stc
 exit:
     ret
@@ -1272,6 +1346,74 @@ I_XErr:
     align 4
 I_InitXMS endp
 
+;--- in: EDI=drive#
+;---     CX=DMA port
+;--- display current values for disk
+;--- out: 
+;---     DMAAd
+;---     CHSHd
+;---     CHSSec
+
+I_SetDisk proc
+    and cl,0FCh
+    mov [edi*2+DMAAd],cx
+
+    test [bFlags],FL_Q
+    jnz I_NoDskDisp
+    mov esi,CStr('HD ')
+    call DsplyM
+    mov al,[HDUnit]
+    call DsplyB
+    mov esi,CStr(', Master')
+    test [edi+SelCmd],10h   ;Is this disk the master?
+    jz @F                   ;Yes, display "master" name.
+    mov esi,CStr(', Slave')
+@@:
+    call DsplyM             ;Display disk's master/slave name.
+
+    mov esi,CStr(', ATA/DMA ports ')
+    call DsplyM             ;Display controller-data trailer.
+    xor ebx,ebx             ;Display DMA controller address.
+    mov ax,[edi*2+IDEAd]
+    call DsplyW
+    mov esi,CStr('/')
+    call DsplyM             ;Display controller-data trailer.
+    mov ax,[edi*2+DMAAd]
+    call DsplyW
+I_NoDskDisp:
+
+    mov ah,08h              ;Get BIOS CHS values for this disk.
+    call I_Int13
+    jc  I_CHSE              ;If BIOS error, zero sectors/head.
+    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
+    mov edx,[ebp].Client_Reg_Struc.Client_EDX
+    dbgmsg1 "SetDisk: int 13,ax=8 ok, cx=", cx, " dx=", dx
+    and ecx,03Fh            ;Get sectors/head value (low 6 bits).
+    inc dh                  ;Get heads/cylinder (BIOS value + 1).
+    jnz I_SetC              ;If non-zero, save disk's CHS values.
+I_CHSE:
+    xor cl,cl               ;CHS error!  Zero disk's sectors/head.
+I_SetC:
+    mov [edi+CHSHd],dh      ;Save disk's CHS values in our tables.
+    mov [edi+CHSSec],cl
+    push edi
+    call I_ValDisk
+    pop edi
+    jc I_ErrD               ;If any errors, DELETE this disk!
+    cmp [edi+CHSSec],0      ;Were disk's CHS values legitimate?
+    jne exit                ;Yes, check for more disks to use.
+    mov esi,CStr("** BIOS must do above disk's CHS I-O",CR,LF)
+    call DsplyM
+    stc
+    ret
+I_ErrD:
+    call DsplyM             ;Display error for this disk.
+    call DsplyEOL
+    stc
+exit:
+    ret
+I_SetDisk endp
+
 ;
 ; initialization
 ;
@@ -1313,7 +1455,7 @@ I_Init proc
     mov dwBufferLin, eax
     shr eax, 12             ;convert linear address to page number
 
-    dbgmsg1 "Buffer Address Space allocated"
+    dbgmsg1 "Init: Buffer Address Space allocated"
 
     push PC_INCR or PC_WRITEABLE
     mov edx, [dwBufferPhy]
@@ -1324,59 +1466,86 @@ I_Init proc
     VMMCall _PageCommitPhys ;backup address space with XMS memory
     add esp,4*4
 
-    dbgmsg1 "Buffer committed"
+    dbgmsg1 "Init: Buffer committed"
 
-    mov ecx,offset Entry - offset startcode
-    mov esi,offset startcode
+;    mov ecx,offset Entry - offset startcode
+;    mov esi,offset startcode
+    mov ecx,4*4             ; max 16 byte
+    mov esi,offset IOAdr
     xor edx, edx
     VxDCall VDMAD_Lock_DMA_Region
-    add [PRDAd],edx         ;Set relocated 32-bit PRD address.
+;    add [PRDAd],edx         ;Set relocated 32-bit PRD address.
+    mov [PRDAd], edx        ;Set relocated 32-bit PRD address.
+    dbgmsg1 "Init: DMA PRD address=", edx
 
 if HDNUM
     mov al,ds:[HDISKS]      ;Did BIOS find any hard-disks?
 else
     mov [HDUnit],80h        ;set hard-disk unit number
     mov ah,08h              ;get info
-    call I_Int13
+    call I_Int13            ;AX,BX,DL set in I_Int13
     jc I_None
     mov eax,[ebp].Client_Reg_Struc.Client_EDX
 endif
     cmp al,0
     jz I_None               ;No?  Display "No disk" and exit!
     mov [BiosHD],al         ;Save BIOS hard-disk count.
-    dbgmsg1 "Scanning HDs..."
-NextScan:
+
+    dbgmsg1 "Int13 disk scan:"
+
+;--- scan the HDs, max 2 times
+;--- first with int 13h calls (ah=41h)
+;--- then  with int 1ah (PCI).
+
     mov [HDUnit],80h        ;Reset hard-disk unit number
     mov al,[BiosHD]         ;Reset remaining hard-disk count.
     mov [HDCount],al
     xor edi,edi             ;Init unit table index
-I_Next:
-    cmp [EDDFlag],0         ;Scanning for disks using the EDD BIOS?
-    je I_HWScan             ;No, check disk at "fixed" addresses.
-    mov ah,041h             ;Get EDD "extensions" for this disk.
-    mov bx,055AAh
+NextDev:
+    mov ah, 41h             ;Get EDD "extensions" for this disk.
+    mov bx, 55AAh
     call I_Int13
-    jc I_NoEx               ;If none, ignore disk & check for more.
-    dbgmsg1 "Int 13h, ah=41h ok, bx=", @word [ebp].Client_Reg_Struc.Client_EBX, " cx=", @word [ebp].Client_Reg_Struc.Client_ECX
+    jc I_SkipDrv            ;If none, ignore disk & check for more.
+    dbgmsg1 "Int 13h, ah=41h ok, ax=", @word [ebp].Client_Reg_Struc.Client_EAX,\
+            " bx=", @word [ebp].Client_Reg_Struc.Client_EBX,\
+            " cx=", @word [ebp].Client_Reg_Struc.Client_ECX
+
+;--- in AH EDD version is returned, ah=30 for version EDD 3.0
+
     mov ebx,[ebp].Client_Reg_Struc.Client_EBX
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     cmp bx,0AA55h           ;Did BIOS "reverse" our entry code?
-    jne I_NoEx              ;No, ignore this disk & check for more.
-    test cl,004h            ;Does this disk have "EDD" extensions?
-    jz I_NoEx               ;No, ignore this disk & check for more.
+    jne I_SkipDrv           ;No, ignore this disk & check for more.
+
+;--- v1.4: checking bit 2 is not reliable, so checking bit 0 may be sufficient
+
+    test cl,101b            ;Does this disk have "EDD" extensions?
+    jz I_SkipDrv            ;No, ignore this disk & check for more.
 
     mov eax,[wBaseSeg]
     mov @word [ebp].Client_Reg_Struc.Client_DS, ax
     mov eax,0020h           ;don't touch the first 32 bytes
     mov [ebp].Client_Reg_Struc.Client_ESI, eax
-    mov esi,[dwBase]
-    add esi,eax
-    mov @dword [esi],sizeof EDD30  ;set the FULL dword value
-    mov ah,048h             ;Get this disk's "EDD" parameters.
+    mov esi, [dwBase]
+    add esi, eax
+    mov eax,[ebp].Client_Reg_Struc.Client_EAX
+    mov @dword [esi].EDD20.cbSize, sizeof EDD30  ;set size and clear flags
+    mov [esi].EDD20.lpCfg, -1
+    cmp ah, 30h
+    jnc @F
+    mov [esi].EDD20.cbSize, sizeof EDD20
+@@:
+
+;--- call int 13h, ah=48h: Get this disk's "EDD" parameters.
+
+    mov ah, 48h
     call I_Int13
     jc I_ErED               ;Error?  Display msg. & ignore!
-    cmp [esi].EDD10.cbSize, sizeof EDD20   ;is it EDD20?
-    jb I_NoEx               ;No, ignore disk & check more.
+    dbgmsg1 "Int 13h, ah=48h ok, ax=", @word [ebp].Client_Reg_Struc.Client_EAX,\
+            " size EDD=", word ptr [esi].EDD20.cbSize,\
+            " DPTE=", [esi].EDD20.lpCfg
+    cmp [esi].EDD10.cbSize, sizeof EDD20   ;is it at least EDD20?
+    jb I_SkipDrv             ;No, ignore disk & check more.
     movzx ecx, @word [esi].EDD20.lpCfg+0
     movzx edx, @word [esi].EDD20.lpCfg+2
     shl edx, 4
@@ -1384,25 +1553,23 @@ I_Next:
     cmp [esi].EDD10.cbSize, sizeof EDD30   ;EDD 3.0?
     jnc I_IsEDD30
     cmp [esi].EDD20.lpCfg,-1;Valid "DPTE" pointer?
-    je I_NoEx               ;No, ignore disk & check more.
+    je I_SkipDrv            ;No, ignore disk & check more.
     mov ebx,15              ;Calculate "DPTE" checksum.
     xor ecx,ecx
 @@:
     add cl,[ebx+edx]
     dec ebx
     jns @B
-    jecxz I_EDOK            ;If checksum O.K., use parameters.
+    jecxz I_IsEDD20         ;If checksum O.K., use parameters.
 I_ErED:
-    mov esi,CStr('EDD BIOS error!  Unit ignored')
-    jmp I_ErrD
-I_HWScan:                   ;no acceptable EDD BIOS support for unit, 
-    call I_GetUDMAC
-    jnc I_EDDdone
-I_NoEx:
-    dbgmsg1 "drive skipped"
-    jmp I_SkipDrv           ;No EDD:  ignore disk & check for more.
-I_EDOK:
-    dbgmsg1 "drive is EDD"
+    mov esi,CStr('EDD BIOS error!  Unit ignored',CR,LF)
+    call DsplyM             ;Display error for this disk.
+    jmp I_SkipDrv
+
+I_IsEDD20:
+    dbgmsg1 "drive is EDD20, Port=", [edx].DPTE.wIDEBase,\
+            " Stat=", [edx].DPTE.wIDEAlt,\
+            " flgs=", word ptr [edx].DPTE.bFlags
     mov ax,[edx].DPTE.wIDEBase  ;Get disk's IDE base address.
     and ax,ax
     jz I_ErED
@@ -1412,12 +1579,14 @@ I_EDOK:
     or bl,0E0h
 
     mov [edi*2+IDEAd],ax
-;   mov [edi*2+IDEAlt],cx
+    mov [edi*2+IDEAlt],cx
     mov [edi*1+SelCmd],bl
 
     call I_GetUDMAC
-    jc I_NoEx
+    jc I_SkipDrv
     jmp I_EDDdone
+
+;--- BIOS/drive is EDD30
 
 I_IsEDD30:
     dbgmsg1 "drive is EDD30, szIFType=", dword ptr [esi].EDD30.szIFType
@@ -1425,7 +1594,7 @@ I_IsEDD30:
     cmp eax ,"ATA"          ;ATA interface?
     jz @F
     cmp eax ," ATA"
-    jnz I_NoEx
+    jnz I_SkipDrv
 @@:
     mov al, [esi].EDD30.szDevPath  ;for ATA, device path contains master/slave flag
     shl al, 4
@@ -1439,14 +1608,18 @@ I_IsEDD30:
     mov [edi*2+IDEAd],ax
     call I_GetUDMAC
     jnc I_EDDdone
-    dbgmsg1 "I_GetUDMAC failed for drive"
-    jmp I_NoEx
+    dbgmsg1 "GetUDMAC failed for drive"
+    jmp I_SkipDrv
+
 @@:
+;--- lpCfg might be -1!!!
+    cmp [esi].EDD20.lpCfg,-1;Valid "DPTE" pointer?
+    je @F
     mov ax,[edx]            ;the PCI info doesn't tell if prim or secondary!
     and ax,ax
     jz I_ErED
     mov [edi*2+IDEAd],ax    ;so we need the DPTE
-
+@@:
     mov bh, [esi].EDD30.qwIFPath   ;get interface path (Bus)
     mov bl, [esi].EDD30.qwIFPath+1 ;get interface path (Device)
     mov al, [esi].EDD30.qwIFPath+2 ;get interface path (Function)
@@ -1454,83 +1627,54 @@ I_IsEDD30:
     and al,7
     or bl,al
     call I_GetPorts
+
 ifdef _DEBUG
     jnc I_EDDdone
     dbgmsg1 "I_GetPorts failed for drive"
-    jmp I_NoEx
+    jmp I_SkipDrv
 else
-    jc I_NoEx
+    jc I_SkipDrv
 endif
 I_EDDdone:
-    and cl,0FCh
-    mov [edi*2+DMAAd],cx
-    test [bFlags],FL_Q
-    jnz I_NoDskDisp
-    mov esi,CStr('HD ')
-    call DsplyM
-    mov al,[HDUnit]
-    call DsplyB
-    mov esi,CStr(', Master')
-    test [edi+SelCmd],10h   ;Is this disk the master?
-    jz @F                   ;Yes, display "master" name.
-    mov esi,CStr(', Slave')
-@@:
-    call DsplyM             ;Display disk's master/slave name.
-
-    mov esi,CStr(', ATA/DMA ports ')
-    call DsplyM             ;Display controller-data trailer.
-    xor ebx,ebx             ;Display DMA controller address.
-    mov ax,[edi*2+IDEAd]
-    call DsplyW
-    mov esi,CStr('/')
-    call DsplyM             ;Display controller-data trailer.
-    mov ax,[edi*2+DMAAd]
-    call DsplyW
-I_NoDskDisp:
-    mov ah,008h             ;Get BIOS CHS values for this disk.
-    call I_Int13
-    jc  I_CHSE              ;If BIOS error, zero sectors/head.
-    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-    mov edx,[ebp].Client_Reg_Struc.Client_EDX
-    and ecx,03Fh            ;Get sectors/head value (low 6 bits).
-    inc dh                  ;Get heads/cylinder (BIOS value + 1).
-    jnz I_SetC              ;If non-zero, save disk's CHS values.
-I_CHSE:
-    xor cl,cl               ;CHS error!  Zero disk's sectors/head.
-I_SetC:
-    mov [edi+CHSHd],dh      ;Save disk's CHS values in our tables.
-    mov [edi+CHSSec],cl
-    push edi
-    call I_ValD
-    pop edi
-    jc I_ErrD               ;If any errors, DELETE this disk!
-    cmp [edi+CHSSec],0      ;Were disk's CHS values legitimate?
-    jne I_More              ;Yes, check for more disks to use.
-    mov esi,CStr("** BIOS must do above disk's CHS I-O",CR,LF)
-    call DsplyM
-    jmp I_More
-I_ErrD:
-    call DsplyM             ;Display error for this disk.
-    call DsplyEOL
-    jmp I_SkipDrv           ;don't add this drive to unit table
-I_More:
+	call I_SetDisk
+    jc I_SkipDrv
     mov al,[HDUnit]         ;Activate this disk in main driver.
     mov [edi+Units],al
     inc edi
-I_SkipDrv:
     cmp edi,NUMDSK          ;free entry in unit table?
-    je I_AnyD
+    je I_DiskFound
+I_SkipDrv:
     inc [HDUnit]            ;Bump BIOS unit
     dec @byte [HDCount]     ;More BIOS disks to check?
-    jnz I_Next              ;Yes, loop back and do next one.
-I_AnyD:
+    jnz NextDev             ;Yes, loop back and do next one.
     and edi,edi             ;any disk in unit table?
     jnz I_DiskFound
-    dec [EDDFlag]           ;Were we scanning v.s. EDD BIOS data?
-    js I_None
-    mov esi,CStr('Hardware-only disk scan:',CR,LF)
+
+;--- PCI scan
+
+    mov esi,CStr('PCI disk scan:',CR,LF)
     call DsplyMQ
-    jmp NextScan
+    mov [HDUnit],80h        ;Reset hard-disk unit number
+    mov al,[BiosHD]         ;Reset remaining hard-disk count.
+    mov [HDCount],al
+    xor edi,edi             ;Init unit table index
+NextDev2:
+    call I_GetUDMAC
+    jc @F
+	call I_SetDisk
+    jc @F
+    mov al,[HDUnit]         ;Activate this disk in main driver.
+    mov [edi+Units],al
+    inc edi
+    cmp edi,NUMDSK          ;free entry in unit table?
+    je I_DiskFound
+@@:
+    inc [HDUnit]            ;Bump BIOS unit
+    dec @byte [HDCount]     ;More BIOS disks to check?
+    jnz NextDev2            ;Yes, loop back and do next one.
+    and edi,edi             ;any disk in unit table?
+    jz I_None
+
 I_DiskFound:
 
     dbgmsg1 "Scanning done"
@@ -1672,7 +1816,6 @@ UModes label word
     dw 0133h       ;Mode 6, ATA-133
     dw 0166h       ;Mode 7, ATA-166
 
-EDDFlag db  1       ;"EDD BIOS in use" flag.
 HDUnit  db  0       ;Current BIOS unit number.
 
 SIZENAME    equ 40

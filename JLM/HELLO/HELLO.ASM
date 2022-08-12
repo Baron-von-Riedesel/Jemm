@@ -25,7 +25,7 @@ _main   proc
 
 ;--- Call int 21h, ah=2 in v86-mode.
 ;--- Be aware that in Jemm's context is no DOS extender installed.
-;--- So there is no translation for DOS functions which use pointers.
+;--- So there is no translation for DOS functions that use pointers.
 
         mov byte ptr [ebp].Client_Reg_Struc.Client_EDX,al
         mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,2
