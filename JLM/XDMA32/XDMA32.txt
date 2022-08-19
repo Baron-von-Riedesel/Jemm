@@ -32,12 +32,16 @@
   - if the driver is used in a Qemu (v0.8x or v0.9) VM, add option
     /P:80867010 to make it find Qemu's IDE controller.
 
+  - xdma32 has no device ID associated with it and hence jload cannot detect
+    currently if the driver is already installed.
+
 
   3. History
 
   __.__.2022: v1.5
 
    - ensure that busmaster flag in PCI command register is set.
+   - created .data segment with variables to separate them from code.
  
   08.08.2022: v1.4
 

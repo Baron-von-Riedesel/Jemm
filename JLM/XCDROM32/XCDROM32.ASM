@@ -89,6 +89,7 @@
         .386
         .model flat
         option casemap:none
+        option proc:private
 
         include jlm.inc
 
@@ -99,11 +100,11 @@
 SUPPPS      equ 0       ;support /PM /PS /SM /SS option
 SETMODE     equ 1       ;support /M option, set UDMA mode
 SETVD       equ 1       ;support /P option to set IDE vendor/device ID
-CLSBM       equ 1       ;test Busmaster support in "class"
+SETBM       equ 1       ;test Busmaster support in "class"
 MWDMA       equ 1       ;support /W option to accept multi-word DMA
 DWRDIO      equ 1       ;support /32 option (PIO DWORD IO)
 
-VER     equ <'V1.4, 06-10-2012'>    ;Driver version number and date.
+VER     equ <'V1.5, 18.08.2022'>    ;Driver version number and date.
 MSELECT equ 0A0h        ;"Master" device-select bits.
 SSELECT equ 0B0h        ;"Slave"  device-select bits.
 COOKSL  equ 2048        ;CD-ROM "cooked" sector length.
@@ -211,9 +212,9 @@ bDevSel     db ?    ;Device-select (set by Init).
 ;            dd ?    ;Last-session starting LBA.
 UPARM ends
 
-        .code
+REQOFS   equ 16h
 
-startcode label byte
+    .data
 
 pRequest    dd 0    ;linear address where request header is stored
 dwRequest   dd 0    ;linear address request header
@@ -237,7 +238,7 @@ DmaLng  dd  0           ;1st DMA byte count
 DmaAdr2 dd  0           ;2nd physical address
 DmaLng2 dw  0           ;2nd DMA byte count LoWord
         dw  8000h       ;2nd DMA byte count HiWord (fix)
-PRDAd   dd  offset DmaAdr - offset startcode    ;PRD 32-bit command addr. (Init set).
+PRDAd   dd  0           ;PRD 32-bit command addr. (Init set).
         align 4
 
 ;
@@ -410,6 +411,130 @@ DspLmt4 equ ( $ - offset DspTblD)/4 ;Request-code limit for this table.
         dd  0
         dd  1*IXM
 
+;
+; Initialization PCI Class-Code "Interface" Bytes.   The 0BAh and 0B0h
+; bytes handle ALi M5529 chips.   MANY THANKS to David Muller for this
+; VALUABLE addition!
+;
+; from RBIL, FARCALL.LST, F0087:
+;Bit(s) Description (Table F0087)
+; 7 bus mastering (read-only)
+; 6-4   reserved (read-only)
+; 3 secondary IDE mode bit is writable (read-only)
+; 2 secondary IDE mode (0 = legacy, 1 = native)
+; 1 primary IDE mode bit is writable (read-only)
+; 0 primary IDE mode (0 = legacy, 1 = native)
+;
+ClCodes label byte
+        db 08Ah,080h
+        db 0FAh,0F0h
+        db 0BAh,0B0h
+        db 085h,08Fh    ;native controller
+ClCEnd  equ $
+;
+; Initialization IDE Parameter-Value Table.
+;
+
+ScanLPM IDEPARM <1F0h,-1,0A0h>  ;legacy IDE primary master
+ScanLPS IDEPARM <1F0h,-1,0B0h>  ;legacy IDE primary slave
+ScanLSM IDEPARM <170h,-1,0A0h>  ;legacy IDE secondary master
+ScanLSS IDEPARM <170h,-1,0B0h>  ;legacy IDE secondary slave
+ScanNPM IDEPARM <  -1,-1,0A0h>  ;native IDE primary master
+ScanNPS IDEPARM <  -1,-1,0B0h>  ;native IDE primary slave
+ScanNSM IDEPARM <  -1,-1,0A0h>  ;native IDE secondary master
+ScanNSS IDEPARM <  -1,-1,0B0h>  ;native IDE secondary slave
+ScanE   equ $           ;(End of IDE parameter table).
+
+if MWDMA
+MWModes label word
+    dw  0004h       ;Mode 0
+    dw  0013h       ;Mode 1
+    dw  0016h       ;Mode 2
+endif
+UModes label word
+    dw  0016h       ;Mode 0, ATA-16  UDMA mode table
+    dw  0025h       ;Mode 1, ATA-25
+    dw  0033h       ;Mode 2, ATA-33
+    dw  0044h       ;Mode 3, ATA-44  (Unusual but possible).
+    dw  0066h       ;Mode 4, ATA-66
+    dw  0100h       ;Mode 5, ATA-100
+    dw  0133h       ;Mode 6, ATA-133
+    dw  0166h       ;Mode 7, ATA-166
+
+;  A)  All message LABELS ("XCMsg" etc.) must appear as shown.
+;
+;  B)  All CR, LF, and ending $ bytes must appear as shown.  Only the
+;      message TEXT bytes (letters, numbers and punctuation) are open
+;      to change.
+;
+;  C)  There must be at least 42 characters from the start of "XCMsg"
+;      to the start of "Suffix", as the driver reads 40 bytes of data
+;      into this area (the name of each drive) and suffixes an ending
+;      $ before displaying the final CD-ROM drive name.
+;
+;  D)  Other messages MODIFIED by driver initialization are:
+;
+;   1) The 8 driver name bytes at "DvrMsg1".
+;   2) The 4 controller address bytes at "CtlrAdr".
+;   3) The 8 controller I.D. bytes at "CtlrID".
+;   4) The drive unit-number byte at "UMsgNo".
+;   5) The 2 UltraDMA mode bytes at "UDMode".
+;
+; For an "Internationalization" example, compare the file XDMAMSGS.ENG
+; with the file XDMAMSGS.NL, both of which are included in the current
+; XDMA driver package.   XDMAMSGS.NL translates all XDMA init messages
+; into the Dutch language.   This file was written by Bernd Blaauw who
+; suggested making XDMA, and now XCDROM, into "International" drivers.
+;
+;
+XCMsg   db  'XCDROM32 '
+        db  VER     ;XCDROM.ASM provides version and date!
+        db  '.',CR,LF,0
+DvrMsg  db  'Driver name is '
+DvrMsg1 db  '        ',0
+CtlrMsg db  'UltraDMA controller at IDE/DMA ports '
+CtlrAdr db  'xxxx/xxxx, Chip I.D. '
+CtlrID  db  'xxxxxxxxh.',CR,LF,0
+LEMsg   db  '.',CR,LF,'/L Invalid',0
+SyEMsg  db  '.',CR,LF,'ERROR '
+Suffix  db  '; XCDROM32 not loaded!',CR,LF,0
+UnitMsg db  'Unit '
+UMsgNo  db  '0: ',0
+TOMsg   db  ' device select timeout',0
+IDMsg   db  ' Identify Device error',0
+NCMsg   db  " isn't an ATAPI CD-ROM",0
+SEMsg   db  ' UltraDMA Set Mode error',0
+NDMsg   db  'No CD-ROM drive to use',0
+if 0
+PriMsg  db  'Primary-',0
+SecMsg  db  'Secondary-',0
+endif
+MstMsg  db  'Master',0
+SlvMsg  db  'Slave',0
+PortMsg db  ', IDE/DMA ports '
+IDEPort db  '    /'
+DMAPort db  '    , ',0
+UDMsg   db  ', ATA-'
+UDMode  db  '   ',0
+PIOMsg  db  ', PIO mode',0
+CRMsg   db  '.',CR,LF,0
+ifdef _DEBUG
+DbgMsg1 db  "Start drive scan",CR,LF,0
+DbgMsg2 db  "End drive scan",CR,LF,0
+DbgMsg4 db  "Executing Identify command, IDE Controller base="
+DbgMsg4_1 db "    ",CR,LF,0
+DbgMsg5 db  "IDE controller ready",CR,LF,0
+DbgMsg6 db  "ATAPI CDROM detected",CR,LF,0
+endif
+
+rmcode label byte
+    db 2Eh, 89h, 1eh, REQOFS+0, 0    ;mov cs:[16h],bx
+    db 2Eh, 8Ch, 06h, REQOFS+2, 0    ;mov cs:[18h],es
+    db 0CBh                     ;retf
+SIZERMCODE equ $ - offset rmcode    
+    db 0EAh                     ;jmp ssss:oooo
+
+    .code
 
 ;
 ; "Device-Interrupt" routine -- This routine processes DOS requests.
@@ -1731,28 +1856,29 @@ I_FindC:                    ;<--- next controller
     call I_Int1A
 testdev:
     jc  I_FindC             ;Not found -- test for more I/F bytes.
+
+if SETBM
     mov ebx,[ebp].Client_Reg_Struc.Client_EBX
     mov ax,4                ;Get low-order PCI command byte.
     call I_PCID
-    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-if CLSBM    
-    and ecx,1               ;Mask I-O Space bits.
-    cmp ecx,1               ;Is this how our controller is set up?
-else
-    and ecx,4+1             ;Mask Bus-Master and I-O Space bits.
-    cmp ecx,4+1             ;Is this how our controller is set up?
+;--- it's strange if BM isn't set, since we REQUESTED BM API ( bit 7 )
+;--- but it can be found, at least in emulators.
+	bts [ebp].Client_Reg_Struc.Client_ECX, 2	;busmaster enabled?
+	jc @F
+	mov al, 0Bh				; enable BM
+	call I_Int1A
+@@:
 endif
-    jnz I_FindC             ;No, check for valid driver name.
 
+if 0;CLSBM
     mov ax,8                ;get class code
     call I_PCID
     mov edi,[ebp].Client_Reg_Struc.Client_ECX   ;save it in EDI
     shr edi,8
-if CLSBM
     test @byte [ebp].Client_Reg_Struc.Client_ECX+1,80h  ;BusMaster?
-    stc
     jz I_FindC
 endif
+
     mov ax,0                ;Get Vendor and Device I.D.
     call I_PCID
     push [ebp].Client_Reg_Struc.Client_ECX  ;save it on stack
@@ -1820,11 +1946,11 @@ I_SetNm:
     mov edx,offset DvrMsg       ;Display our driver "name".
     call I_DisplaySQ
     
-    mov esi, offset startcode
-    mov ecx, 1000h
+    mov esi, offset DmaAdr
+    mov ecx, 4*4
     xor edx, edx
     VxDCall VDMAD_Lock_DMA_Region
-    add [PRDAd],edx             ;Set physical PRD address.
+    mov [PRDAd],edx             ;Set physical PRD address.
 
 if 0
     test [bFlags],FL_UX         ;Did user disable UltraDMA?
@@ -1973,7 +2099,7 @@ I_BadP:
     jmp I_Exit              ;Go set "init" packet values & exit.
 I_ClrSt:
     mov dx,RPDON            ;Get initialization "success" code.
-    mov ax,12h+4+sizermcode+5
+    mov ax,12h+4+SIZERMCODE+5
 I_Exit:
     mov esi,[dwRequest]     ;Set result values in "init" packet.
     mov [esi].RP.RPSize,ax
@@ -2172,125 +2298,6 @@ I_DisplayS_done:
     pop esi
     ret
 I_DisplayS endp
-;
-; Initialization PCI Class-Code "Interface" Bytes.   The 0BAh and 0B0h
-; bytes handle ALi M5529 chips.   MANY THANKS to David Muller for this
-; VALUABLE addition!
-;
-; from RBIL, FARCALL.LST, F0087:
-;Bit(s) Description (Table F0087)
-; 7 bus mastering (read-only)
-; 6-4   reserved (read-only)
-; 3 secondary IDE mode bit is writable (read-only)
-; 2 secondary IDE mode (0 = legacy, 1 = native)
-; 1 primary IDE mode bit is writable (read-only)
-; 0 primary IDE mode (0 = legacy, 1 = native)
-;
-ClCodes label byte
-        db 08Ah,080h
-        db 0FAh,0F0h
-        db 0BAh,0B0h
-        db 085h,08Fh    ;native controller
-ClCEnd  equ $
-;
-; Initialization IDE Parameter-Value Table.
-;
-
-ScanLPM IDEPARM <1F0h,-1,0A0h>  ;legacy IDE primary master
-ScanLPS IDEPARM <1F0h,-1,0B0h>  ;legacy IDE primary slave
-ScanLSM IDEPARM <170h,-1,0A0h>  ;legacy IDE secondary master
-ScanLSS IDEPARM <170h,-1,0B0h>  ;legacy IDE secondary slave
-ScanNPM IDEPARM <  -1,-1,0A0h>  ;native IDE primary master
-ScanNPS IDEPARM <  -1,-1,0B0h>  ;native IDE primary slave
-ScanNSM IDEPARM <  -1,-1,0A0h>  ;native IDE secondary master
-ScanNSS IDEPARM <  -1,-1,0B0h>  ;native IDE secondary slave
-ScanE   equ $           ;(End of IDE parameter table).
-
-if MWDMA
-MWModes label word
-    dw  0004h       ;Mode 0
-    dw  0013h       ;Mode 1
-    dw  0016h       ;Mode 2
-endif
-UModes label word
-    dw  0016h       ;Mode 0, ATA-16  UDMA mode table
-    dw  0025h       ;Mode 1, ATA-25
-    dw  0033h       ;Mode 2, ATA-33
-    dw  0044h       ;Mode 3, ATA-44  (Unusual but possible).
-    dw  0066h       ;Mode 4, ATA-66
-    dw  0100h       ;Mode 5, ATA-100
-    dw  0133h       ;Mode 6, ATA-133
-    dw  0166h       ;Mode 7, ATA-166
-
-
-
-;  A)  All message LABELS ("XCMsg" etc.) must appear as shown.
-;
-;  B)  All CR, LF, and ending $ bytes must appear as shown.  Only the
-;      message TEXT bytes (letters, numbers and punctuation) are open
-;      to change.
-;
-;  C)  There must be at least 42 characters from the start of "XCMsg"
-;      to the start of "Suffix", as the driver reads 40 bytes of data
-;      into this area (the name of each drive) and suffixes an ending
-;      $ before displaying the final CD-ROM drive name.
-;
-;  D)  Other messages MODIFIED by driver initialization are:
-;
-;   1) The 8 driver name bytes at "DvrMsg1".
-;   2) The 4 controller address bytes at "CtlrAdr".
-;   3) The 8 controller I.D. bytes at "CtlrID".
-;   4) The drive unit-number byte at "UMsgNo".
-;   5) The 2 UltraDMA mode bytes at "UDMode".
-;
-; For an "Internationalization" example, compare the file XDMAMSGS.ENG
-; with the file XDMAMSGS.NL, both of which are included in the current
-; XDMA driver package.   XDMAMSGS.NL translates all XDMA init messages
-; into the Dutch language.   This file was written by Bernd Blaauw who
-; suggested making XDMA, and now XCDROM, into "International" drivers.
-;
-;
-XCMsg   db  'XCDROM32 '
-        db  VER     ;XCDROM.ASM provides version and date!
-        db  '.',CR,LF,0
-DvrMsg  db  'Driver name is '
-DvrMsg1 db  '        ',0
-CtlrMsg db  'UltraDMA controller at IDE/DMA ports '
-CtlrAdr db  'xxxx/xxxx, Chip I.D. '
-CtlrID  db  'xxxxxxxxh.',CR,LF,0
-LEMsg   db  '.',CR,LF,'/L Invalid',0
-SyEMsg  db  '.',CR,LF,'ERROR '
-Suffix  db  '; XCDROM32 not loaded!',CR,LF,0
-UnitMsg db  'Unit '
-UMsgNo  db  '0: ',0
-TOMsg   db  ' device select timeout',0
-IDMsg   db  ' Identify Device error',0
-NCMsg   db  " isn't an ATAPI CD-ROM",0
-SEMsg   db  ' UltraDMA Set Mode error',0
-NDMsg   db  'No CD-ROM drive to use',0
-if 0
-PriMsg  db  'Primary-',0
-SecMsg  db  'Secondary-',0
-endif
-MstMsg  db  'Master',0
-SlvMsg  db  'Slave',0
-PortMsg db  ', IDE/DMA ports '
-IDEPort db  '    /'
-DMAPort db  '    , ',0
-UDMsg   db  ', ATA-'
-UDMode  db  '   ',0
-PIOMsg  db  ', PIO mode',0
-CRMsg   db  '.',CR,LF,0
-ifdef _DEBUG
-DbgMsg1 db  "Start drive scan",CR,LF,0
-DbgMsg2 db  "End drive scan",CR,LF,0
-DbgMsg4 db  "Executing Identify command, IDE Controller base="
-DbgMsg4_1 db "    ",CR,LF,0
-DbgMsg5 db  "IDE controller ready",CR,LF,0
-DbgMsg6 db  "ATAPI CDROM detected",CR,LF,0
-endif
-
-        align 4
 
 DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
 
@@ -2305,8 +2312,7 @@ DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
         movzx ecx,[esi].JLCOMM.wLdrCS
         shl ecx, 4
         mov dwBase, ecx
-        mov eax, 16h
-        add eax, ecx
+        lea eax, [ecx+REQOFS]
         mov pRequest, eax
         mov eax,[esi].JLCOMM.lpCmdLine
         mov dwCmdLine, eax
@@ -2317,18 +2323,18 @@ DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
         xor edx, edx
         VMMCall Allocate_V86_Call_Back
         jc failed
-        mov @dword ds:[jmppm+1], eax
 
         mov edi, dwBase
         mov @word [edi+4],0C800h    ;driver attributes
-        mov @word [edi+6],16h+4
-        mov @word [edi+8],16h+4+sizermcode
+        mov @word [edi+6],REQOFS+4
+        mov @word [edi+8],REQOFS+4+SIZERMCODE
         mov @word [edi+20],0
 
-        add edi, 16h+4
+        add edi, REQOFS+4
         mov esi, offset rmcode
-        mov ecx, sizermcode+5
+        mov ecx, SIZERMCODE+1
         rep movsb
+        stosd
 
         VMMCall Get_Cur_VM_Handle
 
@@ -2350,15 +2356,6 @@ failed:
     ret
 
 DllMain endp
-
-rmcode label byte
-    db 2Eh, 89h, 1eh, 16h, 0    ;mov cs:[12],bx
-    db 2Eh, 8Ch, 06h, 18h, 0    ;mov cs:[14],es
-    db 0CBh                     ;retf
-sizermcode equ $ - offset rmcode    
-jmppm db 0EAh,0,0,0,0           ;jmp 0000:0000
-
-ResEnd label byte
 
     end DllMain
 

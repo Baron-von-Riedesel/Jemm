@@ -41,6 +41,7 @@
     .model flat
     option casemap:none
     option dotname
+    option proc:private
 
     include jlm.inc
 
@@ -230,9 +231,9 @@ ifdef _DEBUG
 endif
 endm
 
-    .code
+    .data
 
-startcode label byte
+;startcode label byte
 
 dwBase      dd 0    ;linear address driver base ( conv. memory )
 dwCmdLine   dd 0
@@ -242,6 +243,8 @@ PrvI13      dd 0    ;old real-mode int 13 vector
 XMSEntry    dd 0    ;XMS "entry" address, set by Init
 XMSHdl      dd 0    ;XMS memory "handle", set by Init
 wBaseSeg    dd 0    ;conventional memory segment ( supplied by loader)
+PRDAd       dd 0    ;PRD 32-bit command addr. (Init set).
+
 if SETVD
 dwVD        dd 0
 endif
@@ -269,17 +272,19 @@ HDCount db  0       ;(BIOS hard-disk count, during Init).
 
     align 4
 
-PRDAd   dd  0       ;PRD 32-bit command addr. (Init set).
-
 ;--- the following is written to the IDE port
-;--- and has to be kept in this order!
+;--- SecCt2/LBA2447 and SecCt/LBA0023 must be consecutive
 
 SecCt2  db  0       ;IDE "upper" sector count.
 LBA2447 db  0,0,0   ;IDE "upper" LBA48 bits 24-47.
 SecCt   db  0       ;IDE "lower" sector count.
 LBA0023 db  0,0,0   ;IDE "lower" LBA bits 0-23.
+
+DSIOCmd label word
 DSCmd   db  0       ;IDE disk-select, LBA28 bits 24-27.
 IOCmd   db  0       ;IDE command byte.
+
+HDUnit  db  0       ;Current BIOS unit number.
 
     align 4
 
@@ -331,7 +336,33 @@ iftab label byte
     db 0BAh, 0B0h   ;???
 endiftab label byte
 
-    align 4
+;
+; Initialization Tables And Variables.
+;
+
+if MWDMA
+MWModes label word
+    dw 0004h       ;Mode 0
+    dw 0013h       ;Mode 1
+    dw 0016h       ;Mode 2
+endif
+UModes label word
+    dw 0016h       ;Mode 0, ATA-16  UDMA mode table
+    dw 0025h       ;Mode 1, ATA-25
+    dw 0033h       ;Mode 2, ATA-33
+    dw 0044h       ;Mode 3, ATA-44  (Unusual but possible).
+    dw 0066h       ;Mode 4, ATA-66
+    dw 0100h       ;Mode 5, ATA-100
+    dw 0133h       ;Mode 6, ATA-133
+    dw 0166h       ;Mode 7, ATA-166
+
+SIZENAME    equ 40
+
+DNMsg   db  ', '
+DName   db 26*2 dup (0)
+
+    .code
+
 ;
 ; Driver Entry Routine.  For CHS requests, the registers contain:
 ;
@@ -485,7 +516,7 @@ GetAdr:
     or dl,dh            ;"Or" in LBA28 bits 24-27 (if any).
     mov dh,005h         ;Get final IDE command byte.
     xor dh,ah           ;(LBA28 = C8h/CAh, LBA48 = 25h/35h).
-    mov @word [DSCmd],dx;Set IDE command bytes (DSCmd + IOCmd).
+    mov [DSIOCmd],dx    ;Set IDE command bytes (DSCmd + IOCmd).
     mov [SecCt],al      ;Set I-O sector count.
     movzx eax,al
     shl eax,9
@@ -650,32 +681,32 @@ DoDMA:
     mov eax, [PRDAd]
     out dx, eax
 
-	mov eax, dword ptr [SecCt2]
+    mov eax, dword ptr [SecCt2]
     mov dx,[edi*2+IDEAd]
     add edx, 2
-	and eax, eax
-	jz skip4
-	mov cl,4         ;(1st 4 overlayed by 2nd 4 if LBA28!).
+    and eax, eax
+    jz skip4
+    mov cl,4         ;(1st 4 overlayed by 2nd 4 if LBA28!).
 @@:
-	out dx, al
-	inc edx
-	shr eax, 8
-	dec cl
-	jnz @B
-	sub edx, 4
+    out dx, al
+    inc edx
+    shr eax, 8
+    dec cl
+    jnz @B
+    sub edx, 4
 skip4:
-	mov eax, dword ptr [SecCt]
-	mov cl,4
+    mov eax, dword ptr [SecCt]
+    mov cl,4
 @@:
-	out dx, al
-	inc edx
-	shr eax, 8
-	dec cl
-	jnz @B
+    out dx, al
+    inc edx
+    shr eax, 8
+    dec cl
+    jnz @B
 
-	mov al,[IOCmd]
-	inc edx
-	out dx, al
+    mov al,[IOCmd]
+    inc edx
+    out dx, al
 
 if 1  ;was deactivated until v1.4?
     mov dx,[edi*2+IDEAlt]
@@ -699,13 +730,13 @@ ChkDMA:
     dec edx         ;Point back to DMA command register.
     dec edx
     and al,DMI+DME  ;DMA interrupt or DMA error?
-    jnz HltDMA      ;Yes, halt DMA and check results.
-;    cmp ch,[esi]    ;Has our DMA transfer timed out?
-;    je HltDMA       ;No, loop back and check again.
-    test @byte ds:[HDIOFS],80h
+    jnz @F          ;Yes, halt DMA and check results.
+    cmp ch,[esi]    ;Has our DMA transfer timed out?
+    je @F           ; then exit loop.
+    test @byte ds:[HDIOFS],80h	; interrupt occured?
     jz ChkDMA
     mov al,DMI
-HltDMA:
+@@:
     push eax        ;Save ending DMA status.
     in al,dx        ;Reset DMA Start/Stop bit.
     and al,0FEh
@@ -746,7 +777,6 @@ WhichE:
     mov al,ah       ;Use AH-reg. return code of this pair.
 EndErr:
     add al,cl       ;Add 1 if error occurred at I-O end.
-Kaput:
     stc             ;Set carry flag to denote "error"!
 ChkExit:
     ret
@@ -1061,17 +1091,17 @@ I_GetPorts proc
     mov word ptr [ebp].Client_Reg_Struc.Client_EBX, bx
     mov word ptr [ebp].Client_Reg_Struc.Client_EDI, 4
     mov ax, 8               ;read command register (byte)
-    call Int1AahB1
+    call Int1A_B1
     bts word ptr [ebp].Client_Reg_Struc.Client_ECX, 2  ; enable busmaster
     jc @F
     mov word ptr [ebp].Client_Reg_Struc.Client_EBX, bx
     mov word ptr [ebp].Client_Reg_Struc.Client_EDI, 4
     mov ax, 0Bh             ;write command register (byte)
-    call Int1AahB1
+    call Int1A_B1
 @@:
 
     mov ax, 8               ;get class code
-    call Int1AaxB10A
+    call Int1A_B10A
     dbgmsg1 "GetPorts: get class code for BX=", bx, " CX=", word ptr [ebp].Client_Reg_Struc.Client_ECX
 if CLSBM
     test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,80h   ;BusMaster?
@@ -1082,14 +1112,14 @@ endif
     jz islegacy
     dbgmsg1 "GetPorts: native IDE controller"
     mov ax,16+0*4           ;Get primary IDE base address
-    call Int1AaxB10A
+    call Int1A_B10A
     dbgmsg1 "primary base=", word ptr [ebp].Client_Reg_Struc.Client_ECX, " - ", word ptr [edi*2+IDEAd]
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     and cl,0FCh
     cmp cx,[edi*2+IDEAd]
     jz getDMA
     mov ax,16+2*4           ;Get secondary IDE base address
-    call Int1AaxB10A
+    call Int1A_B10A
     dbgmsg1 "secondary base=", word ptr [ebp].Client_Reg_Struc.Client_ECX, " - ", word ptr [edi*2+IDEAd]
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     and cl,0FCh
@@ -1112,7 +1142,7 @@ exit:
     ret
 getDMA:
     mov ax,16+4*4           ;Get PCI DMA base address (register 4).
-    call Int1AaxB10A
+    call Int1A_B10A
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     and cl,0FCh
     ret
@@ -1142,7 +1172,7 @@ if SETVD
     mov [ebp].Client_Reg_Struc.Client_EDX,eax
     mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
     mov al,2                ;int 1ah, ax=b102: find CX=device/DX=vendor/SI=index
-    call Int1AahB1
+    call Int1A_B1
     mov esi,offset endiftab	;8A-80/8F-85/FA-F0/BA-B0
     jmp testdev
 @@:
@@ -1155,13 +1185,13 @@ NextIF:
     mov [ebp].Client_Reg_Struc.Client_ECX, ecx
     mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
     mov al,3                ;int 1ah, ax=b103: find ECX=class code (out: BX=bus/device/function).
-    call Int1AahB1
+    call Int1A_B1
 testdev:
     jc I_Continue           ;Succeeded?
     mov ebx, [ebp].Client_Reg_Struc.Client_EBX
     dbgmsg1 "GetUDMAC: IDE controller found, BUS/FUNC=", ebx
     mov ax,4                ;Get PCI command + status register
-    call Int1AaxB10A
+    call Int1A_B10A
     dbgmsg1 "GetUDMAC: cmd+status register=", [ebp].Client_Reg_Struc.Client_ECX
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
 if CLSBM
@@ -1306,15 +1336,14 @@ I_GetParams endp
 ;--- Init XMS
 ;--- on errors, set Carry and error msg in ESI
 
-I_InitXMS proc
+InitXMS proc
     mov ax,04300h           ;Inquire about an XMS manager.
-    call I_Int2F
+    call Int2F
     mov eax, [ebp].Client_Reg_Struc.Client_EAX
-    mov esi,CStr('No XMS manager')
     cmp al,080h             ;Is an XMS manager installed?
-    jne I_XErr              ;No, display message & disable XMS.
+    jne I_XErr1             ;No, display message & disable XMS.
     mov ax,04310h           ;Get XMS manager "entry" address.
-    call I_Int2F
+    call Int2F
     mov bx, @word [ebp].Client_Reg_Struc.Client_ES
     shl ebx, 16
     mov bx, @word [ebp].Client_Reg_Struc.Client_EBX
@@ -1323,15 +1352,13 @@ I_InitXMS proc
     mov ah,009h             ;Ask XMS manager for 128K of memory.
     mov dx,128
     call I_XMS
-    mov esi,CStr('XMS 128 kB memory allocation failed')
-    jnz I_XErr              ;If error, display msg. & disable XMS.
+    jnz I_XErr2              ;If error, display msg. & disable XMS.
     mov edx,[ebp].Client_Reg_Struc.Client_EDX
     mov [XMSHdl],edx        ;Save XMS buffer handle number.
 
     mov ah,00Ch             ;"Lock" our XMS memory.
     call I_XMS
-    mov esi,CStr('XMS lock memory error')
-    jnz I_XErr              ;If error, display msg. & disable XMS.
+    jnz I_XErr3             ;If error, display msg. & disable XMS.
 
     mov eax,[ebp].Client_Reg_Struc.Client_EDX
     shl eax,16              ;Get unaligned XMS buffer address.
@@ -1340,11 +1367,20 @@ I_InitXMS proc
     xor ax,ax
     mov [dwBufferPhy],eax   ;Set physical buffer address
     ret
-I_XErr:
+I_XErr1:
+    mov esi,CStr('No XMS manager')
+    stc
+    ret
+I_XErr2:
+    mov esi,CStr('XMS 128 kB memory allocation failed')
+    stc
+    ret
+I_XErr3:
+    mov esi,CStr('XMS lock memory error')
     stc
     ret
     align 4
-I_InitXMS endp
+InitXMS endp
 
 ;--- in: EDI=drive#
 ;---     CX=DMA port
@@ -1383,7 +1419,7 @@ I_SetDisk proc
 I_NoDskDisp:
 
     mov ah,08h              ;Get BIOS CHS values for this disk.
-    call I_Int13
+    call Int13
     jc  I_CHSE              ;If BIOS error, zero sectors/head.
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     mov edx,[ebp].Client_Reg_Struc.Client_EDX
@@ -1417,7 +1453,7 @@ I_SetDisk endp
 ;
 ; initialization
 ;
-I_Init proc
+InitXDMA proc
     cld
     dbgmsg1 "Init entry"
     call I_GetParams        ;get cmdline params
@@ -1425,21 +1461,20 @@ I_Init proc
     call DsplyMQ
     mov [ebp].Client_Reg_Struc.Client_EDI, 0    ;Get PCI BIOS "I.D." code.
     mov al,1
-    call Int1AahB1
+    call Int1A_B1
     mov edx, [ebp].Client_Reg_Struc.Client_EDX
     mov esi,CStr('PCI BIOS Invalid')
     cmp edx," ICP"          ;Is PCI BIOS V2.0C or newer?
     jne I_Err               ;Go display error message and exit.
 
-
     mov ax,03513h           ;Get and save current Int 13h vector.
-    call I_Int21
+    call Int21
     mov bx, @word [ebp].Client_Reg_Struc.Client_ES
     shl ebx, 16
     mov bx, @word [ebp].Client_Reg_Struc.Client_EBX
     mov [PrvI13], ebx
 
-    call I_InitXMS          ;init XMS
+    call InitXMS            ;init XMS
     jc I_Err
 
     dbgmsg1 "XMS allocated"
@@ -1483,7 +1518,7 @@ if HDNUM
 else
     mov [HDUnit],80h        ;set hard-disk unit number
     mov ah,08h              ;get info
-    call I_Int13            ;AX,BX,DL set in I_Int13
+    call Int13              ;AX,BX,DL set in Int13
     jc I_None
     mov eax,[ebp].Client_Reg_Struc.Client_EDX
 endif
@@ -1504,7 +1539,7 @@ endif
 NextDev:
     mov ah, 41h             ;Get EDD "extensions" for this disk.
     mov bx, 55AAh
-    call I_Int13
+    call Int13
     jc I_SkipDrv            ;If none, ignore disk & check for more.
     dbgmsg1 "Int 13h, ah=41h ok, ax=", @word [ebp].Client_Reg_Struc.Client_EAX,\
             " bx=", @word [ebp].Client_Reg_Struc.Client_EBX,\
@@ -1539,7 +1574,7 @@ NextDev:
 ;--- call int 13h, ah=48h: Get this disk's "EDD" parameters.
 
     mov ah, 48h
-    call I_Int13
+    call Int13
     jc I_ErED               ;Error?  Display msg. & ignore!
     dbgmsg1 "Int 13h, ah=48h ok, ax=", @word [ebp].Client_Reg_Struc.Client_EAX,\
             " size EDD=", word ptr [esi].EDD20.cbSize,\
@@ -1636,7 +1671,7 @@ else
     jc I_SkipDrv
 endif
 I_EDDdone:
-	call I_SetDisk
+    call I_SetDisk
     jc I_SkipDrv
     mov al,[HDUnit]         ;Activate this disk in main driver.
     mov [edi+Units],al
@@ -1661,7 +1696,7 @@ I_SkipDrv:
 NextDev2:
     call I_GetUDMAC
     jc @F
-	call I_SetDisk
+    call I_SetDisk
     jc @F
     mov al,[HDUnit]         ;Activate this disk in main driver.
     mov [edi+Units],al
@@ -1690,7 +1725,7 @@ I_DiskFound:
     shr eax, 16
     mov @word [ebp].Client_Reg_Struc.Client_DS, ax
     mov ax,02513h
-    call I_Int21            ;"Hook" this driver into Int 13h.
+    call Int21              ;"Hook" this driver into Int 13h.
 
     mov ax,RPDONE           ;Get initialization "success" code.
     jmp I_Exit
@@ -1709,18 +1744,21 @@ I_Err:
 I_Exit:
     dbgmsg1 "Init exit"
     ret
-I_Init endp
+InitXDMA endp
 ;
-; Subroutines to issue initialization "external" calls.    These and
-;   the "clear-stack" logic above must appear AFTER the local-stack!
+; Subroutines to issue initialization "external" calls.
 ;
-I_ReleaseXMS:
+I_ReleaseXMS proc
     mov ah,00Dh     ;Error -- unlock & free XMS buffer.
     push edx
     call I_XMS
     mov ah,00Ah
     pop edx
-I_XMS:
+I_ReleaseXMS endp
+
+;--- fall thru
+
+I_XMS proc
     mov [ebp].Client_Reg_Struc.Client_EAX, eax
     mov [ebp].Client_Reg_Struc.Client_EDX, edx
     VMMCall Begin_Nest_Exec
@@ -1732,13 +1770,14 @@ I_XMS:
     mov eax,[ebp].Client_Reg_Struc.Client_EAX
     dec ax              ;Zero AX-reg. if success, -1 if error.
     ret
+I_XMS endp
 
 ;--- call int 13h,
 ;--- ah=08h
 ;--- ah=41h
-;--- ah=48h, DS:SI->EDP
+;--- ah=48h, DS:SI->EDD1/2/3
 
-I_Int13:
+Int13 proc
     mov [ebp].Client_Reg_Struc.Client_EAX, eax
     mov [ebp].Client_Reg_Struc.Client_EBX, ebx
     mov al,[HDUnit] ;Set BIOS unit in DL-reg.
@@ -1750,23 +1789,27 @@ I_Int13:
     mov ah,@byte [ebp].Client_Reg_Struc.Client_EFlags
     sahf
     ret
+Int13 endp
 
 ;--- call Int 1Ah, ax=b10A: read config dword
 ;--- in: ax=register# ( will be in DI)
 ;---     bx=bus/device/function
 
-Int1AaxB10A:
+Int1A_B10A proc
     mov [ebp].Client_Reg_Struc.Client_EBX, ebx
     mov [ebp].Client_Reg_Struc.Client_EDI, eax
     mov al,00Ah     ;Set "PCI doubleword" request code.
+Int1A_B10A endp
 
-;--- call int 1Ah, ah=B1
+;--- fall thru
+
+;--- call int 1Ah, ax=B1xx; in: al=xx
 ;--- al=01h: install check, in: edi=0, out: edx="PCI ", BX=version
-;--- al=02h: find PCI device
-;--- al=03h: find PCI class code
+;--- al=02h: find PCI device, in: cx=deviceID, dx=vendorID, si=index
+;--- al=03h: find PCI class code, in: ecx=class code (class,subclass,programming if)
 ;--- al=0Ah: read config dword
 
-Int1AahB1:
+Int1A_B1 proc
     mov ah,0B1h     ;Issue PCI BIOS interrupt.
     mov [ebp].Client_Reg_Struc.Client_EAX, eax
     VMMCall Begin_Nest_Exec
@@ -1776,54 +1819,29 @@ Int1AahB1:
     mov ah,@byte [ebp].Client_Reg_Struc.Client_EFlags
     sahf
     ret
+Int1A_B1 endp
 
 ;--- int 21h calls (ah=25h/35h)    
 
-I_Int21:
+Int21 proc
     mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
     VMMCall Begin_Nest_Exec
     mov eax, 21h
     VMMCall Exec_Int
     VMMCall End_Nest_Exec
     ret
+Int21 endp
 
 ;--- int 2Fh calls (ax=4300h, 4310h)
 
-I_Int2F:
+Int2F proc
     mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
     VMMCall Begin_Nest_Exec
     mov eax, 2Fh
     VMMCall Exec_Int
     VMMCall End_Nest_Exec
     ret
-;
-; Initialization Tables And Variables.
-;
-    align   4
-if MWDMA
-MWModes label word
-    dw 0004h       ;Mode 0
-    dw 0013h       ;Mode 1
-    dw 0016h       ;Mode 2
-endif
-UModes label word
-    dw 0016h       ;Mode 0, ATA-16  UDMA mode table
-    dw 0025h       ;Mode 1, ATA-25
-    dw 0033h       ;Mode 2, ATA-33
-    dw 0044h       ;Mode 3, ATA-44  (Unusual but possible).
-    dw 0066h       ;Mode 4, ATA-66
-    dw 0100h       ;Mode 5, ATA-100
-    dw 0133h       ;Mode 6, ATA-133
-    dw 0166h       ;Mode 7, ATA-166
-
-HDUnit  db  0       ;Current BIOS unit number.
-
-SIZENAME    equ 40
-
-DNMsg   db  ', '
-DName   db 26*2 dup (0)
-
-    align 4
+Int2F endp
 
 DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
 
@@ -1836,7 +1854,7 @@ DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
         mov eax,[esi].JLCOMM.lpCmdLine
         mov dwCmdLine, eax
 
-;--- set EBP to the client pointer before calling I_Init
+;--- set EBP to the client pointer before calling InitXDMA
 
         push ebp
         VMMCall Get_Cur_VM_Handle   ;get VM handle in EBX
@@ -1847,7 +1865,7 @@ if SAVESTAT
         VMMCall Save_Client_State
 endif
         push esi
-        call I_Init
+        call InitXDMA
         pop esi
         test [esi].JLCOMM.wFlags, JLF_DRIVER    ;loaded as DOS device driver?
         jz @F

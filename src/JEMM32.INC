@@ -165,6 +165,15 @@ VDSF_64KALIGN   equ 10h
 VDSF_128KALIGN  equ 20h
 VDSF_PTE        equ 40h ;1=scatter_lock returns PTEs 
 
+;--- error codes returned in AL by lock
+
+VDSERR_NOTCONTIGUOUS equ 1
+VDSERR_CROSSEDBOUNDS equ 2
+VDSERR_CANTLOCKPAGES equ 3
+VDSERR_NOBUFFER      equ 4
+VDSERR_BUFFTOOSMALL  equ 5
+VDSERR_BUFFINUSE     equ 6
+
 ;--- DDS, used by 03-04, 07-08, 09-0A
 
 DDS struct

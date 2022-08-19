@@ -168,7 +168,9 @@ vds_version endp
 ;--- int 4b, ax=8107h, request DMA buffer
 ;--- DX = flags, bit 1: copy data into buffer
 ;--- EDI -> DDS
-;--- modifies ECX, EAX, EBX
+;--- modifies ECX, EAX, EBX, DDS.wID, DDS.dwPhys
+;--- out: C, al=5/6
+;---      NC, DDS.dwPhys + DDS.wID set
 
 vds_reqbuff proc
 
@@ -183,7 +185,7 @@ if ?VDSDBG gt 1
 endif
     and ecx, ecx
     jz @@ok
-    mov al,5        ; error "region too large for buffer"
+    mov al, VDSERR_BUFFTOOSMALL  ; buffer too small for region
     add ecx, 400h-1 ; align to kB
     and cx, 0FC00h
     cmp ecx, [DMABuffSize]
@@ -244,7 +246,7 @@ if ?VDSDBG gt 0
     @DbgOutD ebx,1
     @DbgOutS <10>,1
 endif
-    mov al, 6               ; error "buffer currently in use"
+    mov al, VDSERR_BUFFINUSE; error "buffer currently in use"
 @@fail:
     stc
     ret
@@ -529,7 +531,7 @@ vds_copyoutbuffEx endp
 ;--- for first 4 MB only
 ;--- out: NC if ok, C if failed
 ;---      NC -> EAX = initial physical address
-;---      C -> AL = error code, EDX = size which would be ok
+;---      C -> AL = error code, EDX = size that would be ok
 ;--- error code:
 ;---  01: region not contiguous
 ;---  02: region crossed 64kb/128kb boundary
@@ -558,7 +560,7 @@ vds_contiguous proc
     pop ecx
     mov edx, edi
     sub edx, ecx
-    mov al,1
+    mov al, VDSERR_NOTCONTIGUOUS
 @@failed:
     pop edi
     pop esi
@@ -568,7 +570,7 @@ vds_contiguous proc
     mov edx, esi
     shl edx, cl
     sub edx, eax
-    mov al,2
+    mov al, VDSERR_CROSSEDBOUNDS
     jmp @@failed
 @@iscontiguous:
     pop eax         ;get start physical address
@@ -638,21 +640,33 @@ vds_contiguous2 endp
 
 ;--- there are several cases:
 ;--- 1. region is contiguous (and does not cross borders)
-;---    return with carry clear, buffer ID == 0
+;---    out: NC
+;---         DDS.wID = 0
+;---         DDS.dwPhys = physical addr
 ;--- 2. region is not contiguous and/or does cross borders
 ;---    2.1 buffer disable flag set
-;---        return with carry set and code 1,2,3 
+;---      out: C
+;---           DDS.wID = 0
+;---           AL = 1/2/3 
 ;---    2.2 buffer disable flag cleared
 ;---       2.2.1 buffer available and large enough
 ;---             alloc buffer
-;---             if copy required copy data into buffer
-;---             return with carry clear and buffer ID <> 0
+;---             if copy requested then copy data into buffer
+;---         out: NC
+;---              DDS.wID <> 0
+;---              DDS.dwPhys = physical addr of buffer
 ;---       2.2.2 buffer too small
-;---             return with carry set and code 5
+;---         out: C
+;---              DDS.dwSize = size that would be ok
+;---              DDS.wID = 0
+;---              AL = 5
 ;---       2.2.3 buffer not available
-;---             return with carry set and code 6
+;---         out: C
+;---              DDS.dwSize = ?
+;---              DDS.wID = 0
+;---              AL = 6
 ;---
-;---     field "Physical Address" may be filled by "Lock Region"
+;---     field DDS.dwPhys may be filled by "Lock Region"
 
 vds_lock proc
 
@@ -719,7 +733,7 @@ endif
     jnz @@nobuffering
     push edx
     mov edx, esi
-    call vds_reqbuff
+    call vds_reqbuff        ; modifies DDS.wID
     pop edx
     jnc @@lockok
 @@nobuffering:    

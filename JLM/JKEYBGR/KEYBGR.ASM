@@ -5,7 +5,7 @@
 ;--- v1.0: initial
 ;--- v1.1: route nontranslated key presses to previous handler
 ;--- v1.2: now fully compatible with the old KEYBGR.EXE (needs 30h DOS mem)
-;--- v1.3: source now compatible with WASM v1.7j
+;--- v1.3: source now compatible with JWasm
 
         .386
         .model flat

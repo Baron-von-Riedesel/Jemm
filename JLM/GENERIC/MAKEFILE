@@ -10,8 +10,8 @@ NAME = GENERIC
 OUTDIR=Release
 AOPT=-nologo -c -coff -nologo -Fl$*.lst -Fo$*.obj -I..\..\Include
 ASM=jwasm.exe
-#LINK=link.exe /NOLOGO /SUBSYSTEM:CONSOLE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /EXPORT:ddb /Entry:DllMain /OPT:NOWIN98
-LINK=jwlink format win nt hx dll ru console file $*.obj name $*.DLL op q,map=$*.MAP export _ddb.1
+#LINK=link.exe /NOLOGO /SUBSYSTEM:NATIVE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /EXPORT:ddb /Entry:DllMain /OPT:NOWIN98
+LINK=jwlink format win nt hx dll ru native file $*.obj name $*.DLL op q,map=$*.MAP export _ddb.1
 
 ALL: $(OUTDIR) $(OUTDIR)\$(NAME).DLL $(OUTDIR)\TESTGEN.COM
 

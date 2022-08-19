@@ -57,6 +57,8 @@
 
   3. History
 
+  08/2022: v1.5
+   - enable busmaster feature in PCI controller if not set (Qemu).
   06/20/2012: v1.4
    - function "get q-channel info" did return track number in binary.
    - function "get q-channel info" did return value of ADR as CONTROL 
