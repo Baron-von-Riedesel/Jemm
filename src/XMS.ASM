@@ -1322,7 +1322,7 @@ A20_Set proc public
     push edi
     and eax,1
     shl eax,20     ;000000h or 100000h
-    or eax,1+2+4
+    or eax, PTF_PRESENT or PTF_RW or PTF_USER
     @GETPTEPTR edi, ?PAGETAB0+256*4, 1  ;EDI?= ptr PTE for 0100000h
 @@spec_loop:
     stosd

@@ -1568,9 +1568,9 @@ MoveMemoryPhys endp
 ?WT equ 0       ; std=0, 1=set WT bit in PTE for mem moves
 
 if ?WT
-?PA equ 1+2+4+8 ;PRESENT + R/W + USER + WRITE THROUGH
+?PA equ PTF_PRESENT or PTF_RW or PTF_USER or PTF_WT
 else
-?PA equ 1+2+4   ;PRESENT + R/W + USER
+?PA equ PTF_PRESENT or PTF_RW or PTF_USER
 endif
 
 ;--- map physical pages in page map heap
@@ -1657,7 +1657,7 @@ endif
 	shl eax,13
 	and ecx,0FFC00000h
 	or eax, ecx
-	mov al,81h			;page flags for src: present + 4MB page
+	mov al, PTF_PRESENT or PTF_4MB	;page flags for src: present + 4MB page
 	mov ds:[ebx+0],eax
 	add eax, 1 shl 22
 	jnc @F
@@ -1685,7 +1685,7 @@ donesrc:
 	shl eax,13
 	and ecx,0FFC00000h
 	or eax, ecx
-	mov al,83h			;page flags for dst: preset + writable + 4MB page
+	mov al, PTF_PRESENT or PTF_RW or PTF_4MB	;page flags for dst: present + writable + 4MB page
 	mov ds:[ebx+0],eax
 	add eax, 1 shl 22
 	jnc @F

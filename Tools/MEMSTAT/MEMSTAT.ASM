@@ -154,6 +154,16 @@ done_e801:
 	ret
 do_e801 endp
 
+SMAP equ 534d4150h
+
+E820MAP struct
+baselow  dd ?
+basehigh dd ?
+lenlow   dd ?
+lenhigh  dd ?
+type_    dd ?
+E820MAP ends
+
 ;--- print int 15h, ax=e820 info
 
 do_e820 proc
@@ -163,12 +173,12 @@ do_e820 proc
 	mov ebx,0
 	mov di, offset buffer
 	.while (1)
-		mov ecx, 24
+		mov ecx, sizeof E820MAP
 		mov edx,"SMAP"
 		mov eax,0E820h
 		clc
 		int 15h
-;;		  .break .if (CARRY?)
+		.break .if CARRY?
 		.break .if (eax != "SMAP")
 		push ebx
 		.if (!si)
@@ -177,55 +187,47 @@ do_e820 proc
 			invoke printf, CStr(<"----------------------------------------------------",10>)
 			inc si
 		.endif
-		mov eax, [di+16]
-		.if (eax == 1)
+;--- get size in EDX:EAX
+		mov eax,[di].E820MAP.lenlow
+		mov edx,[di].E820MAP.lenhigh
+		mov ecx, [di].E820MAP.type_
+		.if (ecx == 1)
 			mov cx, CStr("available")
-			mov eax,[di+8]
-			mov edx,[di+12]
 			add dword ptr qAvl+0, eax
 			adc dword ptr qAvl+4, edx
-		.elseif (eax == 2)
+		.elseif (ecx == 2)
 			mov cx, CStr("reserved")
-			mov eax,[di+8]
-			mov edx,[di+12]
 			add dword ptr qRsvd+0, eax
 			adc dword ptr qRsvd+4, edx
-		.elseif (eax == 3)
+		.elseif (ecx == 3)
 			mov cx, CStr("ACPI reclaimable")
-			mov eax,[di+8]
-			mov edx,[di+12]
 			add dword ptr qACPI+0, eax
 			adc dword ptr qACPI+4, edx
-		.elseif (eax == 4)
+		.elseif (ecx == 4)
 			mov cx, CStr("ACPI NVS")
-			mov eax,[di+8]
-			mov edx,[di+12]
 			add dword ptr qACPI+0, eax
 			adc dword ptr qACPI+4, edx
-		.elseif (eax == 5)
+		.elseif (ecx == 5)
 			mov cx, CStr("bad memory")
 		.else
 			mov cx, CStr("unknown")
 		.endif
-;--- get size in EDX:EAX
-		mov eax,[di+8]
-		mov edx,[di+12]
 		add dword ptr qSum+0, eax
 		adc dword ptr qSum+4, edx
-		add eax, [di+0]
-		adc edx, [di+4]
+		add eax, [di].E820MAP.baselow
+		adc edx, [di].E820MAP.basehigh
 		sub eax,1
 		sbb edx,0
-		.if (dword ptr [di+12])
+		.if (dword ptr [di].E820MAP.lenhigh)
 			invoke printf, CStr(<"%lX%08lX-%lX%08lX  %lX%08lX  %lX (%s)",10>),
-				dword ptr [di+4], dword ptr [di+0], edx, eax,
-				dword ptr [di+12], dword ptr [di+8],
-				dword ptr [di+16], cx
+				[di].E820MAP.basehigh, [di].E820MAP.baselow, edx, eax,
+				[di].E820MAP.lenhigh, [di].E820MAP.lenlow,
+				[di].E820MAP.type_, cx
 		.else
 			invoke printf, CStr(<"%lX%08lX-%lX%08lX  %9lX  %lX (%s)",10>),
-				dword ptr [di+4], dword ptr [di+0], edx, eax,
-				dword ptr [di+8],
-				dword ptr [di+16], cx
+				[di].E820MAP.basehigh, [di].E820MAP.baselow, edx, eax,
+				[di].E820MAP.lenlow,
+				[di].E820MAP.type_, cx
 		.endif
 		pop ebx
 		.break .if (ebx == 0)

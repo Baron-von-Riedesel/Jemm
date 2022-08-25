@@ -397,10 +397,10 @@ endif
 
     lea edx, [edi+eax]
     MOV [EDI+000h],EDX
-    OR DWORD PTR [EDI+000h],1+2+4
+    OR DWORD PTR [EDI+000h], PTF_PRESENT or PTF_RW or PTF_USER
     add edx, eax
     mov [EDI+?SYSPDE], EDX
-    OR DWORD PTR [EDI+?SYSPDE],1+2+4
+    OR DWORD PTR [EDI+?SYSPDE], PTF_PRESENT or PTF_RW or PTF_USER
 
     add edi, eax     ;edi -> mapped page table 0
 
@@ -408,7 +408,7 @@ endif
 
 ;-- init page table 0 address space 0-110000h
 
-    mov edx, 1+2+4  ;set page flags u/ser, w/riteable, p/resent
+    mov edx, PTF_PRESENT or PTF_RW or PTF_USER  ;set flags u/ser, w/riteable, p/resent
 if ?PGE
     test byte ptr tmpFeatures+1,20h  ;PGE supported?
     jz @F
@@ -440,7 +440,7 @@ endif
     mov ecx, dwSizeV86  ;size of space above 110000h (page aligned)
     shr ecx, 12         ;is just a handful of pages
     mov eax, ebx        ;get physical address of this space
-    or al, 1+2          ;set PRESENT + R/W
+    or al, PTF_PRESENT or PTF_RW  ;set PRESENT + R/W
 if ?PGE
 ;--- set first page (which is shared) global
     or ah, tmpPageMask
@@ -450,7 +450,7 @@ endif
     stosd
     ADD EAX,1000h
 if 0
-    and al, not 4   ;all pages except the first are "system"
+    and al, not PTF_USER  ;all pages except the first are "system"
 endif
 if ?PGE
     and ah, 0F0h
@@ -464,7 +464,7 @@ if 1    ;SBEINIT.COM assumes linear=physical mapping
     movzx eax, di
     and ah, 0Fh
     shl eax, 10     ;transform offset in page table -> linear address
-    or al,1+2+4
+    or al, PTF_PRESENT or PTF_RW or PTF_USER
 endif
     mov cx, 400h    ;hiword ecx is clear
 @@:

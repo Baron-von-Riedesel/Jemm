@@ -947,10 +947,10 @@ endif
 
 if SETMODE
     test bl,4           ;values in word at pos 88 valid?
-    jz nosetm
+    jz nosetm_udma
     movzx ecx,@byte [edi+88*2]  ;get valid "UltraDMA modes"
     bsr eax, ecx        ;get highest supported UDMA mode in EAX
-    jz nosetm           ;jump if no UDMA mode supported
+    jz nosetm_udma      ;jump if no UDMA mode supported
     mov cl,[MaxUM]
     cmp cl,-1           ;/Mn switch used?
     jz @F
@@ -962,21 +962,36 @@ if SETMODE
     bts ecx,eax
     cmp cl,bh           ;is this mode set already?
     jz nosetm
+	jmp setm_udma
 
 ;--- check/set multi-word DMA
+ if MWDMA
+nosetm_udma:
 	test [bFlags], FL_W
-	jz @F
+	jz nosetm
     inc edx             ;Point to IDE "features" register.
     mov al,SETM         ;Set mode-select subcode.
     out dx,al
     inc edx				;Point to IDE sector-count register.
-    mov al,[edi+63*2+1] ;get current MW mode
-    or al,020h
-    jmp setumw
-@@:
+;    mov al,[edi+63*2+1] ;get current MW mode
+    movzx ax,byte ptr [edi+63*2]   ;get supported MW modes
+	bsr ax, ax
+	jz nosetm
+	mov ch, al
+    or al,020h          ; set multi-word DMA mode
+    out dx,al
+    add edx,5           ;Point to IDE cmd register.
+    mov al,SETFEAT      ;Issue "set features" command.
+    out dx,al
+    call WaitRdy        ;Await controller-ready.
+    mov esi,CStr(' MW-DMA mode set failed')
+    jc I_SErr
+	mov bh,0
+	jmp I_MWYes
+ endif
 ;--- v1.4: if any UDMA mode is active and no /M option given,
 ;--- don't modify mode.
-
+setm_udma:
 	cmp bh, 0
 	jz @F
 	cmp [MaxUM],-1
@@ -1002,17 +1017,20 @@ setumw:
     jc I_SErr
     dbgmsg1 "ValDisk: UDMA mode set successful"
 nosetm:
+ ife MWDMA
+nosetm_udma:
+ endif
 endif
 
     mov esi,CStr(' is not UltraDMA')
-if MWDMA
+if 0;MWDMA
     test [bFlags],FL_W      ;handle multiword DMA devices?
     jz @F 
     mov ch,[edi+63*2+1]     ;copy multiword flags to AH
     and ch,ch               ;is a MW-DMA mode set?
     jz I_MWYes
-	mov bh,0
-	jmp I_MWYes
+    mov bh,0
+    jmp I_MWYes
 @@:
 endif
     test bl,04h             ;UltraDMA bit set?

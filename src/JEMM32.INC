@@ -62,6 +62,13 @@ endif
 
 ?FASTENTRIES    equ 32
 
+;--- page table flags
+
+PTF_PRESENT equ 1
+PTF_RW      equ 2
+PTF_USER    equ 4
+PTF_WT      equ 8
+PTF_4MB     equ 80h
 
 if ?DMA
 

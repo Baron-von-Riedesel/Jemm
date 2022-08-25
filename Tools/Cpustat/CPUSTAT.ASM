@@ -63,8 +63,9 @@ bPage	db 0
 
 	.data?
 
-buffer	db 1000h dup (?)
-buffer2	db 80 dup (?)
+pagebuff	db 1000h dup (?)
+pagebuff2	db 1000h dup (?)
+buffer2		db 80 dup (?)
 
 	.code
 
@@ -407,17 +408,17 @@ exit:
 
 main endp
 
-;--- copy a 4 kB page in EAX from extended memory into buffer
+;--- copy a 4 kB page ( physical address in physad ) into buffer
 
-getpage proc stdcall physad:dword
+getpage proc stdcall uses si physad:dword, buffer:ptr
 
 	mov eax, physad
-	and ax, 0F000h
+;	and ax, 0F000h
 	mov i15src.wBase0015,ax
 	shr eax, 16
 	mov i15src.bBase1623,al
 	mov i15src.bBase2431,ah
-	mov ax, offset buffer
+	mov ax, buffer
 	movzx eax, ax
 	mov dx, ds
 	movzx edx, dx
@@ -438,23 +439,27 @@ getpage proc stdcall physad:dword
 
 getpage endp
 
+;--- translate linear address in linad into physical address (returned in eax)
+
 getphysaddr proc stdcall linad:dword
 	mov eax, -1		;in case the next instr is "emulated"
 	mov eax, cr3
 	cmp eax, -1
 	jz error
-	invoke getpage, eax
+	and ax, 0F000h
+	invoke getpage, eax, addr pagebuff
 	jc error
 	mov ebx, linad
 	shr ebx, 20
 	and bx, 0FFCh
-	mov eax, dword ptr [bx+buffer]
-	invoke getpage, eax
+	mov eax, dword ptr [bx+pagebuff]
+	and ax, 0F000h
+	invoke getpage, eax, addr pagebuff
 	jc error
 	mov ebx, linad
 	shr ebx, 10
 	and bx, 0FFCh
-	mov eax, dword ptr [bx+buffer]
+	mov eax, dword ptr [bx+pagebuff]
 	and ax,0f000h
 	mov edx, linad
 	and dx, 0FFFh
@@ -477,41 +482,22 @@ DispGDT proc
 
 	invoke getphysaddr, gdta
 	jc nogdt
-	mov i15src.wBase0015,ax
-	shr eax, 16
-	mov i15src.bBase1623,al
-	mov i15src.bBase2431,ah
 
 	mov cx,gdtl 
 	inc cx
-	cmp cx,sizeof buffer
+	cmp cx,sizeof pagebuff
 	jc @F
-	mov cx,sizeof buffer
+	mov cx,sizeof pagebuff
 @@:
 	mov wSize,cx
-	shr cx,1
 
-	mov ax, offset buffer
-	movzx eax,ax
-	mov dx,ds
-	movzx edx,dx
-	shl edx, 4
-	add eax, edx
-	mov i15dst.wBase0015,ax
-	shr eax, 16
-	mov i15dst.bBase1623,al
-	mov i15dst.bBase2431,ah
-	push ds
-	pop es
-	mov si, offset gdti15
-	mov ah,87h
-	stc
-	int 15h
+	invoke getpage, eax, addr pagebuff
 	jc error
+
 	mov cx, wSize
 	shr cx, 3
 	jcxz nogdt
-	mov si, offset buffer
+	mov si, offset pagebuff
 nextitem:
 	push cx
 	mov cx,[si+0]
@@ -527,7 +513,7 @@ nextitem:
 	jz @F
 	call getattr
 	mov di,si
-	sub di, offset buffer
+	sub di, offset pagebuff
 	invoke printf, CStr("GDT[%4X]: %08lX:%04X %04X (%s)",lf), di, ebx, cx, dx, offset buffer2
 @@:
 	add si, 8
@@ -609,45 +595,26 @@ DispIDT proc
 
 	invoke getphysaddr, idta
 	jc noidt
-	mov i15src.wBase0015,ax
-	shr eax, 16
-	mov i15src.bBase1623,al
-	mov i15src.bBase2431,ah
 
 	mov cx,idtl 
 	inc cx
-	cmp cx,sizeof buffer
+	cmp cx,sizeof pagebuff
 	jc @F
-	mov cx,sizeof buffer
+	mov cx,sizeof pagebuff
 @@:
 	cmp cx, 8*100h
 	jbe @F
 	mov cx, 8*100h
 @@:
 	mov wSize,cx
-	shr cx,1
 
-	mov ax, offset buffer
-	movzx eax,ax
-	mov dx,ds
-	movzx edx,dx
-	shl edx, 4
-	add eax, edx
-	mov i15dst.wBase0015,ax
-	shr eax, 16
-	mov i15dst.bBase1623,al
-	mov i15dst.bBase2431,ah
-	push ds
-	pop es
-	mov si, offset gdti15	;es:si=gdt to use
-	mov ah,87h
-	stc
-	int 15h
+	invoke getpage, eax, addr pagebuff
 	jc error
+
 	mov cx, wSize
 	shr cx, 3
 	jcxz noidt
-	mov si, offset buffer
+	mov si, offset pagebuff
 	xor di,di
 
 nextitem:
@@ -670,20 +637,53 @@ error:
 	ret
 DispIDT endp
 
+;--- get # of PTEs in a page table
+
+getPTEs proc uses si
+	and ax, 0F000h
+	invoke getpage, eax, addr pagebuff2
+	jc error
+	mov si, offset pagebuff2
+	xor cx, cx
+nextitem:
+	lodsd
+	test al,1
+	jz @F
+	inc cx
+@@:
+	cmp si, offset pagebuff2+sizeof pagebuff2
+	jnz nextitem
+	mov ax, cx
+error:
+	ret
+getPTEs endp
+
 printpd proc
-	mov si, offset buffer
+	mov si, offset pagebuff
 	xor di, di
 nextitem:
 	lodsd
 	test al, 1
+	jz skipitem
+	test al, 80h  ; perhaps a 4 MB page?
 	jz @F
 	mov dx, di
 	shl edx, 22
-	invoke printf, CStr("%8lX: %08lX",lf), edx, eax
+	invoke printf, CStr("%8lX: %08lX (4 MB page)",lf), edx, eax
+	jmp skipitem
 @@:
+	push eax
+	invoke getPTEs
+	pop ecx
+	jc error
+	mov dx, di
+	shl edx, 22
+	invoke printf, CStr("%8lX: %08lX (%4u pages)",lf), edx, ecx, ax
+skipitem:
 	inc di
 	cmp di, 1024
 	jnz nextitem
+error:
 	ret
 printpd endp
 
@@ -694,10 +694,11 @@ DispPD proc
 	jz done
 	and eax, eax
 	jz done
-	invoke getpage, eax
+	and ax, 0F000h
+	invoke getpage, eax, addr pagebuff
 	jc error
 	invoke printf, CStr(lf,"page directory",lf)
-	invoke printf, CStr("------------------",lf)
+	invoke printf, CStr("-------------------------------",lf)
 	call printpd
 done:
 	ret

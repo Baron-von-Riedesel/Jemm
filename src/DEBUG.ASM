@@ -81,7 +81,7 @@ if ?BUFFERED
 	mov ecx,ss:[?BUFFOFS]
 	lea edx,[edi+ecx]
 	and dx,0F000h
-	or dl,1+2+4
+	or dl, PTF_PRESENT or PTF_RW or PTF_USER
 	mov ebx,[DbgPTE]
 	mov ss:[ebx], edx
 	mov esi,cr3
@@ -306,7 +306,7 @@ endif
 	mov [DbgPTE], edx
 
 	mov ecx,?BUFFSIZ / 4096
-	or al,1+2+4
+	or al, PTF_PRESENT or PTF_RW or PTF_USER
 @@nextitem3:
 	mov [edx],eax
 	pushad
