@@ -20,7 +20,7 @@ local sym
 sym db y,0
 	.code
 	exitm <offset sym>
-	endm
+endm
 
 DESCRIPTOR struct
 wLimit		dw ?
@@ -31,6 +31,14 @@ bAttrH		db ?
 bBase2431	db ?
 DESCRIPTOR ends
 
+TSS struct
+       dd ?
+dwESP0 dd ?
+wSS0   dw ?
+       org 64h
+wFlags dw ?
+wOffs  dw ?  
+TSS ends
 
 	.data
 
@@ -56,16 +64,14 @@ i15dst	DESCRIPTOR <-1,0,0,093h,0,0>
 		DESCRIPTOR <0,0,0,0,0,0>
 
 modflg	dw 0
-wSize	dw 0
-bGDT	db 0
-bIDT	db 0
-bPage	db 0
+brk		dw 0
 
-	.data?
+O_GDT	equ 1
+O_IDT	equ 2
+O_PD	equ 4
+O_TSS	equ 8
 
-pagebuff	db 1000h dup (?)
-pagebuff2	db 1000h dup (?)
-buffer2		db 80 dup (?)
+bOpt	db 0	;cmdline options -g -i -p -t
 
 	.code
 
@@ -198,219 +204,27 @@ getldtr proc
 	.586
 getldtr endp
 
-main proc c argc:word, argv:word
-
-	mov si,80h
-	mov cl,es:[si]
-	inc si
-
-	.while (cl)
-		mov al,es:[si]
-		inc si
-		dec cl
-		.if (al == ' ' || al == 9)
-			;
-		.elseif ( cl > 0 && ( al == '-' || al == '/'))
-			mov al,es:[si]
-			inc si
-			dec cl
-			or al,20h
-			.if (al == 'i')
-				mov bIDT, 1
-			.elseif (al == 'g')
-				mov bGDT, 1
-			.elseif (al == 'p')
-				mov bPage, 1
-			.else
-				jmp usage
-			.endif
-		.else
-usage:
-			invoke printf, CStr("usage: CPUSTAT [ options ]",lf)
-			invoke printf, CStr("    -g: display GDT if in V86 mode",lf)
-			invoke printf, CStr("    -i: display IDT if in V86 mode",lf)
-			invoke printf, CStr("    -p: display PD if in V86 mode",lf)
-			jmp exit
-		.endif
-	.endw
-
-	pushf
-	mov ax,7000h
-	PUSH AX					 ; also kept after a POPF
-	POPF					 ; a 286 always sets it to Null
-	PUSHF
-	POP AX
-	popf
-	and ah,0F0h
-	cmp AH,70H				;on a 80386 (real-mode) 7x is in AH
-	jnz is286
-	db 66h		;MASM doesn't know SMSW EAX
-	smsw ax
-	mov [_msw],eax
-	jmp is386
-is286:
-	smsw ax
-	invoke printf, CStr("MSW: %X",lf), ax
-	invoke printf, CStr("CPU is not 80386 or better",lf)
-	jmp exit
-is386:
-	and ax,1
-	mov [modflg],ax
-
-	mov eax,[_msw]
-	bt eax,31
-	setc dl
-	movzx si,dl
-	bt eax,18
-	setc dl
-	movzx di,dl
-	bt eax,16
-	setc cl
-	movzx cx,cl
-	bt ax,5
-	setc dl
-	movzx dx,dl
-
-	mov bx,CStr('Real')
-	bt ax,0
-	setc al
-	jnc @F
-	mov bx,CStr('V86')
-@@:    
-	movzx ax,al
-	invoke printf, CStr("MSW: %lX (PG=%x, AM=%x, WP=%x, NE=%x, PE=%x); %s-mode",lf),_msw, si, di, cx, dx, ax, bx 
-
-	db 66h
-	sgdt gdtr
-	db 66h
-	sidt idtr
-
-	cmp bGDT, 0
-	jnz optional
-	cmp bIDT, 0
-	jnz optional
-	cmp bPage, 0
-	jnz optional
-
-	mov eax, 0		;in case the next instr is "emulated"
-	mov eax, cr0 	;cr0 (=msw)
-	mov [dwCR0],eax
-	and ax,1
-
-	cmp ax,modflg
-	jz @F
-	invoke printf, CStr("'MOV EAX,CR0' emulated incorrectly!",lf)
-@@:
-	invoke printf, CStr("CR0: %lX",lf),dwCR0
-
-	invoke printf, CStr("GDTR: %lX,%X, IDTR: %lX,%X",lf),gdta,gdtl,idta,idtl
-
-	test [_msw],1
-	jnz @F
-	call getldtr
-	invoke printf, CStr("LDTR: %X, TR: %X",lf), ax, dx
-@@:
-
-	mov eax, -1		;in case the next instr is "emulated"
-	mov eax, cr2
-	invoke printf, CStr("CR2: %lX  "),eax
-
-	mov eax, -1		;in case the next instr is "emulated"
-	mov eax, cr3
-	invoke printf, CStr("CR3: %lX",lf),eax
-
-	mov eax, -1		;in case the next instr is "emulated"
-
-	call hascpuid	;if CPUID is supported, CR4 exists as well
-	jc nocr4
-
-	mov eax, cr4	;priviledged instruction
-	mov ch,0
-	mov bp,sp
-	test al,1		;VME?
-	setnz cl
-	push cx
-	test al,2		;PVI?
-	setnz cl
-	push cx
-	test al,8		;DE?
-	setnz cl
-	push cx
-	test al,10h		;PSE?
-	setnz cl
-	push cx
-	test al,20h		;PAE?
-	setnz cl
-	push cx
-	test al,40h		;MCE?
-	setnz cl
-	push cx
-	test al,80h		;PGE?
-	setnz cl
-	push cx
-	test ax,200h	;OSFXSR?
-	setnz cl
-	push cx
-	test ax,400h	;OSXMMEXP?
-	setnz cl
-	push cx
-	invoke printf, CStr("CR4: %lX (VME=%X, PVI=%X, DE=%X, PSE=%X, PAE=%X, MCE=%X, PGE=%X, OSFXSR=%X, OSXMMEX=%X)",lf), eax,
-		word ptr [bp-2],word ptr [bp-4],word ptr [bp-6],word ptr [bp-8],word ptr [bp-10],word ptr [bp-12],word ptr [bp-14],word ptr [bp-16],word ptr [bp-18]
-	mov sp,bp
-
-nocr4:
-	fnstsw ax
-	fnstcw [wSize]
-	invoke printf, CStr("FCW: %X  FSW: %X",lf), [wSize], ax
-
-	mov eax, dr0
-	mov ebx, dr1
-	mov ecx, dr2
-	mov edx, dr3
-	invoke printf, CStr("DR0-DR3: %lX %lX %lX %lX",lf), eax, ebx, ecx, edx
-	mov eax, dr6
-	mov ecx, dr7
-	invoke printf, CStr("DR6: %lX  DR7: %lX",lf), eax, ecx
-	pushfd
-	pop eax
-	invoke printf, CStr("EFL: %lX, ESP: %lX",lf), eax, esp
-
-	.if !(byte ptr _msw & 1)
-		call DispSegLimits
-	.endif
-
-optional:
-	.if (bGDT)
-		.if byte ptr [_msw] & 1	;v86 mode?
-			call DispGDT
-		.else
-			invoke printf, CStr("no GDT in real-mode",lf)
-		.endif
-	.endif
-	.if (bIDT)
-		.if byte ptr [_msw] & 1	;v86 mode?
-			call DispIDT
-		.else
-			invoke printf, CStr("no IDT in real-mode",lf)
-		.endif
-	.endif
-	.if (bPage)
-		.if byte ptr [_msw] & 1	;v86 mode?
-			call DispPD
-		.else
-			invoke printf, CStr("no paging tables in real-mode",lf)
-		.endif
-	.endif
-
-exit:
-	mov al,0
+malloc proc stdcall wBytes:word
+	mov ax, wBytes
+	add ax, [brk]
+	jc error
+	xchg ax, [brk]
+error:
 	ret
+malloc endp
 
-main endp
+free proc stdcall pMem:ptr
+	mov ax, pMem
+	and ax, ax
+	jz @F
+	mov [brk], ax
+@@:
+	ret
+free endp
 
-;--- copy a 4 kB page ( physical address in physad ) into buffer
+;--- copy an extended memory region ( physical address in physad ) into buffer
 
-getpage proc stdcall uses si physad:dword, buffer:ptr
+copymem proc stdcall uses si buffer:ptr, physad:dword, size_:word
 
 	mov eax, physad
 ;	and ax, 0F000h
@@ -430,105 +244,60 @@ getpage proc stdcall uses si physad:dword, buffer:ptr
 	mov i15dst.bBase2431, ah
 	push ds
 	pop es
-	mov cx, 1000h shr 1
+	mov cx, size_
+	shr cx, 1
 	mov si, offset gdti15	;es:si=gdt to use
 	mov ah, 87h
 	stc
 	int 15h
 	ret
 
-getpage endp
+copymem endp
 
 ;--- translate linear address in linad into physical address (returned in eax)
 
-getphysaddr proc stdcall linad:dword
+getphysaddr proc stdcall uses ebx esi di linad:dword
+	xor di, di
 	mov eax, -1		;in case the next instr is "emulated"
 	mov eax, cr3
 	cmp eax, -1
 	jz error
 	and ax, 0F000h
-	invoke getpage, eax, addr pagebuff
+	mov esi, eax
+	invoke malloc, 1000h
+	jc error
+	mov di, ax
+	invoke copymem, di, esi, 1000h
 	jc error
 	mov ebx, linad
 	shr ebx, 20
 	and bx, 0FFCh
-	mov eax, dword ptr [bx+pagebuff]
+	mov eax, dword ptr [bx+di]
 	and ax, 0F000h
-	invoke getpage, eax, addr pagebuff
+	invoke copymem, di, eax, 1000h
 	jc error
 	mov ebx, linad
 	shr ebx, 10
 	and bx, 0FFCh
-	mov eax, dword ptr [bx+pagebuff]
+	mov eax, dword ptr [bx+di]
 	and ax,0f000h
 	mov edx, linad
 	and dx, 0FFFh
 	or ax, dx
+	push eax
+	invoke free, di
+	pop eax
+	clc
 	ret
 error:
+	invoke free, di
 	stc
 	ret
 getphysaddr endp
 
-;--- the GDT/IDT is read with int 15h, ah=87h
-;--- this is not really correct, since this function
-;--- is supposed to read from physical addresses, while
-;--- the addresses in GDTR/IDTR are linear;
-;--- for jemmex, it often works, though, since its
-;--- code/data usually are identity-mapped, starting
-;--- at 0x110000.
-
-DispGDT proc
-
-	invoke getphysaddr, gdta
-	jc nogdt
-
-	mov cx,gdtl 
-	inc cx
-	cmp cx,sizeof pagebuff
-	jc @F
-	mov cx,sizeof pagebuff
-@@:
-	mov wSize,cx
-
-	invoke getpage, eax, addr pagebuff
-	jc error
-
-	mov cx, wSize
-	shr cx, 3
-	jcxz nogdt
-	mov si, offset pagebuff
-nextitem:
-	push cx
-	mov cx,[si+0]
-	mov bh,[si+7]
-	mov bl,[si+4]
-	shl ebx,16
-	mov bx,[si+2]
-	mov dx,[si+5]
-	movzx eax,cx
-	or eax, ebx
-	or ax, dx
-	and eax, eax
-	jz @F
-	call getattr
-	mov di,si
-	sub di, offset pagebuff
-	invoke printf, CStr("GDT[%4X]: %08lX:%04X %04X (%s)",lf), di, ebx, cx, dx, offset buffer2
-@@:
-	add si, 8
-	pop cx
-	loop nextitem
-nogdt:
-	ret
-error:
-	invoke printf, CStr("Int 15h, ah=87h failed",lf)
-	ret
-DispGDT endp
-
-getattr proc
+getattr proc stdcall buffer:ptr
 	pusha
-	mov di, offset buffer2
+	mov di, buffer
 	test dl, 10h
 	jz syssegs
 	mov si, CStr("code")
@@ -591,32 +360,98 @@ cpy:
 
 getattr endp
 
+;--- the GDT/IDT is read with int 15h, ah=87h
+;--- this is not really correct, since this function
+;--- is supposed to read from physical addresses, while
+;--- the addresses in GDTR/IDTR are linear;
+;--- for jemmex, it often works, though, since its
+;--- code/data usually are identity-mapped, starting
+;--- at 0x110000.
+
+DispGDT proc
+
+local wSize:word
+local buffer2[80]:byte
+
+	xor di, di
+	invoke getphysaddr, gdta
+	jc nogdt
+	mov ebx, eax
+
+	mov cx,gdtl 
+	inc cx
+	mov wSize, cx
+
+	invoke malloc, cx
+	jc error
+	mov di, ax
+
+	invoke copymem, di, ebx, wSize
+	jc error
+
+	mov cx, wSize
+	shr cx, 3
+	jcxz nogdt
+	mov si, di
+nextitem:
+	push cx
+	mov cx,[si+0]
+	mov bh,[si+7]
+	mov bl,[si+4]
+	shl ebx,16
+	mov bx,[si+2]
+	mov dx,[si+5]
+	movzx eax,cx
+	or eax, ebx
+	or ax, dx
+	and eax, eax
+	jz @F
+	invoke getattr, addr buffer2
+	push si
+	sub si, di
+	invoke printf, CStr("GDT[%4X]: %08lX:%04X %04X (%s)",lf), si, ebx, cx, dx, addr buffer2
+	pop si
+@@:
+	add si, sizeof DESCRIPTOR
+	pop cx
+	loop nextitem
+	invoke free, di
+nogdt:
+	ret
+error:
+	invoke printf, CStr("Int 15h, ah=87h failed",lf)
+	invoke free, di
+	ret
+DispGDT endp
+
 DispIDT proc
 
+local pMem:ptr
+local wSize:word
+
+	mov pMem, 0
 	invoke getphysaddr, idta
 	jc noidt
+	mov esi, eax
 
 	mov cx,idtl 
 	inc cx
-	cmp cx,sizeof pagebuff
-	jc @F
-	mov cx,sizeof pagebuff
-@@:
 	cmp cx, 8*100h
 	jbe @F
 	mov cx, 8*100h
 @@:
-	mov wSize,cx
-
-	invoke getpage, eax, addr pagebuff
+	mov wSize, cx
+	invoke malloc, cx
+	jc error
+	mov pMem, ax
+	invoke copymem, pMem, esi, wSize
 	jc error
 
 	mov cx, wSize
 	shr cx, 3
 	jcxz noidt
-	mov si, offset pagebuff
-	xor di,di
-
+	mov si, pMem
+	xor di, di
 nextitem:
 	push cx
 	mov ax,[si+6]
@@ -627,39 +462,54 @@ nextitem:
 	invoke printf, CStr("IDT[%4X]: %04X:%08lX %04X",lf), di, bx, eax, dx
 @@:
 	inc di
-	add si, 8
+	add si, sizeof DESCRIPTOR
 	pop cx
 	loop nextitem
+	invoke free, pMem
 noidt:
 	ret
 error:
+	invoke free, pMem
 	invoke printf, CStr("Int 15h, ah=87h failed",lf)
 	ret
 DispIDT endp
 
 ;--- get # of PTEs in a page table
 
-getPTEs proc uses si
-	and ax, 0F000h
-	invoke getpage, eax, addr pagebuff2
+getPTEs proc uses si di ebx
+	mov ebx, eax
+	xor di, di
+	invoke malloc, 1000h
 	jc error
-	mov si, offset pagebuff2
-	xor cx, cx
+	mov di, ax
+	
+	and bx, 0F000h
+	invoke copymem, di, ebx, 1000h
+	jc error
+	mov si, di
+	xor dx, dx
+	mov cx, 1024
 nextitem:
 	lodsd
 	test al,1
 	jz @F
-	inc cx
+	inc dx
 @@:
-	cmp si, offset pagebuff2+sizeof pagebuff2
-	jnz nextitem
-	mov ax, cx
+	loop nextitem
+	invoke free, di
+	mov ax, dx
+	ret
 error:
+	invoke free, di
+	stc
 	ret
 getPTEs endp
 
-printpd proc
-	mov si, offset pagebuff
+;--- print page directory
+
+printpd proc stdcall uses si di pPD:ptr
+
+	mov si, pPD
 	xor di, di
 nextitem:
 	lodsd
@@ -688,6 +538,13 @@ error:
 printpd endp
 
 DispPD proc
+
+local pMem:ptr
+
+	mov pMem, 0
+	invoke malloc, 1000h
+	jc error
+	mov pMem, ax
 	mov eax, -1		;in case the next instr is "emulated"
 	mov eax, cr3
 	cmp eax, -1
@@ -695,17 +552,362 @@ DispPD proc
 	and eax, eax
 	jz done
 	and ax, 0F000h
-	invoke getpage, eax, addr pagebuff
+	invoke copymem, pMem, eax, 1000h
 	jc error
 	invoke printf, CStr(lf,"page directory",lf)
 	invoke printf, CStr("-------------------------------",lf)
-	call printpd
+	invoke printpd, pMem
 done:
+	invoke free, pMem
 	ret
 error:
+	invoke free, pMem
 	invoke printf, CStr("Int 15h, ah=87h failed",lf)
 	ret
 DispPD endp
+
+;--- display IO permission bitmap
+
+DispIOPB proc stdcall uses si di pBitmap:ptr, size_:word
+
+local wEnd:word
+local wItems:word
+
+	mov ecx, 10000h
+	movzx eax, size_
+	shl eax, 3
+	cmp ecx, eax
+	jb @F
+	mov ecx, eax
+@@:
+	mov wEnd, cx
+	invoke printf, CStr("trapped Ports:",lf)
+	mov si, pBitmap
+	xor edi, edi
+	mov wItems, di
+nextport:
+	bt [si], edi 
+	jnc skipitem
+	invoke printf, CStr("%4X "), di
+	inc wItems
+	cmp wItems, 8
+	jnz skipitem
+	invoke printf, CStr(lf)
+	mov wItems, 0
+skipitem:
+	inc di
+	cmp di, wEnd
+	jnz nextport
+	cmp wItems, 0
+	jz @F
+	invoke printf, CStr(lf)
+@@:
+	ret
+DispIOPB endp
+
+DispTSS proc stdcall wSel:word, dwBase:dword, wLimit:word
+
+local wSize:word
+local dwPhys:dword
+local pTSS:ptr
+local pIOPB:ptr
+
+	mov pTSS, 0
+	mov pIOPB, 0
+	invoke getphysaddr, dwBase
+	mov dwPhys, eax
+	invoke printf, CStr("TSS %X: address linear/phys=%lX/%lX, limit=%X",lf), wSel, dwBase, eax, wLimit
+	invoke malloc, sizeof TSS
+	jc noiopb
+	mov pTSS, ax
+	invoke copymem, ax, dwPhys, sizeof TSS
+	mov bx, pTSS
+	invoke printf, CStr("  SS:ESP0=%X:%lX, offset IOPB=%X",lf), [bx].TSS.wSS0, [bx].TSS.dwESP0, [bx].TSS.wOffs
+	mov ax, wLimit
+	sub ax, [bx].TSS.wOffs
+	jbe noiopb
+	cmp ax, 8192
+	jb @F
+	mov ax, 8192
+@@:
+	mov wSize, ax
+	invoke malloc, ax
+	jc noiopb
+	mov pIOPB, ax
+	movzx edx, [bx].TSS.wOffs
+	add edx, dwPhys
+	invoke copymem, pIOPB, edx, wSize
+	jc noiopb
+	invoke DispIOPB, pIOPB, wSize
+noiopb:
+	invoke free, pIOPB
+	invoke free, pTSS
+	ret
+DispTSS endp
+
+;--- scan GDT and display all TSSes
+
+DispAllTSS proc
+
+local wSize:word
+local dwPhys:dword
+
+	xor di, di
+	invoke getphysaddr, gdta
+	jc error
+	mov esi, eax
+	mov cx, gdtl 
+	inc cx
+	mov wSize, cx
+	invoke malloc, cx
+	jc error
+	mov di, ax
+	invoke copymem, di, esi, wSize
+	jc error
+	mov si, di
+nextitem:
+	cmp [si].DESCRIPTOR.bAttrL, 8Bh
+	jnz skipitem
+	mov bh, [si].DESCRIPTOR.bBase2431
+	mov bl, [si].DESCRIPTOR.bBase1623
+	shl ebx, 16
+	mov bx, [si].DESCRIPTOR.wBase0015
+	mov ax, si
+	sub ax, di
+	invoke DispTSS, ax, ebx, [si].DESCRIPTOR.wLimit
+skipitem:
+	add si, sizeof DESCRIPTOR
+	mov ax, wSize
+	add ax, di
+	cmp si, ax
+	jb nextitem
+error:
+	invoke free, di
+	ret
+DispAllTSS endp
+
+;--- main()
+
+main proc c
+
+local wSize:word
+
+	mov si, 80h
+	mov cl, es:[si]
+	inc si
+
+	.while cl
+		mov al,es:[si]
+		inc si
+		dec cl
+		.if (al == ' ' || al == 9)
+			;
+		.elseif ( cl > 0 && ( al == '-' || al == '/'))
+			mov al,es:[si]
+			inc si
+			dec cl
+			or al,20h
+			.if (al == 'i')
+				or bOpt, O_IDT
+			.elseif (al == 'g')
+				or bOpt, O_GDT
+			.elseif (al == 'p')
+				or bOpt, O_PD
+			.elseif (al == 't')
+				or bOpt, O_TSS
+			.else
+				jmp usage
+			.endif
+		.else
+usage:
+			invoke printf, CStr("usage: CPUSTAT [ options ]",lf)
+			invoke printf, CStr("    -g: display GDT if in V86 mode",lf)
+			invoke printf, CStr("    -i: display IDT if in V86 mode",lf)
+			invoke printf, CStr("    -p: display PD if in V86 mode",lf)
+			invoke printf, CStr("    -t: display TSS if in V86 mode",lf)
+			jmp exit
+		.endif
+	.endw
+
+	pushf
+	mov ax,7000h
+	PUSH AX					 ; also kept after a POPF
+	POPF					 ; a 286 always sets it to Null
+	PUSHF
+	POP AX
+	popf
+	and ah,0F0h
+	cmp AH,70H				;on a 80386 (real-mode) 7x is in AH
+	jnz is286
+	db 66h		;MASM doesn't know SMSW EAX
+	smsw ax
+	mov [_msw],eax
+	jmp is386
+is286:
+	smsw ax
+	invoke printf, CStr("MSW: %X",lf), ax
+	invoke printf, CStr("CPU is not 80386 or better",lf)
+	jmp exit
+is386:
+	and ax,1
+	mov [modflg],ax
+
+	mov eax,[_msw]
+	bt eax,31
+	setc dl
+	movzx si,dl
+	bt eax,18
+	setc dl
+	movzx di,dl
+	bt eax,16
+	setc cl
+	movzx cx,cl
+	bt ax,5
+	setc dl
+	movzx dx,dl
+
+	mov bx,CStr('Real')
+	bt ax,0
+	setc al
+	jnc @F
+	mov bx,CStr('V86')
+@@:    
+	movzx ax,al
+	invoke printf, CStr("MSW: %lX (PG=%x, AM=%x, WP=%x, NE=%x, PE=%x); %s-mode",lf),_msw, si, di, cx, dx, ax, bx 
+
+	db 66h
+	sgdt gdtr
+	db 66h
+	sidt idtr
+
+	cmp bOpt, 0
+	jnz optional
+
+	mov eax, 0		;in case the next instr is "emulated"
+	mov eax, cr0 	;cr0 (=msw)
+	mov [dwCR0],eax
+	and ax,1
+
+	cmp ax,modflg
+	jz @F
+	invoke printf, CStr("'MOV EAX,CR0' emulated incorrectly!",lf)
+@@:
+	invoke printf, CStr("CR0: %lX",lf),dwCR0
+
+	invoke printf, CStr("GDTR: %lX,%X, IDTR: %lX,%X",lf),gdta,gdtl,idta,idtl
+
+	test [_msw],1
+	jnz @F
+	call getldtr
+	invoke printf, CStr("LDTR: %X, TR: %X",lf), ax, dx
+@@:
+
+	mov eax, -1		;in case the next instr is "emulated"
+	mov eax, cr2
+	invoke printf, CStr("CR2: %lX  "),eax
+
+	mov eax, -1		;in case the next instr is "emulated"
+	mov eax, cr3
+	invoke printf, CStr("CR3: %lX",lf),eax
+
+	mov eax, -1		;in case the next instr is "emulated"
+
+	call hascpuid	;if CPUID is supported, CR4 exists as well
+	jc nocr4
+
+	mov eax, cr4	;priviledged instruction
+	mov ch,0
+	push bp
+	mov bp,sp
+	test al,1		;VME?
+	setnz cl
+	push cx
+	test al,2		;PVI?
+	setnz cl
+	push cx
+	test al,8		;DE?
+	setnz cl
+	push cx
+	test al,10h		;PSE?
+	setnz cl
+	push cx
+	test al,20h		;PAE?
+	setnz cl
+	push cx
+	test al,40h		;MCE?
+	setnz cl
+	push cx
+	test al,80h		;PGE?
+	setnz cl
+	push cx
+	test ax,200h	;OSFXSR?
+	setnz cl
+	push cx
+	test ax,400h	;OSXMMEXP?
+	setnz cl
+	push cx
+	invoke printf, CStr("CR4: %lX (VME=%X, PVI=%X, DE=%X, PSE=%X, PAE=%X, MCE=%X, PGE=%X, OSFXSR=%X, OSXMMEX=%X)",lf), eax,
+		word ptr [bp-2],word ptr [bp-4],word ptr [bp-6],word ptr [bp-8],word ptr [bp-10],word ptr [bp-12],word ptr [bp-14],word ptr [bp-16],word ptr [bp-18]
+	mov sp,bp
+	pop bp
+
+nocr4:
+	fnstsw ax
+	fnstcw wSize
+	invoke printf, CStr("FCW: %X  FSW: %X",lf), wSize, ax
+
+	mov eax, dr0
+	mov ebx, dr1
+	mov ecx, dr2
+	mov edx, dr3
+	invoke printf, CStr("DR0-DR3: %lX %lX %lX %lX",lf), eax, ebx, ecx, edx
+	mov eax, dr6
+	mov ecx, dr7
+	invoke printf, CStr("DR6: %lX  DR7: %lX",lf), eax, ecx
+	pushfd
+	pop eax
+	invoke printf, CStr("EFL: %lX, ESP: %lX",lf), eax, esp
+
+	.if !(byte ptr _msw & 1)
+		call DispSegLimits
+	.endif
+
+optional:
+	.if (bOpt & O_GDT)
+		.if byte ptr [_msw] & 1	;v86 mode?
+			call DispGDT
+		.else
+			invoke printf, CStr("no GDT in real-mode",lf)
+		.endif
+	.endif
+	.if (bOpt & O_IDT)
+		.if byte ptr [_msw] & 1	;v86 mode?
+			call DispIDT
+		.else
+			invoke printf, CStr("no IDT in real-mode",lf)
+		.endif
+	.endif
+	.if (bOpt & O_PD)
+		.if byte ptr [_msw] & 1	;v86 mode?
+			call DispPD
+		.else
+			invoke printf, CStr("no paging tables in real-mode",lf)
+		.endif
+	.endif
+	.if (bOpt & O_TSS)
+		.if byte ptr [_msw] & 1	;v86 mode?
+			call DispAllTSS
+		.else
+			invoke printf, CStr("no TSS in real-mode",lf)
+		.endif
+	.endif
+
+exit:
+	mov al,0
+	ret
+
+main endp
+
 
 start:
 	mov ax,@data
@@ -717,7 +919,16 @@ start:
 	add bx,sp
 	mov ss,ax
 	mov sp,bx
+	mov [brk],sp
+	mov cx, es
+	sub ax, cx
+	mov bx, 1000h	;request a full 64kB dgroup
+	add bx, ax
+	mov ah, 4Ah
+	int 21h
+	jc @F
 	call main
+@@:
 	mov ah,4Ch
 	int 21h
 

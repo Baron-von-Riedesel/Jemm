@@ -9,9 +9,10 @@
 	.model small
 DGROUP group _TEXT
 
-ifndef MAXXBDA
-MAXXBDA equ 4		;max size of XBDA in KB
-endif
+;ifndef MAXXBDA
+;MAXXBDA equ 4		;max size of XBDA in KB
+;endif
+
 XBDAADR equ 000Eh	;address of XBDA segment in BIOS data region
 MEMSIZE equ 0013h	;size of memory in kB in BIOS data region
 ?WELCOME equ 0		;display message at start
