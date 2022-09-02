@@ -1,0 +1,33 @@
+
+ v5.83:
+   - removed the option to link with MS COFF linker - current versions
+     won't accept a base of 0xf8400000.
+   - released under MIT license.
+ v5.82:
+   - fixed: JLMs with API didn't work correctly.
+   - int 2Fh, ax=1684h: when a JLM entry point is returned ( in ES:DI ),
+     AL is set to 0 to indicate success.
+ v5.76:
+   - linker changed from Digital Mars OPTLINK to jwlink
+   - VMM.ASM: bugfix in _PageFree()
+ v5.73:
+   - bugfix: Hook_V86_Int_Chain might have messed the stack.
+   - automatically alloc/free V86 breakpoint if v86 API is to be
+     installed by a device. 
+   - when the first v86 API is installed, v86 int 2Fh is hooked to
+     handle ax=1684h.
+   - Option -u added.
+ v5.72:
+   - switched to JWasm assembler
+ v5.71:
+   - bugfix: in v5.70, JLoad's assumtion about location of Jemm's TSS
+     was wrong.
+ v5.69:
+   - both '-' and '/' accepted for switches.
+   - MoveMemory added to Jemm's service table.
+   - DMA copy to/from buffer functions added.
+ v5.68:
+   - bugfix: DMA lock ignored flag to check for 64 kB border crossing.
+ v5.60:
+   - initial.
+

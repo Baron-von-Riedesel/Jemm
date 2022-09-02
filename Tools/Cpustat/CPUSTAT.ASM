@@ -262,6 +262,8 @@ getphysaddr proc stdcall uses ebx esi di linad:dword
 	mov eax, cr3
 	cmp eax, -1
 	jz error
+	cmp eax, 0		;NTVDM?
+	jz error
 	and ax, 0F000h
 	mov esi, eax
 	invoke malloc, 1000h

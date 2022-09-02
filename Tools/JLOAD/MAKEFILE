@@ -1,13 +1,17 @@
 
 # nmake makefile that creates JLOAD.EXE
 # tools used:
-# - Assembler: JWasm/Masm
-# - OMF Linker:
-#    + jwlink or
-#    + MS LINK 
-# - RAW binary Linker ( or COFF linker):
-#    + jwlink
-#    + MS LINK
+#               default      alternate
+#----------------------------------------
+# Assembler:    jwasm         MS masm
+# OMF linker:   jwlink        MS link16
+# COFF linker:  jwlink        -
+# helper        bin2inc       editpe
+
+# the 32-bit part of jwlink must be linked with base 0xF8400000;
+# this isn't possible with (all?) MS link versions!
+
+# bin2inc  translates binary files to assembly include files
 
 !ifndef DEBUG
 DEBUG = 0
@@ -31,28 +35,15 @@ LIBS  =
 MASM=0
 !endif
 
-!ifndef MSLINK32
-MSLINK32=$(MASM)
-!endif
-
 !if $(MASM)
-ASM   = @ml.exe -c -nologo -Fo$* -Fl$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
-ASM32 = @ml.exe -c -nologo -coff -Fl$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
+ASM   = ml.exe -c -nologo -Fo$* -Fl$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
+ASM32 = ml.exe -c -nologo -coff -Fl$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
 !else
-ASM   = @jwasm.exe -c -nologo -Fl$* -Fo$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
-ASM32 = @jwasm.exe -c -nologo -Fl$* -coff -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
+ASM   = jwasm.exe -c -nologo -Fl$* -Fo$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
+ASM32 = jwasm.exe -c -nologo -Fl$* -coff -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
 !endif
 
-#LINK16  = link16.exe
-#LOPTS = /MAP:FULL/NOE/NON/ONERROR:NOEXE
-LINK16  = jwlink.exe
-
-LOPTS = op m=$*.MAP
-!if $(MSLINK32)
-LINK32=@link.exe /nologo /filealign:0x200 /fixed /driver /subsystem:native /base:0xF83F0000 /align:0x10000 /MAP /MERGE:DATA_=.text
-!else
-LINK32=@jwlink.exe format raw bin op offset=0xF8400000, map, start='_start@0',quiet
-!endif
+LINK32=
 INC32=jload.inc jload32.inc debug.inc ..\..\src\Jemm32.inc                    ..\..\Include\jlm.inc
 INC16=jload.inc             debug.inc ..\..\src\Jemm32.inc ..\..\src\Jemm.inc ..\..\Include\jlm.inc
 
@@ -62,31 +53,24 @@ $(OUTDIR):
 	@mkdir $(OUTDIR)
 
 $(OUTDIR)\$(NAME).EXE: $(OUTDIR)\$(NAME).obj MAKEFILE
-#	$(LINK16) $*.OBJ $(LOPTS), $*.EXE, $*.MAP, $(LIBS);
-	@$(LINK16) format dos file $*.OBJ $(LOPTS) name $*.EXE op quiet
+#	@link16.exe /MAP:FULL/NOE/NON/ONERROR:NOEXE $*.OBJ, $*.EXE, $*.MAP, $(LIBS);
+	@jwlink.exe format dos file $*.OBJ name $*.EXE op q,m=$*.MAP
 
 $(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).inc $(INC16)
-	$(ASM) $(NAME).asm
+	@$(ASM) $(NAME).asm
 
 $(OUTDIR)\$(NAME32).INC: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
-	@cd $(OUTDIR)
-!if $(MSLINK32)
-	$(LINK32) $(NAME32).obj $(VXD1).obj $(VXD4).obj /OUT:$(NAME32).bin 
-	@..\..\extrsect.exe -i -q -x 0 $(NAME32).bin $(NAME32).inc
-!else
-	$(LINK32) f { $(NAME32).obj $(VXD1).obj $(VXD4).obj } name $(NAME32).bin
-	@..\..\bin2inc.exe $(NAME32).bin $(NAME32).inc
-!endif
-	@cd ..
+	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start='_start@0'
+	@..\bin2inc.exe $*.bin $*.inc
 
 $(OUTDIR)\$(NAME32).obj: $(NAME32).asm $(INC32) MAKEFILE
-	$(ASM32) -Fl$(OUTDIR)\$(NAME32).LST -Fo$(OUTDIR)\$(NAME32).OBJ $(NAME32).asm
+	@$(ASM32) -Fl$(OUTDIR)\$(NAME32).LST -Fo$(OUTDIR)\$(NAME32).OBJ $(NAME32).asm
 
 $(OUTDIR)\$(VXD1).obj: $(VXD1).asm $(INC32) MAKEFILE
-	$(ASM32) -Fl$(OUTDIR)\$(VXD1).LST -Fo$(OUTDIR)\$(VXD1).OBJ $(VXD1).asm
+	@$(ASM32) -Fl$(OUTDIR)\$(VXD1).LST -Fo$(OUTDIR)\$(VXD1).OBJ $(VXD1).asm
 
 $(OUTDIR)\$(VXD4).obj: $(VXD4).asm $(INC32) MAKEFILE
-	$(ASM32) -Fl$(OUTDIR)\$(VXD4).LST -Fo$(OUTDIR)\$(VXD4).OBJ $(VXD4).asm
+	@$(ASM32) -Fl$(OUTDIR)\$(VXD4).LST -Fo$(OUTDIR)\$(VXD4).OBJ $(VXD4).asm
 
 clean:
 	@del $(OUTDIR)\*.exe
