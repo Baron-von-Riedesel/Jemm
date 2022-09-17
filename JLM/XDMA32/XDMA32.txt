@@ -38,7 +38,7 @@
 
   3. History
 
-  __.__.2022: v1.5
+  20.08.2022: v1.5
 
    - ensure that busmaster flag in PCI command register is set.
    - created .data segment with variables to separate them from code.

@@ -486,8 +486,13 @@ New_IO_Handler proc
 
 New_IO_Handler endp
 
+;--- scan Jemm's table of IOTRAPENTRYs
+;--- the table defines ranges, but there may be "holes" ( untrapped ports )
+;--- so first check if the port is actually really trapped.
+
 ImportJemmIOTraps proc uses esi
 
+	@DbgOutS <"ImportJemmIOTraps",10>, ?IODBG
 	mov esi, [IO_Trap_Table]
 	lodsd
 	mov [esi-4], offset New_IO_Handler
@@ -495,56 +500,48 @@ ImportJemmIOTraps proc uses esi
 	lodsd
 	mov ecx, eax
 	jecxz @@done
-@@nextitem:
-	lodsb
+@@nextrange:
+	lodsb			; get bStart field
 	movzx edx, al
-	lodsb
+	lodsb			; get bEnd field
 	movzx eax, al
 	sub eax, edx
 	inc eax
 	push ecx
 	mov ecx, eax
-	lodsd
+	lodsd			; get dwProc field
 	push esi
 	mov esi, eax
-@@nextitem2:
+@@nextport:
 	push ecx
 	push edx
-	call Install_IO_Handler
+
+	mov eax, [dwTSSbase]
+	movzx ecx, [eax].TSSSEG.tsOfs
+	add eax, ecx
+	bt [eax], edx				; port trapped?
+	jnc @F
+	call CommitTrapPage
+	jc @F
+	mov eax, [IO_Handler_Region]
+	mov [edx*4+eax], esi
+@@:
 	pop edx
 	pop ecx
-	inc edx
-	loop @@nextitem2
+	inc edx			; next port
+	loop @@nextport
 	pop esi
 	pop ecx
-	loop @@nextitem
+	loop @@nextrange
 @@done:
 	ret
 	align 4
 
 ImportJemmIOTraps endp
 
-;--- ESI=callback
-;--- EDX=port
+;--- dx=port
 
-Install_IO_Handler proc
-	cld
-	cmp [IO_Handler_Region],0
-	jnz @@isallocated
-	push edx
-	push 0
-	push 64
-	push PR_SYSTEM
-	call _PageReserve
-	add esp,3*4
-	pop edx
-	cmp eax,-1
-	jz @@error
-	mov [IO_Handler_Region],eax
-	push edx
-	call ImportJemmIOTraps
-	pop edx
-@@isallocated:
+CommitTrapPage proc
 	movzx edx, dx
 	mov eax, edx
 	shr eax, 10		;0-FFFF -> 0-3F
@@ -568,25 +565,70 @@ Install_IO_Handler proc
 	shr eax, 10
 	bts dword ptr [IO_Handler_Pages], eax
 @@iscommitted:
-	mov eax, edx
-	shl eax, 2
-	add eax, [IO_Handler_Region]
-	cmp dword ptr [eax],0
-	jnz @@error
-	mov [eax], esi
-	mov eax, [dwTSSbase]
-	movzx ecx, [eax].TSSSEG.tsOfs
-	add eax, ecx
-	bts [eax],edx
 	clc
 	ret
 @@error:
 	stc
 	ret
+CommitTrapPage endp
+
+;--- ESI=callback
+;--- EDX=port
+
+Install_IO_Handler proc
+	cld
+	cmp [IO_Handler_Region],0
+	jnz @@isallocated
+	@DbgOutS <"Install_IO_Handler: reserve 256 kB region",10>, ?IODBG
+	push edx
+	push 0
+	push 64
+	push PR_SYSTEM
+	call _PageReserve	; reserve 64*4=256 kB [ 65536 ports, one dword per port ]
+	add esp,3*4
+	pop edx
+	cmp eax,-1
+	jz @@error
+	mov [IO_Handler_Region],eax
+	@DbgOutS <"Install_IO_Handler: region=">, ?IODBG
+	@DbgOutD eax, ?IODBG
+	@DbgOutS <10>, ?IODBG
+	push edx
+	call ImportJemmIOTraps
+	pop edx
+@@isallocated:
+	@DbgOutS <"Install_IO_Handler: port=">, ?IODBG
+	@DbgOutW edx, ?IODBG
+	@DbgOutS <10>, ?IODBG
+	call CommitTrapPage
+	jc @@error
+	mov eax, edx
+	shl eax, 2
+	add eax, [IO_Handler_Region]
+	cmp dword ptr [eax], 0		; port already trapped?
+	jnz @@error
+	mov [eax], esi
+	mov eax, [dwTSSbase]
+	movzx ecx, [eax].TSSSEG.tsOfs
+	add eax, ecx
+	bts [eax],edx				; mark port as "trapped" in IOPB
+	clc
+	ret
+@@error:
+	@DbgOutS <"Install_IO_Handler: trap port=">, ?IODBG
+	@DbgOutW edx, ?IODBG
+	@DbgOutS <"failed",10>, ?IODBG
+	stc
+	ret
 	align 4
 Install_IO_Handler endp
 
+;--- untrap port, dx=port
+
 Remove_IO_Handler proc
+	@DbgOutS <"Remove_IO_Handler: untrap port=">, ?IODBG
+	@DbgOutW edx, ?IODBG
+	@DbgOutS <10>, ?IODBG
 	xor ecx, ecx
 	cmp [IO_Handler_Region],ecx
 	jz @@error
@@ -607,16 +649,25 @@ Remove_IO_Handler proc
 	clc
 	ret
 @@error:
+	@DbgOutS <"Remove_IO_Handler: untrap port=">, ?IODBG
+	@DbgOutW edx, ?IODBG
+	@DbgOutS <"failed",10>, ?IODBG
 	stc
 	ret
 	align 4
 Remove_IO_Handler endp
+
+;--- not implemented
+;--- API?
 
 Install_Mult_IO_Handlers proc
 	stc
 	ret
 	align 4
 Install_Mult_IO_Handlers endp
+
+;--- not implemented
+;--- API?
 
 Remove_Mult_IO_Handlers proc
 	stc
@@ -810,9 +861,17 @@ v86_hook proc
 
 	movzx eax,byte ptr [ebp].Client_Reg_Struc.Client_Error  ; eax=int#
 
+ifdef _DEBUG
+	cmp ax, 2Fh
+	jnz @F
+	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh
+	jz skiplog
+@@:
+endif
 	@DbgOutS <"v86_hook: int=">, ?JLMDBG
-	@DbgOutW ax, ?JLMDBG
+	@DbgOutW eax, ?JLMDBG
 	@DbgOutS <10>, ?JLMDBG
+skiplog:
 
 	mov edx, [ecx+eax*8].HOOKV86.dwOldVec
 	mov [ebp].Client_Reg_Struc.Client_Int, edx
@@ -1414,8 +1473,9 @@ _PageDecommit proc public
 _PageDecommit endp
 
 ;--- _PageCommitPhys(page, npages, physpg, flags)
-;--- flags: use PC_INCR to map a contiguous phys region
-;--- PC_USER and PC_WRITEABLE also relevant
+;--- flags: use PC_INCR to map a contiguous phys region;
+;--- PC_USER and PC_WRITEABLE also relevant;
+;--- v5.83: added PC_CACHEWT and PC_CACHEDIS;
 ;--- returns: eax == 0 on failure
 
 _page      equ <esp+1*4>
@@ -1452,7 +1512,7 @@ _PageCommitPhys proc
 	mov dh,10h
 @@:
 	shr edi, 16
-	and edi, 7
+	and edi, (PC_WRITEABLE or PC_USER or PC_CACHEWT or PC_CACHEDIS) shr 16
 	or edi, 401h		;mark this PTE as a "mapped" page (400h)
 	shl ebx, 12
 @@nextitem2:
@@ -1503,7 +1563,7 @@ FindDevice endp
 VMM_Add_DDB proc public
 	@DbgOutS <"VMM_Add_DBB, ID=">, ?JLMDBG
 	movzx eax, [esi].VxD_Desc_Block.DDB_Req_Device_Number
-	@DbgOutW ax, ?JLMDBG
+	@DbgOutW eax, ?JLMDBG
 	@DbgOutS <10>, ?JLMDBG
 	mov edx, offset ddb_list
 @@nextitem:
@@ -1554,29 +1614,36 @@ VMM_Add_DDB endp
 ifdef _DEBUG
 	dd offset trueprevint2f
 finalint2f proc
+	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh
+	jz done
 	@DbgOutS <"finalint2f: ax=">, ?JLMDBG
-	@DbgOutW word ptr [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
+	@DbgOutW [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
 	@DbgOutS <10>, ?JLMDBG
 done:
 	stc
 	ret
 finalint2f endp
 endif
+
 ;--- a hook proc must be prefixed by the flat address
 ;--- of the variable where the previous value is stored
 
 	dd offset prevint2f
 Int2fHook proc
 
+ifdef _DEBUG
+	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh	;that happens pretty often, so don't log it
+	jz @F
+endif
 	@DbgOutS <"Int2fHook: client_ax=">, ?JLMDBG
-	@DbgOutW word ptr [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
+	@DbgOutW [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
 	@DbgOutS <10>, ?JLMDBG
-
+@@:
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 1684h
 	jnz not_ours
 	@DbgOutS <"Int2FHook: ax=1684h detected, ID=">, ?JLMDBG
 	movzx eax,word ptr [ebp].Client_Reg_Struc.Client_EBX
-	@DbgOutW ax, ?JLMDBG
+	@DbgOutW eax, ?JLMDBG
 	@DbgOutS <10>, ?JLMDBG
 	mov edx, offset ddb_list
 @@nextitem:

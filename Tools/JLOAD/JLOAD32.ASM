@@ -464,20 +464,30 @@ FreeDiscardableSections endp
 
 if ?TRACE
 
-;--- display DWORD in eax
+;--- display WORD
+
+VWORDOUT proc public
+	push eax
+	jmp VDW_2
+VWORDOUT endp
+
+;--- display DWORD
 
 VDWORDOUT proc public
 	push eax
-	shr eax,16
-	call VWORDOUT
+	mov ax,[esp+8+2]
+	call _wordout
+VDW_2::
+	mov ax,[esp+8+0]
+	call _wordout
 	pop eax
+	ret 4
 VDWORDOUT endp
-VWORDOUT proc public
-	push eax
-	mov al,ah
+
+_wordout:
+	xchg al,ah
 	call VBYTEOUT
-	pop eax
-VWORDOUT endp
+	xchg al,ah
 VBYTEOUT proc
 	pushfd
 	push eax

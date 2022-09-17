@@ -146,6 +146,8 @@ PC_FIXED        EQU 00000008H   ;PC_FIXED and/or PC_LOCKED must be set
 PC_LOCKED       EQU 00000080H
 PC_WRITEABLE    EQU 00020000H   ;also valid for _PageCommitPhys()
 PC_USER         EQU 00040000H   ;also valid for _PageCommitPhys()
+PC_CACHEWT      EQU 00080000H   ;write thru
+PC_CACHEDIS     EQU 00100000H   ;cache disable
 PC_INCR         EQU 40000000H   ;also valid for _PageCommitPhys()
 
 ; PTE bits

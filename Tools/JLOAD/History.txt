@@ -3,6 +3,9 @@
    - removed the option to link with MS COFF linker - current versions
      won't accept a base of 0xf8400000.
    - released under MIT license.
+   - fixed: import of Jemm's IO port trap ranges did additionally trap
+     "holes" in the DMA16 page register port range D0-DF.
+   - flags PC_CACHEDIS and PC_CACHEWT supported for _PageCommitPhys().
  v5.82:
    - fixed: JLMs with API didn't work correctly.
    - int 2Fh, ax=1684h: when a JLM entry point is returned ( in ES:DI ),

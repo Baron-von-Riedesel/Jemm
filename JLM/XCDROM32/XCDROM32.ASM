@@ -113,8 +113,8 @@ CMDTO   equ 00Ah        ;500-msec minimum command timeout.
 SEEKTO  equ 025h        ;2-second minimum "seek"  timeout.
 STARTTO equ 049h        ;4-second minimum startup timeout.
 BIOSTMR equ 0046Ch      ;BIOS "tick" timer address.
-;VDSFLAG equ    0047Bh      ;BIOS "Virtual DMA" flag address.
-IXM     equ 2048        ;IOCTL transfer-length multiplier.
+;VDSFLAG equ 0047Bh      ;BIOS "Virtual DMA" flag address.
+;IXM     equ 2048        ;IOCTL transfer-length multiplier.
 CR      equ 00Dh        ;ASCII carriage-return.
 LF      equ 00Ah        ;ASCII line-feed.
 TAB     equ 009h        ;ASCII "tab".
@@ -151,7 +151,7 @@ RPSubU  db  ?       ;+1 Subunit number.
 RPOp    db  ?       ;+2 Command code.
 RPStat  dw  ?       ;+3 Status field.
         db 8 dup (?);(Unused by us).
-RPUnit  db  ?       ;+12 Number of units found.
+RPUnit  db  ?       ;+13 Number of units found.
 RPSize  dw  ?       ;+14 Resident driver offset
         dw  ?
 RPCL    dd  ?       ;Command-line data pointer.
@@ -374,22 +374,22 @@ DspTblC dd  ReqDHA      ;00 -- Device-header address.
 DspLmt3 equ ( $ - offset DspTblC)/4 ;Request-code limit for this table.
 
 ;--- expected size of IOCTL input requests
-        dd  5*IXM       ;0
-        dd  6*IXM       ;1
+        dd  5       ;0
+        dd  6       ;1
         dd  0
         dd  0
         dd  0
         dd  0
-        dd  5*IXM       ;6
-        dd  4*IXM       ;7
-        dd  5*IXM       ;8
-        dd  2*IXM       ;9
-        dd  7*IXM       ;10
-        dd  7*IXM       ;11
-        dd  11*IXM      ;12
+        dd  5       ;6
+        dd  4       ;7
+        dd  5       ;8
+        dd  2       ;9
+        dd  7       ;10
+        dd  7       ;11
+        dd  11      ;12
         dd  0
         dd  0
-        dd  11*IXM      ;15
+        dd  11      ;15
 
 ;
 ; Dispatch table for IOCTL Output requests.
@@ -404,12 +404,13 @@ DspTblD dd  ReqEjct     ;00 -- Eject Disk.
         dd  ReqTray     ;05 -- Close tray.
 DspLmt4 equ ( $ - offset DspTblD)/4 ;Request-code limit for this table.
 
-        dd  1*IXM
-        dd  2*IXM
-        dd  1*IXM
+;--- expected size of IOCTL output requests
+        dd  1
+        dd  2
+        dd  1
         dd  0
         dd  0
-        dd  1*IXM
+        dd  1
 
 ;
 ; Initialization PCI Class-Code "Interface" Bytes.   The 0BAh and 0B0h
@@ -588,6 +589,12 @@ TryIOC:
     mov al,[esi]            ;Get actual IOCTL request code.
     mov esi,[dwRequest]     ;Reload DOS request-packet address.
 
+;--- Dspatch()
+;--- EDI=DTAB
+;--- DTAB+0: dd #entries
+;--- DTAB+4: dd offset error handler
+;--- DTAB+8: start dispatch table ( size #entries )
+
 Dspatch:
     xor edx,edx
     mov ecx, [edi]          ;get number of table entries
@@ -602,7 +609,10 @@ Dspatch:
     mov edi,[edi]           ;Get handler address from table.
     and edx, edx
     jz  @F
-    shr edx,11              ;Ensure correct IOCTL transfer
+
+;--- v1.5: IXM removed
+;    shr edx,11              ;Ensure correct IOCTL transfer
+
     mov [esi].IOC.IOCLen,dx ;length is set in DOS packet.
     movzx ecx,@word [esi].IOC.IOCAdr+2
     movzx esi,@word [esi].IOC.IOCAdr+0

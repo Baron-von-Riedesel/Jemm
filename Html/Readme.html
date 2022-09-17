@@ -306,7 +306,7 @@
  privileged opcodes works as expected.
 
  Optionally, in v86-mode, CPUSTAT may display GDT, IDT and page directory
- of the v86-monitor.
+ of the v86-monitor. Run "CPUSTAT -?" for more details.
 
 
  6.4. EMSSTAT
@@ -398,6 +398,7 @@
    However, it might be necessary to set option NOINVLPG.
 
  þ Some DOS programs will not work if EMS is enabled without a page frame.
+   MS CodeView v4.1, for example, may refuse to start then.
 
  þ Some DOS programs will crash if too much VCPI memory is offered. Jemm's
    default is 128MB, it can be changed with option MAX=xxx. Popular

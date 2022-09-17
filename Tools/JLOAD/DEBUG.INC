@@ -3,12 +3,24 @@
 
 ?USEMONO	equ 0
 
+ifndef ?RMDBG
 ?RMDBG   = 0	;trace real-mode
+endif
+ifndef ?INITDBG
 ?INITDBG = 0	;trace init
+endif
+ifndef ?PEDBG
 ?PEDBG   = 0	;trace PE loader
+endif
+ifndef ?IODBG
 ?IODBG   = 0	;trace IO trapping
+endif
+ifndef ?PAGEDBG
 ?PAGEDBG = 0	;trace page memory
-?JLMDBG  = 1	;trace jlm handling
+endif
+ifndef ?JLMDBG
+?JLMDBG  = 0	;trace jlm handling
+endif
 
 ifdef _DEBUG
 ?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG + ?JLMDBG
@@ -35,10 +47,8 @@ endif
 @DbgOutD macro _dword, bCond
 ifdef _DEBUG
  if bCond
-	push eax
-	mov eax, _dword
+	push _dword
 	call VDWORDOUT
-	pop eax
  endif
 endif
 	endm
@@ -48,10 +58,8 @@ endif
 @DbgOutW macro _word, bCond
 ifdef _DEBUG
  if bCond
-	push eax
-	mov ax, _word
+	push _word
 	call VWORDOUT
-	pop eax
  endif
 endif
 	endm

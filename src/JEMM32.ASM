@@ -38,7 +38,7 @@
 ;--- assembly time constants
 
 ?NMI        equ 1       ; std=1, 1=allow NMIs inside the monitor
-?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06
+?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06 if noone hooked int 6
 ?ISRFLGS    equ 0       ; std=0, 1=display PIC ISR flags
 ;?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
 ?CLEARCR4   equ 1       ; std=1, 1=clear CR4 at reboot
@@ -243,7 +243,8 @@ NUMBP equ (size BPTABLE)/4
 
 IO_Trap_Table label dword
 IO_Trap_Handler dd Default_IO_Trap_Handler
-    dd (endportmap - portmap) / size IOTRAPENTRY
+    dd (offset endportmap - offset portmap) / sizeof IOTRAPENTRY
+
 portmap label byte
 if ?DMA
     IOTRAPENTRY <000h,00Fh,Dma_HandleDmaPorts8>

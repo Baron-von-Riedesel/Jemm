@@ -66,6 +66,11 @@
  - JLMs run with interrupts disabled. If they do a lengthy operation or have
    to wait, they must "yield" to allow interrupts to be serviced.
 
+ Note that the first invokation of JLoad will actually make JLoad resident
+ in Jemm's address space. Further invokations will call the resident part.
+ This is relevant if multiple versions of JLoad are used, for example both
+ a release and a debug version.
+
 
  3. Documentation about JLoad's API
 

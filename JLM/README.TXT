@@ -3,6 +3,7 @@
 
  This directory contains some JLM samples:
 
+ AHCICD:   AHCI Optical disk driver.
  GENERIC:  protected-mode TSR sample in ASM (Masm/JWasm).
  HELLO:    "hello world" JLM in ASM (Masm/JWasm)
  HELLO2:   "hello world" JLM in C (MS VC, Open Watcom)
