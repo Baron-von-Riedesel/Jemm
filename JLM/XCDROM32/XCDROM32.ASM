@@ -119,6 +119,9 @@ CR      equ 00Dh        ;ASCII carriage-return.
 LF      equ 00Ah        ;ASCII line-feed.
 TAB     equ 009h        ;ASCII "tab".
 
+REQOFS   equ 16h
+
+
 @byte   equ <byte ptr>
 @word   equ <word ptr>
 @dword  equ <dword ptr>
@@ -160,6 +163,9 @@ RP      ends
 RPERR   equ 08003h      ;Packet "error" flags.
 RPDON   equ 00100h      ;Packet "done" flag.
 RPBUSY  equ 00200h      ;Packet "busy" flag.
+
+;--- structures
+
 ;
 ; IOCTL "Request Packet" Layout.
 ;
@@ -212,7 +218,29 @@ bDevSel     db ?    ;Device-select (set by Init).
 ;            dd ?    ;Last-session starting LBA.
 UPARM ends
 
-REQOFS   equ 16h
+;--- macros
+
+CStr macro text:vararg
+local sym
+	.const
+sym db text,0
+	.code
+	exitm <offset sym>
+endm
+
+@dprintf macro text,args:vararg
+local sym
+ifdef _DEBUG
+	.const
+sym db text,0
+	.code
+	ifnb <args>
+		invoke printf, offset sym, args
+	else
+		invoke printf, offset sym
+	endif
+endif
+endm
 
     .data
 
@@ -536,6 +564,10 @@ SIZERMCODE equ $ - offset rmcode
     db 0EAh                     ;jmp ssss:oooo
 
     .code
+
+ifdef _DEBUG
+	include printf.inc
+endif
 
 ;
 ; "Device-Interrupt" routine -- This routine processes DOS requests.
@@ -2309,7 +2341,7 @@ I_DisplayS_done:
     ret
 I_DisplayS endp
 
-DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
+DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 
     mov eax,dwReason
     cmp eax, 1

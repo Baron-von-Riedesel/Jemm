@@ -201,33 +201,17 @@ sym db text,0
     exitm <offset sym>
     endm
 
-dbgmsg macro items:VARARG
+@dprintf macro text,args:vararg
+local sym
 ifdef _DEBUG
-    for item,<items>
-      if @InStr(1,item, !")
-        pushad
-        mov esi,CStr(item)
-        call DsplyM
-        popad
-      elseif (type item) eq 4
-        mov eax,item
-        call DsplyD
-      elseif (type item) eq 2
-        mov ax,item
-        call DsplyW
-      else
-        .err <unexpected type in dbgmsg>
-      endif
-    endm
-endif
-endm
-
-dbgmsg1 macro items:VARARG
-ifdef _DEBUG
-    dbgmsg items
-    pushad
-    call DsplyEOL
-    popad
+	.const
+sym db text,0
+	.code
+	ifnb <args>
+		invoke printf, offset sym, args
+	else
+		invoke printf, offset sym
+	endif
 endif
 endm
 
@@ -362,6 +346,10 @@ DNMsg   db  ', '
 DName   db 26*2 dup (0)
 
     .code
+
+ifdef _DEBUG
+	include printf.inc
+endif
 
 ;
 ; Driver Entry Routine.  For CHS requests, the registers contain:
@@ -840,34 +828,17 @@ DspEx:
 ; Subroutine to display a character using a BIOS "Int 010h" call.
 ;
 DsplyC:
-ifdef _DEBUG        ;to allow debug messages in Int13 handler
-    pushad
-    sub esp, sizeof Client_Reg_Struc
-    mov edi, esp
-    VMMCall Save_Client_State
-endif
-    push eax        ;Save output byte.
+    push [ebp].Client_Reg_Struc.Client_EBX
+    push [ebp].Client_Reg_Struc.Client_EAX
     VMMCall Begin_Nest_Exec
-
-    mov @byte [ebp].Client_Reg_Struc.Client_EAX+1, 0Fh
-    mov eax, 10h
-    VMMCall Exec_Int
-
-    pop eax         ;Reload output byte.
-
     mov ah,0Eh
-    mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
+    mov word ptr [ebp].Client_Reg_Struc.Client_EAX, ax
+    mov byte ptr [ebp].Client_Reg_Struc.Client_EBX+1, 0
     mov eax, 10h
     VMMCall Exec_Int
-
     VMMCall End_Nest_Exec
-
-ifdef _DEBUG
-    mov esi, esp
-    VMMCall Restore_Client_State
-    add esp, sizeof Client_Reg_Struc
-    popad
-endif
+    pop [ebp].Client_Reg_Struc.Client_EAX
+    pop [ebp].Client_Reg_Struc.Client_EBX
     ret
     align 4
 
@@ -939,8 +910,7 @@ if LBACHECK
     cmp al,3
     jnz I_SErr
 endif
-    dbgmsg1 "ValDisk: disk supports DMA & LBA, 53=", word ptr [edi+53*2], \
-            " 88=", word ptr [edi+88*2]
+    @dprintf <"ValDisk: disk supports DMA & LBA, 53=%X, 88=%X",13,10>, word ptr [edi+53*2], word ptr [edi+88*2]
 
     mov bl,[edi+53*2]       ;copy "UltraDMA valid" flag to BL
     mov bh,[edi+88*2+1]     ;copy "UltraDMA mode active" flags in BH-reg.
@@ -997,7 +967,7 @@ setm_udma:
 	cmp [MaxUM],-1
 	jz nosetm
 @@:
-    dbgmsg1 "ValDisk: setting UDMA mode"
+    @dprintf <"ValDisk: setting UDMA mode",13,10>
 
     mov bh,cl           ;save it in BH for later
     push eax
@@ -1015,7 +985,7 @@ setumw:
     call WaitRdy        ;Await controller-ready.
     mov esi,CStr(' UDMA mode set failed')
     jc I_SErr
-    dbgmsg1 "ValDisk: UDMA mode set successful"
+    @dprintf <"ValDisk: UDMA mode set successful",13,10>
 nosetm:
  ife MWDMA
 nosetm_udma:
@@ -1120,7 +1090,7 @@ I_GetPorts proc
 
     mov ax, 8               ;get class code
     call Int1A_B10A
-    dbgmsg1 "GetPorts: get class code for BX=", bx, " CX=", word ptr [ebp].Client_Reg_Struc.Client_ECX
+    @dprintf <"GetPorts: get class code for BX=%X, CX=%X",13,10>, bx, word ptr [ebp].Client_Reg_Struc.Client_ECX
 if CLSBM
     test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,80h   ;BusMaster?
     stc
@@ -1128,17 +1098,17 @@ if CLSBM
 endif
     test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,1 ;native controller?
     jz islegacy
-    dbgmsg1 "GetPorts: native IDE controller"
+    @dprintf <"GetPorts: native IDE controller",13,10>
     mov ax,16+0*4           ;Get primary IDE base address
     call Int1A_B10A
-    dbgmsg1 "primary base=", word ptr [ebp].Client_Reg_Struc.Client_ECX, " - ", word ptr [edi*2+IDEAd]
+    @dprintf <"primary base=%X - %X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_ECX, word ptr [edi*2+IDEAd]
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     and cl,0FCh
     cmp cx,[edi*2+IDEAd]
     jz getDMA
     mov ax,16+2*4           ;Get secondary IDE base address
     call Int1A_B10A
-    dbgmsg1 "secondary base=", word ptr [ebp].Client_Reg_Struc.Client_ECX, " - ", word ptr [edi*2+IDEAd]
+    @dprintf <"secondary base=%X - %X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_ECX, word ptr [edi*2+IDEAd]
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     and cl,0FCh
     cmp cx,[edi*2+IDEAd]
@@ -1154,7 +1124,7 @@ islegacy:
     jz @F
     add ecx,8
 @@:
-    dbgmsg1 "GetPorts: legacy IDE controller, DMA port=", cx
+    @dprintf <"GetPorts: legacy IDE controller, DMA port=%X",13,10>, cx
     clc
 exit:
     ret
@@ -1183,7 +1153,7 @@ I_GetUDMAC proc
 if SETVD
     test [bFlags],FL_P
     jz @F
-    dbgmsg1 "GetUDMAC: using vendor/device of /P switch"
+    @dprintf <"GetUDMAC: using vendor/device of /P switch",13,10>
     mov eax,[dwVD]
     mov [ebp].Client_Reg_Struc.Client_ECX,eax
     shr eax,16
@@ -1207,10 +1177,10 @@ NextIF:
 testdev:
     jc I_Continue           ;Succeeded?
     mov ebx, [ebp].Client_Reg_Struc.Client_EBX
-    dbgmsg1 "GetUDMAC: IDE controller found, BUS/FUNC=", ebx
+    @dprintf <"GetUDMAC: IDE controller found, BUS/FUNC=%X",13,10>, ebx
     mov ax,4                ;Get PCI command + status register
     call Int1A_B10A
-    dbgmsg1 "GetUDMAC: cmd+status register=", [ebp].Client_Reg_Struc.Client_ECX
+    @dprintf <"GetUDMAC: cmd+status register=%X",13,10>, [ebp].Client_Reg_Struc.Client_ECX
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
 if CLSBM
     and ecx,1               ;Mask I-O Space bits.
@@ -1441,7 +1411,7 @@ I_NoDskDisp:
     jc  I_CHSE              ;If BIOS error, zero sectors/head.
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     mov edx,[ebp].Client_Reg_Struc.Client_EDX
-    dbgmsg1 "SetDisk: int 13,ax=8 ok, cx=", cx, " dx=", dx
+    @dprintf <"SetDisk: int 13,ax=8 ok, cx=%X dx=%X",13,10>, cx, dx
     and ecx,03Fh            ;Get sectors/head value (low 6 bits).
     inc dh                  ;Get heads/cylinder (BIOS value + 1).
     jnz I_SetC              ;If non-zero, save disk's CHS values.
@@ -1473,7 +1443,7 @@ I_SetDisk endp
 ;
 InitXDMA proc
     cld
-    dbgmsg1 "Init entry"
+    @dprintf <"Init entry",13,10>
     call I_GetParams        ;get cmdline params
     mov esi,CStr("XDMA32",VERSION, CR,LF)
     call DsplyMQ
@@ -1495,7 +1465,7 @@ InitXDMA proc
     call InitXMS            ;init XMS
     jc I_Err
 
-    dbgmsg1 "XMS allocated"
+    @dprintf <"XMS allocated",13,10>
 
     push 0
     push 16
@@ -1508,7 +1478,7 @@ InitXDMA proc
     mov dwBufferLin, eax
     shr eax, 12             ;convert linear address to page number
 
-    dbgmsg1 "Init: Buffer Address Space allocated"
+    @dprintf <"Init: Buffer Address Space allocated",13,10>
 
     push PC_INCR or PC_WRITEABLE
     mov edx, [dwBufferPhy]
@@ -1519,7 +1489,7 @@ InitXDMA proc
     VMMCall _PageCommitPhys ;backup address space with XMS memory
     add esp,4*4
 
-    dbgmsg1 "Init: Buffer committed"
+    @dprintf <"Init: Buffer committed",13,10>
 
 ;    mov ecx,offset Entry - offset startcode
 ;    mov esi,offset startcode
@@ -1529,7 +1499,7 @@ InitXDMA proc
     VxDCall VDMAD_Lock_DMA_Region
 ;    add [PRDAd],edx         ;Set relocated 32-bit PRD address.
     mov [PRDAd], edx        ;Set relocated 32-bit PRD address.
-    dbgmsg1 "Init: DMA PRD address=", edx
+    @dprintf <"Init: DMA PRD address=%X",13,10>, edx
 
 if HDNUM
     mov al,ds:[HDISKS]      ;Did BIOS find any hard-disks?
@@ -1544,7 +1514,7 @@ endif
     jz I_None               ;No?  Display "No disk" and exit!
     mov [BiosHD],al         ;Save BIOS hard-disk count.
 
-    dbgmsg1 "Int13 disk scan:"
+    @dprintf <"Int13 disk scan:",13,10>
 
 ;--- scan the HDs, max 2 times
 ;--- first with int 13h calls (ah=41h)
@@ -1559,9 +1529,7 @@ NextDev:
     mov bx, 55AAh
     call Int13
     jc I_SkipDrv            ;If none, ignore disk & check for more.
-    dbgmsg1 "Int 13h, ah=41h ok, ax=", @word [ebp].Client_Reg_Struc.Client_EAX,\
-            " bx=", @word [ebp].Client_Reg_Struc.Client_EBX,\
-            " cx=", @word [ebp].Client_Reg_Struc.Client_ECX
+    @dprintf <"Int 13h, ah=41h ok, ax=%X bx=%X cx=%X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_EAX, word ptr [ebp].Client_Reg_Struc.Client_EBX, word ptr [ebp].Client_Reg_Struc.Client_ECX 
 
 ;--- in AH EDD version is returned, ah=30 for version EDD 3.0
 
@@ -1594,9 +1562,7 @@ NextDev:
     mov ah, 48h
     call Int13
     jc I_ErED               ;Error?  Display msg. & ignore!
-    dbgmsg1 "Int 13h, ah=48h ok, ax=", @word [ebp].Client_Reg_Struc.Client_EAX,\
-            " size EDD=", word ptr [esi].EDD20.cbSize,\
-            " DPTE=", [esi].EDD20.lpCfg
+    @dprintf <"Int 13h, ah=48h ok, ax=%X, size EDD=%X, DPTE=%X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_EAX, [esi].EDD20.cbSize, [esi].EDD20.lpCfg
     cmp [esi].EDD10.cbSize, sizeof EDD20   ;is it at least EDD20?
     jb I_SkipDrv             ;No, ignore disk & check more.
     movzx ecx, @word [esi].EDD20.lpCfg+0
@@ -1620,9 +1586,7 @@ I_ErED:
     jmp I_SkipDrv
 
 I_IsEDD20:
-    dbgmsg1 "drive is EDD20, Port=", [edx].DPTE.wIDEBase,\
-            " Stat=", [edx].DPTE.wIDEAlt,\
-            " flgs=", word ptr [edx].DPTE.bFlags
+    @dprintf <"drive is EDD20, Port=%X, Stat=%X, flgs=%X",13,10>, [edx].DPTE.wIDEBase, [edx].DPTE.wIDEAlt, word ptr [edx].DPTE.bFlags
     mov ax,[edx].DPTE.wIDEBase  ;Get disk's IDE base address.
     and ax,ax
     jz I_ErED
@@ -1642,7 +1606,7 @@ I_IsEDD20:
 ;--- BIOS/drive is EDD30
 
 I_IsEDD30:
-    dbgmsg1 "drive is EDD30, szIFType=", dword ptr [esi].EDD30.szIFType
+    @dprintf <"drive is EDD30, szIFType=%X",13,10>, dword ptr [esi].EDD30.szIFType
     mov eax, dword ptr [esi].EDD30.szIFType
     cmp eax ,"ATA"          ;ATA interface?
     jz @F
@@ -1661,7 +1625,7 @@ I_IsEDD30:
     mov [edi*2+IDEAd],ax
     call I_GetUDMAC
     jnc I_EDDdone
-    dbgmsg1 "GetUDMAC failed for drive"
+    @dprintf <"GetUDMAC failed for drive",13,10>
     jmp I_SkipDrv
 
 @@:
@@ -1683,7 +1647,7 @@ I_IsEDD30:
 
 ifdef _DEBUG
     jnc I_EDDdone
-    dbgmsg1 "I_GetPorts failed for drive"
+    @dprintf <"I_GetPorts failed for drive",13,10>
     jmp I_SkipDrv
 else
     jc I_SkipDrv
@@ -1730,7 +1694,7 @@ NextDev2:
 
 I_DiskFound:
 
-    dbgmsg1 "Scanning done"
+    @dprintf <"Scanning done",13,10>
 
     mov @dword [@LastU],edi ;Post last-unit index in main driver.
 
@@ -1760,7 +1724,7 @@ I_Err:
     call DsplyM
     mov ax,RPDONE+RPERR
 I_Exit:
-    dbgmsg1 "Init exit"
+    @dprintf <"Init exit",13,10>
     ret
 InitXDMA endp
 ;
@@ -1861,7 +1825,7 @@ Int2F proc
     ret
 Int2F endp
 
-DllMain proc stdcall hModule:dword, dwReason:dword, dwRes:dword
+DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 
     .if dwReason == 1
         mov esi, dwRes
@@ -1897,7 +1861,7 @@ endif
         cmp ax, RPDONE
         setz al
         movzx edi, al
-        dbgmsg1 "exit DllMain"
+        @dprintf <"exit DllMain",13,10>
 if SAVESTAT
         mov esi, esp
         VMMCall Restore_Client_State

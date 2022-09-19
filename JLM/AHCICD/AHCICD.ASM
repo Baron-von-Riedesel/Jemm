@@ -49,39 +49,44 @@ name_	db 8 dup (?);+10
 bUnits	db ?
 DOSDRV ends
 
-;
-; DOS "Request Packet" Layout.
-;
-RP      struct
+;--- DOS "Request Packet" Layouts.
+
+RPH struct
 RPHLen  db  ?       ;+0 Header byte count.
-RPSubU  db  ?       ;+1 Subunit number.
-RPOp    db  ?       ;+2 Command code.
-RPStat  dw  ?       ;+3 Status field.
+bSubU   db  ?       ;+1 Subunit number.
+bOp     db  ?       ;+2 Command code.
+wStat   dw  ?       ;+3 Status field.
         db 8 dup (?);+5 .. +12 (reserved).
-RPUnit  db  ?       ;+13 Number of units found.
-RPSize  dd  ?       ;+14 
-CmdLine dd  ?       ;+18 Command-line data pointer.
-RP      ends
+RPH ends
 
 RPERR   equ 08003h      ;Packet "error" flags.
 RPDON   equ 00100h      ;Packet "done" flag.
 RPBUSY  equ 00200h      ;Packet "busy" flag.
-;
-; IOCTL "Request Packet" Layout.
-;
-IOC struct
-        db  13  dup (?) ;Request "header" (unused by us).
+
+;--- Init "Request Packet" Layout
+
+RPInit struct
+        RPH <>
+bUnit   db  ?       ;+13 Number of units found.
+dwFree  dd  ?       ;+14 return: far16 ptr first free byte behind driver
+CmdLine dd  ?       ;+18 Command-line data pointer.
+RPInit  ends
+
+;--- IOCTL "Request Packet" Layout
+
+RPIOC struct
+        RPH <>
         db  ?       ;+13 Media descriptor byte (Unused by us).
-IOCAdr  dd  ?       ;+14 Data-transfer address.
-IOCLen  dw  ?       ;+18 Data-transfer length.
+dwAddr  dd  ?       ;+14 Data-transfer address.
+wLength dw  ?       ;+18 Data-transfer length.
         dw  ?       ;+20 Starting sector (unused by us).
         dd  ?       ;+22 Volume I.D. pointer (unused by us).
-IOC ends
-;
-; Read Long "Request Packet" Layout.
-;
-RL struct
-        db  13  dup (?) ;Request "header" (unused by us).
+RPIOC ends
+
+;--- Read Long "Request Packet" Layout
+
+RPRL struct
+        RPH <>
 bAMode  db  ?       ;+13 Addressing mode.
 dwAddr  dd  ?       ;+14 Data-transfer address.
 wSecCnt dw  ?       ;+18 Data-transfer sector count.
@@ -89,7 +94,9 @@ dwStart dd  ?       ;+20 Starting sector number.
 bDMode  db  ?       ;+24 Data-transfer mode (raw/cooked).
 bILSize db  ?       ;+25 Interleave size.
 bILSkip db  ?       ;+26 Interleave skip factor.
-RL  ends
+RPRL  ends
+
+;--- AHCI structures
 
 HBA struct
 dwCAP   dd ?	;+0 HBA capabilities
@@ -114,7 +121,27 @@ dwSACT  dd ?	;+52 SATA active
 dwCI    dd ?	;+56 command issued
 PORT ends
 
-;--- command list header
+;--- flags dwIS field
+PIS_CPDS equ 80000000h
+PIS_TFES equ 40000000h
+PIS_HBFS equ 20000000h
+PIS_HBDS equ 10000000h
+PIS_SDBS equ 00000008h	; set device bits interrupt
+PIS_DSS  equ 00000004h	; DMA setup FIS interrupt
+PIS_PSS  equ 00000002h	; PIO setup FIS interrupt
+PIS_DHRS equ 00000001h	; device to host register FIS interrupt
+
+;--- flags dwCMD field
+PCMD_CR  equ 8000h	; RO, 1=command list DMA engine running
+PCMD_FR  equ 4000h	; RO, 1=FIS Receive running
+PCMD_FRE equ 0010h	; RW, 1=FIS Receive Enable
+PCMD_CLO equ 0008h	; RW, 1=command list override
+PCMD_POD equ 0004h	; RW, Power On Device
+PCMD_SUD equ 0002h	; RW, Spin Up Device
+PCMD_ST  equ 0001h	; RW, Start (HBA may process the command list)
+
+
+;--- AHCI command list header
 
 CLH struct
 flags1  db ?	;+0  P[7]=Prefetchable, W[6]=Write, A[5]=ATAPI, CFL[4:0]=Command FIS Length
@@ -131,6 +158,8 @@ dwBaseU  dd ?	;+4 base upper
 dwRsvd   dd ?	;+8 reserved
 dwCnt    dd ?	;+12 cnt  
 PRDT ends
+
+;--- AHCI command table
 
 CT struct
 cfis0  dd ?
@@ -183,30 +212,18 @@ pBuff       dd 0	; linear address sector buffer
 dwBuffPh    dd 0	; physical address sector buffer
 dwSector    dd 0	; current sector to read
 
-;--- cmds 00-0E
-VECTOR  DD      Init,ERROR3,ERROR3,IOCTLI,ERROR3,ERROR3,ERROR3,ERROR3
-        DD      ERROR3,ERROR3,ERROR3,ERROR3,ERROR3,EXIT,EXIT
-LVECTOR equ ($ - offset VECTOR) / sizeof dword
+wPort   dw 6 dup (0); port offsets of max. 6 CD/DVDs
+wSecCnt dw 0		; #sectors to read
+bCntArg db 0		; default value for /C option
+bCount  db 0		; found units (during init)
+bQuiet  db 0		; /Q option
+bBanner db 0		; 1=banner displayed
 
-;--- cmds 80-82
-VECT2   DD      ReadL,ERROR3,EXIT
-LVECT2  equ ($ - offset VECT2) / sizeof dword
+szMsg4  db '0 AHCI Optical Disk(s) Found',13,10,0
 
-;--- IOCTL subcmds
-IVEC    DD      IOC_GETHDR,ERROR3,ERROR3,ERROR3,ERROR3,ERROR3,IOC_DEVST,IOC_SECSIZ
-        DD      ERROR3,IOC_MEDIA
-LIVEC   equ ($ - offset IVEC) shr 2
+	.const
 
-
-wPort   DW 6 dup (0)	; port offsets (100h,180h,...)
-wSecCnt DW 0	; #sectors to read
-ERRTAB  DB 12,12,2,4,12,0,15,8,8,12,12,12,12,12,12,12
-bCntArg db 1	; default value for /C option
-bCount  db 0	; found units (during init)
-bQuiet  db 0	; /Q option
-bBanner db 0	; 1=banner displayed
-
-MSG4    DB '0 AHCI Optical Disk(s) Found',13,10,0
+ERRTAB  db 12,12,2,4,12,0,15,8,8,12,12,12,12,12,12,12
 
 rmcode label byte
 	db 2Eh, 89h, 1eh, REQOFS+0, 0	;mov cs:[16h],bx
@@ -229,7 +246,47 @@ ifdef _DEBUG
 endif
 
 DevInt proc
-	CLD
+
+	.const
+
+	align 4
+
+;--- cmds 00-0E
+Vector label dword
+	dd Init		; 0 Init
+	dd Error3	; 1 media check (block devices)
+	dd Error3	; 2 build bpb (block devices)
+	dd IOCtlInp	; 3 ioctl input
+	dd Error3	; 4 input
+	dd Error3	; 5 nondestr. input
+	dd Error3	; 6 input status (char devices)
+	dd Error3	; 7 input flush (char devices)
+	dd Error3	; 8 output
+	dd Error3	; 9 output with verify
+	dd Error3	;10 output status (char devices)
+	dd Error3	;11 output flush (char devices)
+	dd Error3	;12 ioctl output
+	dd Exit		;13 device open
+	dd Exit		;14 device close
+;	dd Error3	;15 removable media (block devices)
+LVECTOR equ ($ - offset Vector) / sizeof dword
+
+;--- cmds 128-13x
+Vect2 label dword
+	dd ReadL	;128 CD read long
+	dd Error3	;129 CD reserved
+	dd Exit		;130 CD read long prefetch
+;	dd Error3	;131 CD seek
+;	dd Error3	;132 CD play audio
+;	dd Error3	;133 CD stop audio
+;	dd Error3	;134 CD write long
+;	dd Error3	;135 CD write long verify
+;	dd Error3	;136 CD resume audio
+LVECT2 equ ($ - offset Vect2) / sizeof dword
+
+	.code
+
+	cld
 	mov ebx, [ppReq]
 	movzx eax,word ptr [ebx+0]
 	movzx ebx,word ptr [ebx+2]
@@ -237,85 +294,117 @@ DevInt proc
 	add ebx, eax			;Point to DOS request packet.
 	mov [pRequest], ebx		;linear address request header
 
-	mov [ebx].RP.RPStat,RPDON ;Init status to "done".
+	mov [ebx].RPH.wStat, RPDON;Init status to "done".
 
-	MOV AL, [EBX].RP.RPOp
+	mov al, [ebx].RPH.bOp
 
 	@dprintf <'DevInt enter, Op=%X',13,10>, eax
 
-	AND AL,AL
-	JZ @F
-	MOV AL,[bCount]
-	CMP [EBX].RP.RPSubU,AL
-	MOV AL,1
-	JNC ERRORX
-@@:
-	MOV ESI, OFFSET VECTOR
-	mov CL, LVECTOR
-	MOVZX EAX, [EBX].RP.RPOp
 	and al, al
-	JNS @F
-	MOV ESI, OFFSET VECT2
-	and AL, 7Fh
-	mov CL,LVECT2
+	jz @F
+	mov al, [bCount]
+	cmp [ebx].RPH.bSubU, al
+	mov ax, 8101h
+	jnc ExitAX
 @@:
-	CMP AL, CL
-	JNC ERROR3
-	JMP DWORD PTR [ESI+EAX*4]
-ERROR3::
-	MOV AL,3
-ERRORX::
-	MOV AH,81H
-	@dprintf <'DevInt exit, error=%X',13,10>, eax
-	STC
-	JMP EXIT1
-EXIT::
-	MOV AX, RPDON
-	@dprintf <'DevInt exit, ok',13,10>
-	CLC
-EXIT1:
-	mov EBX, [pRequest]
-	MOV [EBX].RP.RPStat, AX
+	mov esi, offset Vector
+	mov cl, LVECTOR
+	movzx eax, [ebx].RPH.bOp
+	and al, al
+	jns @F
+	mov esi, offset Vect2
+	and al, 7Fh
+	mov cl, LVECT2
+@@:
+	cmp al, cl
+	jnc Error3X
+	call dword ptr [esi+eax*4]
+ExitAX:
+	@dprintf <'DevInt exit, ax=%X',13,10>, ax
+	mov ebx, [pRequest]
+	mov [ebx].RPH.wStat, ax
 	VMMCall Simulate_Far_Ret
-	RET
+	ret
+Error3X:
+	push ExitAX
+Error3:
+	mov ax, 8103h
+	ret
+Exit:
+	mov ax, RPDON
+	ret
+
 DevInt endp
 
-;--- IO Ctl Input
-;--- calls GETHDR, DEVST, SECSIZ, MEDIA
+;--- IOCtl Input dispatcher
 
-IOCTLI:
-	movzx esi, word ptr [ebx].RP.RPSize+2
+IOCtlInp proc
+
+	.const
+
+	align 4
+
+;--- IOCTL input subcmds
+IVect   label dword
+	dd IOC_GetHdr	; 0 get device driver header address
+	dd IOC_Error3	; 1 drive head location
+	dd IOC_Error3	; 2 reserved
+	dd IOC_Error3	; 3 error statistics
+	dd IOC_Error3	; 4 audio channel info
+	dd IOC_Error3	; 5 raw data bytes
+	dd IOC_DevSt	; 6 device status
+	dd IOC_SecSize	; 7 sector size
+	dd IOC_Error3	; 8 volume size
+	dd IOC_Media	; 9 media change status
+;	dd IOC_Error3	;10 audio disk info
+;	dd IOC_Error3	;11 audio track info
+;	dd IOC_Error3	;12 audio q-channel info
+;	dd IOC_Error3	;13 audio sub-channel info
+;	dd IOC_Error3	;14 UPC code
+;	dd IOC_Error3	;15 audio status info
+LIVECT  equ ($ - offset IVect) shr 2
+
+	.code
+
+	movzx esi, word ptr [ebx].RPIOC.dwAddr+2
 	shl esi, 4
-	movzx eax, word ptr [ebx].RP.RPSize+0
+	movzx eax, word ptr [ebx].RPIOC.dwAddr+0
 	add esi, eax
-	MOVzx eax, byte ptr [ESI]
+	movzx eax, byte ptr [esi]
 	@dprintf <'DevInt, ioctl input, buffer=%X, al=%X',13,10>, esi, eax
-	CMP AL,LIVEC
-	JNC ERROR3
-	JMP DWORD PTR [eax*4+offset IVEC]
+	cmp al, LIVECT
+	jnc IOC_Error3
+	jmp [eax*4][IVect]
+IOC_Error3:
+	mov ax, 8103h
+	retn
 
-IOC_GETHDR:
+IOC_GetHdr:
 	mov eax, [pBase]
 	shl eax, 12
 	@dprintf <'DevInt, ioctl input, gethdr, return=%X',13,10>, eax
-	MOV [ESI+1], eax
-	JMP EXIT
+	mov [esi+1], eax
+IOC_done:
+	mov ax, RPDON
+	retn
 
-IOC_DEVST:
-	MOV DWORD PTR [ESI+1], 2	;DOOR LOCK ? OPEN=1 UNLOCK=2
-	JMP EXIT
+IOC_DevSt:
+	mov dword ptr [esi+1], 2	;DOOR LOCK ? OPEN=1 UNLOCK=2
+	jmp IOC_done
 
-IOC_SECSIZ:
-	MOV WORD PTR [ESI+2], SLCOOKED
-	JMP EXIT
+IOC_SecSize:
+	mov word ptr [esi+2], SLCOOKED
+	jmp IOC_done
 
-IOC_MEDIA proc
+IOCtlInp endp
+
+IOC_Media proc
 	@dprintf <'DevInt, ioctl input, media',13,10>
 	xor edi, edi
-	CALL Setup		; set EDI=command table, ebx=port offset
+	call Setup		; set EDI=command table, ebx=port offset
 
 ;--- write packet data ( 12 bytes )
-;--- 0: 48 - cmd "get event status notification"
+;--- 0: 4A - cmd "get event status notification"
 ;--- 1: 01 - bit 0=1 immediate
 ;--- 4: 10 - notification class request, bit 4=1 is "media"
 ;--- 7-8: 0008 - allocation length ( hibyte first )
@@ -327,65 +416,68 @@ IOC_MEDIA proc
 	mov [edi].CT.Pkt1, 10H
 	mov [edi].CT.Pkt2, 8
 
-	CALL Req8
-	AND AL, AL
-	JNZ MEDCHG
+	call Req8
+	and al, al
+	jnz MedChg
 
 ;--- request has returned 8 bytes,
 ;--- 0-3: event header (0-1 event data length, hibyte first)
 ;--- 4-7: event data ( 0=media event [bit 0-3], 1=media status [bit 0-1])	
 
 	mov eax, [pBuff]
-	MOV AX, [eax+4]
+	mov ax, [eax+4]
 
-	AND AL, AL
-	JNZ MEDCHG
-	TEST AH, 2  ; bit 1=1 if media present
-	JZ MEDCHG
-	MOV BYTE PTR [ESI+1], 1
-	JMP MEDEND
-MEDCHG:
-	MOV BYTE PTR [ESI+1], 0
-MEDEND:
-	CALL Setup
-	CALL ReqSense
+	and al, al
+	jnz MedChg
+	test ah, 2  ; bit 1=1 if media present
+	jz MedChg
+	mov byte ptr [esi+1], 1
+	jmp MedEnd
+MedChg:
+	mov byte ptr [esi+1], 0
+MedEnd:
+	call Setup
+	call ReqSense
 
 	mov eax, [pBuff]
-	MOV AL, [eax+2]
+	mov al, [eax+2]
 
-	AND AL, 15
-	JZ EXIT
-	MOV BYTE PTR [ESI+1], 0
-	CMP AL, 6
-	JZ MEDEND
-	JMP EXIT
-IOC_MEDIA endp
+	and al, 15
+	jz @F
+	mov byte ptr [esi+1], 0
+	cmp al, 6
+	jz MedEnd
+@@:
+	mov ax, RPDON
+	ret
+IOC_Media endp
 
 ;--- read sector(s)
 ;--- in: ebx=RL
 
 ReadL proc
-	@dprintf <'DevInt, readl',13,10>
-	CMP [EBX].RL.bAMode, 0
-	JNZ ERROR3
-	CMP [EBX].RL.bDMode, 0
-	JNZ ERROR3
+	mov al, 3
+	cmp [ebx].RPRL.bAMode, 0; High Sierra addressing mode?
+	jnz ErrorAL
+	cmp [ebx].RPRL.bDMode, 0; 0=cooked, 1=raw
+	jnz ErrorAL
 
-	MOVzx EAX, word ptr [EBX].RL.dwAddr+0
-	movzx EDX, word ptr [ebx].RL.dwAddr+2
+	movzx eax, word ptr [ebx].RPRL.dwAddr+0
+	movzx edx, word ptr [ebx].RPRL.dwAddr+2
 	shl edx, 4
 	add eax, edx
-	MOV [pDest], EAX
+	mov [pDest], eax
 
-	MOV AX, [EBX].RL.wSecCnt
-	MOV [wSecCnt], AX
-	MOV EAX, [EBX].RL.dwStart
-	MOV [dwSector], EAX
+	mov cx, [ebx].RPRL.wSecCnt
+	mov eax, [ebx].RPRL.dwStart
+	mov [wSecCnt], cx
+	mov [dwSector], eax
+	@dprintf <'DevInt, readl, start=%X, sectors=%X, dst=%X',13,10>, eax, cx, pDest
 	xor edi, edi
 ReadLP:
-	CMP [wSecCnt], 0
-	JZ EXIT
-	CALL Setup			; set EDI=command table, ebx=port offset
+	cmp [wSecCnt], 0
+	jz Exit
+	call Setup			; set EDI=command table, ebx=port offset
 
 ;--- write packet data ( 12 bytes )
 ;--- 0: cmd 28 ( read )
@@ -395,13 +487,13 @@ ReadLP:
 ;--- 7-8: transfer length [sector count] ( high byte first )
 ;--- 9: control
 
-	MOV ECX, [dwSector]
+	mov ecx, [dwSector]
 	movzx eax, cx
-	SHR ECX, 16
-	XCHG AL, AH
-	XCHG CL, CH
-	SHL ECX, 16
-	MOV CL, 28H
+	shr ecx, 16
+	xchg al, ah
+	xchg cl, ch
+	shl ecx, 16
+	mov cl, 28H
 
 ;--- ACMD.00: 28h (opcode "read cooked"),00,Sector.04,Sector.03
 ;--- ACMD.04: Sector.02, Sector.01, group#, length.02
@@ -410,34 +502,39 @@ ReadLP:
 	mov [edi].CT.Pkt1, eax
 	mov [edi].CT.Pkt2, 1
 
-	@dprintf <'DevInt, ReadL, calling ReqECX',13,10>
-	MOV ECX, 800007FFH	; PRDT.0C: FF,07,00,80  (PRC=7FF transfer 2048 bytes, 80=I)
-	CALL ReqECX
-	AND AL,AL
-	JZ GOOD
-	CALL Setup
-	CALL ReqSense
-	AND AL,AL
-	JNZ ERRORX
-	mov eax, [pBuff]
-	MOV AL, [eax+2]
-	AND AL, 15
-	mov EBX, OFFSET ERRTAB
-	XLAT
-	JMP ERRORX
-
-GOOD:
-	MOV ECX, SLCOOKED / sizeof dword
-	mov EDI, [pDest]
+	mov ecx, 800007FFH	; PRDT.0C: FF,07,00,80  (PRC=7FF transfer 2048 bytes, 80=I)
+	call ReqECX
+	and al, al
+	jnz readerr
+	push edi
+	mov ecx, SLCOOKED / sizeof dword
+	mov edi, [pDest]
 	mov esi, [pBuff]
-	@dprintf <'DevInt, readl, GOOD, src=%X, dst=%X',13,10>, esi, edi
-	CLD
-	REP MOVSD
-
-	ADD [pDest], SLCOOKED
-	INC [dwSector]
-	DEC [wSecCnt]
-	JMP ReadLP
+	cld
+	rep movsd
+	pop edi
+	add [pDest], SLCOOKED
+	inc [dwSector]
+	dec [wSecCnt]
+	jmp ReadLP
+readerr:
+	call Setup
+	call ReqSense
+	and al, al
+	jnz ErrorAL
+	mov eax, [pBuff]
+	mov al, [eax+2]
+	and al, 15
+	mov ebx, offset ERRTAB
+	xlat
+ErrorAL:
+	mov ah, 81h
+	@dprintf <'DevInt, readl, error, ax=%X',13,10>, ax
+	ret
+Exit:
+	@dprintf <'DevInt, readl, ok',13,10>
+	mov ax, RPDON
+	ret
 ReadL endp
 
 ;--- in:
@@ -449,8 +546,8 @@ ReadL endp
 Setup proc
 	cmp edi, 0			; first call?
 	jnz @F
-	MOVZX EAX, byte ptr [EBX+1]
-	MOVZX EBX, [eax*2][wPort]
+	movzx eax, byte ptr [ebx+1]
+	movzx ebx, [eax*2][wPort]
 	add ebx, [pHBA]
 
 ;--- get command list/table bases.
@@ -459,7 +556,7 @@ Setup proc
 	mov eax, dword ptr [ebx].PORT.dqCLB	; get command list base
 	mov edi, [eax].CLH.CTBA0			; get command table base address
 
-	@dprintf <'DevInt, setup, port=%X cmdlist=%X cmdtable=%X',13,10>, ebx, eax, edi
+	@dprintf <'DevInt, setup, cmdlist=%X',13,10>, eax
 
 ;--- CLH.00: 25,00,01,00 [CFL=5 dwords, A=1, PRD table length=1]
 ;--- CLH.04: 00,00,00,00 [PRD byte count=0]
@@ -478,29 +575,31 @@ Setup proc
 
 ;--- set base; must be physical address
 
-	MOV ECX, [dwBuffPh]
+	mov ecx, [dwBuffPh]
 	mov [edi].CT.p0.dwBase, ecx
-	XOR ECX, ECX
+	xor ecx, ecx
 	mov [edi].CT.p0.dwBaseU, ecx
 	mov [edi].CT.p0.dwRsvd, ecx
 
-	XOR ECX, ECX
+	xor ecx, ecx
 	mov [ebx].PORT.dwIE, ecx
-	MOV ECX, -1
+	or ecx, -1
 	mov [ebx].PORT.dwIS, ecx
 	mov [ebx].PORT.dwSERR, ecx
 	mov ecx, [ebx].PORT.dwCMD
-	OR CL, 10H			; P.CMD.FRE
+	or cl, PCMD_FRE		; enable FIS receive
 	mov [ebx].PORT.dwCMD, ecx
-	OR CL, 1			; P.CMD.ST
+	or cl, PCMD_ST		; start processing command list
 	mov [ebx].PORT.dwCMD, ecx
-	@dprintf <'DevInt, setup done, waiting',13,10>
+	@dprintf <'DevInt, setup, port=%X, cmdtable=%X, waiting',13,10>, ebx, edi
 @@:
 	mov eax, [ebx].PORT.dwCMD
-	TEST AX, 8000H		; P.CMD.CR
-	JZ @B
-	RET
+	test ax, PCMD_CR	; command list running?
+	jz @B
+	ret
 Setup endp
+
+;--- initiate "request sense notification" cmd
 
 ReqSense proc
 
@@ -524,7 +623,7 @@ ReqSense endp
 ;--- Req8: read 8 bytes into buffer
 
 Req8:
-	MOV ECX, 80000007H	; PRDT.12: 07,00,00,80 (PRC=7; read 8 bytes, 80=I)
+	mov ecx, 80000007H	; PRDT.12: 07,00,00,80 (PRC=7; read 8 bytes, 80=I)
 
 ;--- ReqECX: 
 ;--- in: ecx: read ECX+1 bytes ( bit 31 = 1, indicating end of table )
@@ -532,88 +631,85 @@ Req8:
 ;---     ebx: port
 ;--- out: AL=0 ok, AL=12 error
 
-
 ReqECX proc
 	mov [edi].CT.p0.dwCnt, ecx
-	mov [ebx].PORT.dwCI, 1	; 1=slot 0
-WAITEN:
+	mov [ebx].PORT.dwCI, 1	; bitmask, 1=slot 0 command issued
+contwait:
 	mov eax, [ebx].PORT.dwCI
-	AND EAX, EAX
-	JZ FIN
+	and eax, eax
+	jz done
 	mov eax, [ebx].PORT.dwIS
-	TEST EAX, 40000000H	; P.IS.30
-	JNZ FINERR
+	test eax, PIS_TFES
+	jnz error
+	VMMCall Yield
 	mov eax, [ebx].PORT.dwSERR
-	AND EAX, EAX
-	JZ WAITEN
-FINERR:
-	CALL Stop
-	MOV AL, 12
+	and eax, eax
+	JZ contwait
+error:
+	call Stop
+	mov al, 12
 	ret
-FIN:
+done:
 	mov eax, [ebx].PORT.dwTFD
-	TEST AL, 1
-	JNZ FINERR
-	CALL Stop
-	XOR EAX, EAX
-	RET
+	test al, 1
+	jnz error
+	call Stop
+	xor eax, eax
+	ret
 
 Stop:
 	mov ecx, [ebx].PORT.dwCMD
-	OR CL, 8
-	AND CL, 0EEH
+	or cl, PCMD_CLO
+	and cl, 0EEH		; good idea to reset PCMD_ST and PCMD_FRE here?
 	mov [ebx].PORT.dwCMD, ecx
-	RETN
+	retn
 
 ReqECX endp
 
-;--- in: EDX = ADDR+80000000h
-;--- out: EAX = value
+;--- read PCI config address/data ports
+;--- in: edx = addr+80000000h
+;--- out: eax = value
 
 GetPCI proc
-	PUSH EDX
-	PUSH EBX
-	PUSH EDX
-	MOV DX, 0CF8H
-	IN EAX, DX
-	MOV EBX, EAX
-	POP EAX
-	OUT DX, EAX
-	MOV DL, 0FCH
-	IN EAX, DX
-	MOV DL, 0F8H
-	PUSH EAX
-	MOV EAX, EBX
-	OUT DX, EAX
-	POP EAX
-	POP EBX
-	POP EDX
-	RET
+	push edx
+	mov eax, edx
+	mov dx, 0cf8h
+	out dx, eax
+	mov dl, 0fch
+	in eax, dx
+	pop edx
+	ret
 GetPCI endp
+
+SavePCI proc
+	mov dx, 0cf8h
+	in eax, dx
+	mov ebx, eax
+	ret
+SavePCI endp
+
+RestPCI proc
+	mov dx, 0cf8h
+	mov eax, ebx
+	out dx, eax
+	ret
+RestPCI endp
 
 if 0
 
-;--- in: EDX = ADDR+80000000h, EAX = VALUE
+;--- in: edx = addr+80000000h, eax = value
 
 PutPCI proc
-	PUSH EDX
-	PUSH EBX
-	PUSH EAX
-	PUSH EDX
-	MOV DX, 0CF8H
-	IN EAX, DX
-	MOV EBX, EAX
-	POP EAX
-	OUT DX, EAX
-	MOV DL, 0FCH
-	POP EAX
-	OUT DX, EAX
-	MOV DL, 0F8H
-	MOV EAX, EBX
-	OUT DX, EAX
-	POP EBX
-	POP EDX
-	RET
+	push edx
+	push eax
+	mov eax, edx
+	mov dx, 0cf8h
+	out dx, eax
+	mov dl, 0fch
+	pop eax
+	out dx, eax
+	pop edx
+	ret
 PutPCI endp
 
 endif
@@ -646,7 +742,7 @@ dispBanner proc
 	jnz @F
 	mov bBanner, 1
 	push edx
-	MOV EDX, CStr('AHCI Optical Disk Driver v1.2',13,10,"Inspired by Rudolph R. Loew's AHCICD",13,10)
+	mov edx, CStr('AHCI Optical Disk Driver v1.2',13,10,"Inspired by Rudolph R. Loew's AHCICD",13,10)
 	call dispString
 	pop edx
 @@:
@@ -661,63 +757,63 @@ Init proc
 ;--- scan cmdline args
 
 nextchar:
-	LODSB
-	CMP AL, ' '
+	lodsb
+	cmp al, ' '
 	jz nextchar
-	CMP AL, 9
+	cmp al, 9
 	jz nextchar
 	cmp al, 13
 	jz donecmdl
 	cmp al, 0
 	jz donecmdl
-	CMP AL, '/'
-	JNZ errcmdl
-	LODSB
+	cmp al, '/'
+	jnz errcmdl
+	lodsb
 	mov ah, [esi]
 	or al, 20h
-	CMP AX, ':c'
-	Jz isOptC
-	CMP AX, ':d'
-	Jz isOptD
-	CMP AL, 'q'
-	Jz isOptQ
+	cmp ax, ':c'
+	jz isOptC
+	cmp ax, ':d'
+	jz isOptD
+	cmp AL, 'q'
+	jz isOptQ
 	jmp errcmdl
 
 isOptD:
 	inc esi
 	mov edi, [pBase]
-	add EDI, DOSDRV.name_
+	add edi, DOSDRV.name_
 	mov dword ptr [edi+0], '    '
 	mov dword ptr [edi+4], '    '
-	MOV ECX, sizeof DOSDRV.name_
-ARG1:
-	LODSB
-	CMP AL, ' '
+	mov ecx, sizeof DOSDRV.name_
+nextdevchar:
+	lodsb
+	cmp al, ' '
 	jbe doneOptD
-	CMP AL, 'a'
-	JB @F
-	CMP AL, 'z'
-	JA @F
-	SUB AL, 20H
+	cmp al, 'a'
+	jb @F
+	cmp al, 'z'
+	ja @F
+	sub al, 20H
 @@:
-	STOSB
-	LOOP ARG1
+	stosb
+	loop nextdevchar
 	inc esi
 doneOptD:
 	dec esi
 	jmp nextchar
 isOptC:
 	inc esi
-	LODSB
-	CMP AL, '0'
+	lodsb
+	cmp al, '0'
 	jb errcmdl
-	CMP AL, '9'
+	cmp al, '9'
 	Ja errcmdl
-	SUB AL, '0'-1
-	MOV [bCntArg], AL
+	sub al, '0'
+	mov [bCntArg], al
 	jmp nextchar
 isOptQ:
-	MOV [bQuiet], 1
+	mov [bQuiet], 1
 	jmp nextchar
 
 donecmdl:
@@ -728,27 +824,33 @@ donecmdl:
 
 ;--- scan for AHCI devices
 
-	MOV EDX,80000008H
+	call SavePCI
+	mov edx, 80000008H
 nextHBA:
-	CALL GetPCI
+	call GetPCI
 	mov al, 0			; clear bits 0-7 (interface doesn't matter)
-	CMP EAX, 1060100H	; AHCI device?
-	JZ foundHBA
-skipHBA:
-	ADD EDX, 100H
-	CMP EDX, 81000008H
-	JC nextHBA
-	JMP errnodisk
+	cmp eax, 1060100H	; AHCI device?
+	jnz @F
+	dec [bCntArg]		; /C:x argument?
+	js  foundHBA
+@@:
+	VMMCall Yield
+	add edx, 100H		; next "function"
+	cmp edx, 81000008H
+	jc nextHBA
+	call RestPCI
+	jmp errnodisk
 
 foundHBA:
-	DEC [bCntArg]       ; /C:x argument?
-	JNZ skipHBA
+	@dprintf <'found AHCI device at PCI=%X',13,10>, edx
 
 	mov dl, 24h			;get ABAR5
 	call GetPCI
 	mov edi, eax
 
-	@dprintf <'HBA physical addr=%X',13,10>, eax
+	call RestPCI
+
+	@dprintf <'HBA physical addr=%X',13,10>, edi
 
 	push 0
 	push 1
@@ -762,56 +864,53 @@ foundHBA:
 
 	@dprintf <'HBA mapped at linear addr=%X',13,10>, eax
 
-	shr eax, 12		;convert linear address to page#
+	shr eax, 12		; convert linear address to page#
 	shr edi, 12
 	push PC_WRITEABLE
 	push edi
-	push 1
+	push 1			; map 1 page ( in theory 2 might be needed )
 	push eax
 	VMMCall _PageCommitPhys
 	add esp, 4*4
 
 	mov eax, [ebx].HBA.dwGHC	; get Global HBA Control
 	@dprintf <'HBA.GHC=%X',13,10>, eax
-	TEST EAX, 80000000H	; AHCI enabled?
-	JZ errnoahci
+	test eax, 80000000H	; AHCI enabled?
+	jz errnoahci
 
 	mov ecx, [ebx].HBA.dwPI	; get ports implemented (bit mask)
 	@dprintf <'HBA.Ports=%X',13,10>, ecx
 
-	mov edx, 100h		; port offsets are 100h, 180h, 200h, 280h, ...
+	mov edx, 100h		; port offsets are 100h, 180h, 200h, 280h, ..., 1080h
 	mov edi, offset wPort
 nextPort:
-	AND ECX, ECX
-	JZ donePort
-	TEST CL, 1
-	JNZ foundPort
-skipPort:
-	SHR ECX, 1
-	ADD EDX, 80H
-	JMP nextPort
-foundPort:
-	mov eax, [ebx+EDX].PORT.dwSIG	; get signature
-	CMP EAX, 0EB140101H
-	JNZ skipPort
+	shr ecx, 1
+	jnc @F
+	mov eax, [ebx+edx].PORT.dwSIG	; get signature
+	cmp eax, 0EB140101H
+	jnz @F
 	@dprintf <'found ATAPI device at port=%X',13,10>, edx
-	mov eax, [ebx+EDX].PORT.dwSSTS	; get SATA status
+	mov eax, [ebx+edx].PORT.dwSSTS	; get SATA status
 	@dprintf <'device status=%X',13,10>, eax
-	AND AL, 0FH			; bits 0-3: device detection
-	CMP AL, 3			; device detected and communication established?
-	JNZ skipPort
+	and al, 0FH			; bits 0-3: device detection
+	cmp al, 3			; device detected and communication established?
+	jnz @F
 	mov eax, edx
 	stosw
-	CMP edi, offset wPort + sizeof wPort; table end reached?
-	jb skipPort
-donePort:
+	cmp edi, offset wPort + sizeof wPort; table end reached?
+	jz donePort
+@@:
+	add edx, 80H
+	and ecx, ecx
+	Jnz nextPort
 
+donePort:
 	sub edi, offset wPort
 	shr edi, 1
-	MOV ecx, edi
+	mov ecx, edi
 	cmp ecx, 0
-	JZ errnodisk
-	MOV [bCount], CL
+	jz errnodisk
+	mov [bCount], cl
 
 	mov esi, offset buffer+15
 	and esi, not 15		; align buffer to paragraph
@@ -823,32 +922,32 @@ donePort:
 	@dprintf <'physical address sector buffer=%X',13,10>, edx
 
 	mov ebx, [pBase]
-	MOV AL, [bCount]
+	mov al, [bCount]
 	mov [ebx].DOSDRV.bUnits, al
 	cmp [bQuiet], 0
 	jnz @F
-	add [MSG4], AL
-	MOV EDX, OFFSET MSG4
+	add [szMsg4], al
+	mov edx, offset szMsg4
 	call dispString
 @@:
 	mov ebx, [pRequest]
-	MOV WORD PTR [EBX].RP.RPSize+0, REQOFS+4+SIZERMCODE+5
+	mov word ptr [ebx].RPInit.dwFree+0, REQOFS+4+SIZERMCODE+5
 	mov ax, RPDON
-	mov [ebx].RP.RPStat, ax
-	mov [ebx].RP.RPUnit, 0
+	mov [ebx].RPInit.wStat, ax
+	mov [ebx].RPInit.bUnit, 0
 	ret
 
 errpr:
-	MOV eDX, CStr('_PageReserve() failed',13,10)
-	JMP @F
+	mov edx, CStr('_PageReserve() failed',13,10)
+	jmp @F
 errnoahci:
-	MOV eDX, CStr('AHCI Controller not in AHCI Mode',13,10)
-	JMP @F
+	mov edx, CStr('AHCI Controller not in AHCI Mode',13,10)
+	jmp @F
 errcmdl:
-	MOV eDX, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/Q] /D:devname [/C:#]',13,10)
-	JMP @F
+	mov edx, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/Q] /D:devname [/C:#]',13,10)
+	jmp @F
 errnodisk:
-	MOV eDX, CStr('No AHCI Optical Disk Found',13,10)
+	MOV edx, CStr('No AHCI Optical Disk Found',13,10)
 @@:
 	call dispBanner
 	call dispString
@@ -856,7 +955,7 @@ errnodisk:
 	ret
 Init endp
 
-DllMain proc stdcall uses esi edi hModule:dword, dwReason:dword, dwRes:dword
+DllMain proc stdcall public uses esi edi hModule:dword, dwReason:dword, dwRes:dword
 
 local pCmdLine:dword
 
