@@ -9,6 +9,7 @@
 
 	include jlm.inc
 
+?RELOC   equ 1      ; relocate Port.CLB, Port.FB, Commandlist[0].CTBA
 REQOFS   equ 16h
 SLCOOKED equ 2048
 
@@ -106,8 +107,8 @@ dwPI    dd ?	;+12 ports implemented
 HBA ends
 
 PORT struct
-dqCLB   dq ?	;+0  Command list base
-dqFB    dq ?	;+8  (received) FIS base
+dqCLB   dq ?	;+0  Command list base addr ( 1 kB aligned )
+dqFB    dq ?	;+8  (received) FIS base addr ( 256 B aligned )
 dwIS    dd ?	;+16 interrupt status
 dwIE    dd ?	;+20 interrupt enable
 dwCMD   dd ?	;+24 command and status
@@ -148,8 +149,9 @@ flags1  db ?	;+0  P[7]=Prefetchable, W[6]=Write, A[5]=ATAPI, CFL[4:0]=Command FI
 flags2  db ?	;+1  PMP[15:12]=Port Multiplier Port, R[11]=Reserved, C[10]=Clear Busy, B[9]=BIST, R[8]=Reset
 PRDTL   dw ?	;+2  Physical Region Descriptor Table Length
 PRDBC   dd ?	;+4  Physical Region Descriptor Byte Count
-CTBA0   dd ?	;+8  Command Table Base Address
-CTBA_U0 dd ?	;+12 Command Table Base Address Upper
+dwCTBA  dd ?	;+8  Command Table Base Address bits 0-31 (128 byte aligned)
+dwCTBAU dd ?	;+12 Command Table Base Address bits 32-63
+	dd 4 dup (?)
 CLH ends
 
 PRDT struct
@@ -166,11 +168,11 @@ cfis0  dd ?
 cfis1  dd ?
 cfis2  dd ?
 cfis3  dd ?
-       org 40h	; offset ATAPI in command table
+       db 30h dup (?)	; 40h=offset ATAPI in command table
 Pkt0   dd ?
 Pkt1   dd ?
 Pkt2   dd ?
-       org 80h	; offset PRDT in command table
+       db 34h dup (?)	; 80h=offset PRDT in command table
 p0     PRDT <>
 CT ends
 
@@ -201,25 +203,38 @@ PktRM   db  0       ;+9 Read mode ("Raw" Read Long only).
 Packet ends
 endif
 
-	.data
+	.data?
 
-ppReq       dd 0	; linear address where request header is stored
-pRequest    dd 0	; linear address request header
-pBase       dd 0	; linear address driver base
-pDest       dd 0	; linear address destination
-pHBA        dd 0	; linear address HBA
-pBuff       dd 0	; linear address sector buffer
-dwBuffPh    dd 0	; physical address sector buffer
-dwSector    dd 0	; current sector to read
+if ?RELOC
+cmdlst	CLH 32 dup (<>)	; must be 1024 B aligned
+fis		db 100h dup (?)	; must be 256 B aligned
+cmdtab  CT <>			; must be 128 B aligned
+endif
+buffer db SLCOOKED dup (?)
 
-wPort   dw 6 dup (0); port offsets of max. 6 CD/DVDs
-wSecCnt dw 0		; #sectors to read
-bCntArg db 0		; default value for /C option
-bCount  db 0		; found units (during init)
-bQuiet  db 0		; /Q option
-bBanner db 0		; 1=banner displayed
 
-szMsg4  db '0 AHCI Optical Disk(s) Found',13,10,0
+ppReq       dd ?	; linear address where request header is stored
+pRequest    dd ?	; linear address request header
+pBase       dd ?	; linear address driver base
+pDest       dd ?	; linear address destination
+pHBA        dd ?	; linear address HBA
+pBuff       dd ?	; linear address sector buffer
+dwBuffPh    dd ?	; physical address sector buffer
+dwSector    dd ?	; current sector to read
+if ?RELOC
+pCLB        dd ?	; linear address Port[x].CLB
+pCTBA       dd ?	; linear address CL[0].CTBA
+endif
+
+wPort   dw 6 dup (?); port offsets of max. 6 CD/DVDs
+wSecCnt dw ?		; #sectors to read
+bCount  db ?		; found units (during init)
+bCntArg db ?		; /C option default value
+bQuiet  db ?		; /Q option
+if ?RELOC
+bReloc  db ?		; /R option
+endif
+bBanner db ?		; 1=banner displayed
 
 	.const
 
@@ -231,13 +246,6 @@ rmcode label byte
 	db 0CBh 						;retf
 SIZERMCODE equ $ - offset rmcode	
 	db 0EAh 						;jmp ssss:oooo
-
-	.data?
-
-;--- sector buffer, para aligned.
-;--- perhaps better to use the VDS buffer as xcdrom32 does?
-
-buffer db SLCOOKED+16 dup (?)
 
 	.code
 
@@ -286,15 +294,12 @@ LVECT2 equ ($ - offset Vect2) / sizeof dword
 
 	.code
 
-	cld
 	mov ebx, [ppReq]
-	movzx eax,word ptr [ebx+0]
-	movzx ebx,word ptr [ebx+2]
+	movzx eax, word ptr [ebx+0]
+	movzx ebx, word ptr [ebx+2]
 	shl ebx, 4
 	add ebx, eax			;Point to DOS request packet.
 	mov [pRequest], ebx		;linear address request header
-
-	mov [ebx].RPH.wStat, RPDON;Init status to "done".
 
 	mov al, [ebx].RPH.bOp
 
@@ -366,9 +371,9 @@ LIVECT  equ ($ - offset IVect) shr 2
 
 	.code
 
+	movzx eax, word ptr [ebx].RPIOC.dwAddr+0
 	movzx esi, word ptr [ebx].RPIOC.dwAddr+2
 	shl esi, 4
-	movzx eax, word ptr [ebx].RPIOC.dwAddr+0
 	add esi, eax
 	movzx eax, byte ptr [esi]
 	@dprintf <'DevInt, ioctl input, buffer=%X, al=%X',13,10>, esi, eax
@@ -553,10 +558,15 @@ Setup proc
 ;--- get command list/table bases.
 ;--- those are physical addresses and hence "should" be translated to linear ones.
 
+if ?RELOC
+	mov eax, [pCLB]						; get command list base
+	mov edi, [pCTBA]					; get command table base address
+	@dprintf <'DevInt, setup, cmdlist=%X/%X, cmdtable=%X/%X',13,10>, eax, dword ptr [ebx].PORT.dqCLB, edi, [eax].CLH.dwCTBA
+else
 	mov eax, dword ptr [ebx].PORT.dqCLB	; get command list base
-	mov edi, [eax].CLH.CTBA0			; get command table base address
-
-	@dprintf <'DevInt, setup, cmdlist=%X',13,10>, eax
+	mov edi, [eax].CLH.dwCTBA			; get command table base address
+	@dprintf <'DevInt, setup, cmdlist=%X, cmdtable=%X',13,10>, eax, edi
+endif
 
 ;--- CLH.00: 25,00,01,00 [CFL=5 dwords, A=1, PRD table length=1]
 ;--- CLH.04: 00,00,00,00 [PRD byte count=0]
@@ -777,6 +787,10 @@ nextchar:
 	jz isOptD
 	cmp AL, 'q'
 	jz isOptQ
+if ?RELOC
+	cmp AL, 'r'
+	jz isOptR
+endif
 	jmp errcmdl
 
 isOptD:
@@ -815,6 +829,11 @@ isOptC:
 isOptQ:
 	mov [bQuiet], 1
 	jmp nextchar
+if ?RELOC
+isOptR:
+	mov [bReloc], 1
+	jmp nextchar
+endif
 
 donecmdl:
 
@@ -912,8 +931,47 @@ donePort:
 	jz errnodisk
 	mov [bCount], cl
 
-	mov esi, offset buffer+15
-	and esi, not 15		; align buffer to paragraph
+if ?RELOC
+	mov edi, offset wPort
+	cmp [bReloc], 0
+	jz noreloc
+	mov esi, offset cmdlst
+	mov [pCLB], esi
+	mov [pCTBA], offset cmdtab
+	mov [pBuff], offset buffer
+	push ecx
+	mov ecx, sizeof cmdlst + sizeof fis + sizeof cmdtab + sizeof buffer
+	mov edx, 1
+	VxDCall VDMAD_Lock_DMA_Region
+	pop ecx
+	@dprintf <'physical/logical address CLB=%X/%X',13,10>, edx, esi
+	mov esi, edx
+	.while ecx
+		movzx edx, word ptr [edi]
+		mov eax, esi
+		mov dword ptr [ebx+edx].PORT.dqCLB, eax
+		add eax, sizeof cmdlst
+		mov dword ptr [ebx+edx].PORT.dqFB, eax
+		add edi, sizeof WORD
+		dec ecx
+	.endw
+	mov eax, esi
+	add eax, sizeof cmdlst + sizeof fis
+	mov edx, [pCLB]
+	mov [edx].CLH.dwCTBA, eax
+	@dprintf <'CLB.CTBA=%X',13,10>, eax
+	add eax, sizeof cmdtab
+	mov [dwBuffPh], eax
+	jmp buffers_done
+noreloc:
+	movzx edx, word ptr [edi]
+	mov eax, dword ptr [ebx+edx].PORT.dqCLB
+	mov edx, [eax].CLH.dwCTBA
+	mov [pCLB], eax
+	mov [pCTBA], edx
+	@dprintf <'linear address command list/table=%X/%X',13,10>, eax, edx
+endif
+	mov esi, offset buffer
 	mov [pBuff], esi
 	mov ecx, SLCOOKED
 	mov edx, 1
@@ -921,13 +979,20 @@ donePort:
 	mov [dwBuffPh], edx
 	@dprintf <'physical address sector buffer=%X',13,10>, edx
 
+buffers_done:
+
 	mov ebx, [pBase]
 	mov al, [bCount]
 	mov [ebx].DOSDRV.bUnits, al
 	cmp [bQuiet], 0
 	jnz @F
-	add [szMsg4], al
-	mov edx, offset szMsg4
+	add al,'0'
+	movzx eax, al
+	push eax
+	mov edx, esp
+	call dispString
+	pop eax
+	mov edx, CStr(' AHCI Optical Disk(s) Found',13,10)
 	call dispString
 @@:
 	mov ebx, [pRequest]
@@ -944,7 +1009,11 @@ errnoahci:
 	mov edx, CStr('AHCI Controller not in AHCI Mode',13,10)
 	jmp @F
 errcmdl:
-	mov edx, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/Q] /D:devname [/C:#]',13,10)
+if ?RELOC
+	mov edx, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/C:#] /D:devname [/Q][/R]',13,10)
+else
+	mov edx, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/C:#] /D:devname [/Q]',13,10)
+endif
 	jmp @F
 errnodisk:
 	MOV edx, CStr('No AHCI Optical Disk Found',13,10)
@@ -990,6 +1059,7 @@ local pCmdLine:dword
 	add edi, REQOFS+4
 	mov esi, offset rmcode
 	mov ecx, SIZERMCODE+1
+	cld
 	rep movsb
 	stosd
 

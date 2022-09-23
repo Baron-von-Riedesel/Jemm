@@ -21,9 +21,12 @@ endif
 ifndef ?JLMDBG
 ?JLMDBG  = 0	;trace jlm handling
 endif
+ifndef ?DMADBG
+?DMADBG  = 0	;trace DMA handling
+endif
 
 ifdef _DEBUG
-?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG + ?JLMDBG
+?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG + ?JLMDBG + ?DMADBG
 else
 ?TRACE = 0
 endif

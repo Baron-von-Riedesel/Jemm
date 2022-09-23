@@ -64,17 +64,23 @@ Get_VDMAD_Version proc
 
 Get_VDMAD_Version endp
 
-;--- esi = start region
-;--- ecx = size region
-;--- dl = flags (bit 0: check for 64 kB crossing)
+;--- esi = start region (linear address)
+;--- ecx = size region (bytes)
+;--- dl = flags (bit 0: check for 64 kB crossing, bit 1: check for 128 kB)
 ;--- returns phys address in EDX if ok
-;--- returns size in ECX on error
+;--- returns size in ECX on error, in AL error code
 
 ;--- Jemm is unable to handle addresses > 110000h
 ;--- therefore do it here.
 
-Lock_DMA_Region proc uses esi edi ebx
+Lock_DMA_Region proc uses edi ebx
 
+	@DbgOutS <"Lock_DMA_Region, addr=">, ?DMADBG
+	@DbgOutD esi, ?DMADBG
+	@DbgOutS <", size=">, ?DMADBG
+	@DbgOutD ecx, ?DMADBG
+	@DbgOutS <10>, ?DMADBG
+	push esi
 	lea ebx, [esi+ecx-1]	;let EBX point to the last byte
 	mov eax, esi
 	shr eax, 12
@@ -86,22 +92,22 @@ Lock_DMA_Region proc uses esi edi ebx
 	lea esi, [esi*4 + (?PAGEMAP shl 22)]
 	mov ecx, ebx
 	lodsd
-	and ax,0F000h
-	mov bl,dl
+	and ax, 0F000h
+	mov bl, dl
 	mov edx, eax
 	jecxz @@done
-	mov edi,edx		;save first phys page in EDX
-	.while (ecx)
+	mov edi, edx	; save first phys page in EDX
+	.while ecx
 		lodsd
 		and eax, eax
 		jz @@error
 		and ax, 0F000h
 		add edi,1000h
 		cmp eax, edi
-		jnz @@error
+		jnz @@error	; not contiguous
 		dec ecx
 	.endw
-	test bl,1		;64 kB border crossing test?
+	test bl, 1		; 64 kB border crossing test?
 	jz @@done
 	mov eax, edx
 	shr eax, 16
@@ -109,17 +115,26 @@ Lock_DMA_Region proc uses esi edi ebx
 	cmp eax, edi
 	jnz @@error2
 @@done:
-	mov eax,[esp+2*4]	;get original ESI
-	and ax,0FFFh
-	or	dx,ax
+	pop esi
+	mov ax, si
+	and ax, 0FFFh
+	or dx, ax
+	@DbgOutS <"Lock_DMA_Region, returns edx=">, ?DMADBG
+	@DbgOutD edx, ?DMADBG
+	@DbgOutS <10>, ?DMADBG
 	ret
 @@error:
-	sub ebx,ecx
-	mov ecx,ebx
-	shl ecx,12
+	pop esi
+	mov ax, si
+	and ax, 0FFFh
+	or dx, ax
+	sub ebx, ecx
+	mov ecx, ebx
+	shl ecx, 12
 	stc
 	ret
 @@error2:
+	pop esi
 	xor ecx, ecx
 	stc
 	ret
