@@ -31,8 +31,8 @@
  Note: currently  the versions of Jemm and JLoad always must match, else
  JLoad will refuse to do anything.
 
- Two JLMs, XDMA32 and XCDROM32, are included in the Jemm binary package.
- For more details about these modules see XDMA32.TXT and XCDROM32.TXT.
+ A few JLMs (XDMA32, XCDROM32 and AHCICD) are included in the Jemm binary
+ package. For more details see XDMA32.TXT, XCDROM32.TXT and AHCICD.TXT.
 
 
  2. Technical Details about JLMs

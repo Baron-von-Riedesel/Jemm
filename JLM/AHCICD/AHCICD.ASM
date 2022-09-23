@@ -9,7 +9,7 @@
 
 	include jlm.inc
 
-?RELOC   equ 1      ; relocate Port.CLB, Port.FB, Commandlist[0].CTBA
+?OPTIONR equ 1      ; enable /R option to relocate Port.CLB, Port.FB, Commandlist[0].CTBA
 REQOFS   equ 16h
 SLCOOKED equ 2048
 
@@ -205,7 +205,7 @@ endif
 
 	.data?
 
-if ?RELOC
+if ?OPTIONR
 cmdlst	CLH 32 dup (<>)	; must be 1024 B aligned
 fis		db 100h dup (?)	; must be 256 B aligned
 cmdtab  CT <>			; must be 128 B aligned
@@ -221,7 +221,7 @@ pHBA        dd ?	; linear address HBA
 pBuff       dd ?	; linear address sector buffer
 dwBuffPh    dd ?	; physical address sector buffer
 dwSector    dd ?	; current sector to read
-if ?RELOC
+if ?OPTIONR
 pCLB        dd ?	; linear address Port[x].CLB
 pCTBA       dd ?	; linear address CL[0].CTBA
 endif
@@ -231,7 +231,7 @@ wSecCnt dw ?		; #sectors to read
 bCount  db ?		; found units (during init)
 bCntArg db ?		; /C option default value
 bQuiet  db ?		; /Q option
-if ?RELOC
+if ?OPTIONR
 bReloc  db ?		; /R option
 endif
 bBanner db ?		; 1=banner displayed
@@ -303,7 +303,7 @@ LVECT2 equ ($ - offset Vect2) / sizeof dword
 
 	mov al, [ebx].RPH.bOp
 
-	@dprintf <'DevInt enter, Op=%X',13,10>, eax
+	@dprintf <'DevInt enter, Op=%X, flags=%X',13,10>, eax, [ebp].Client_Reg_Struc.Client_EFlags
 
 	and al, al
 	jz @F
@@ -323,7 +323,10 @@ LVECT2 equ ($ - offset Vect2) / sizeof dword
 @@:
 	cmp al, cl
 	jnc Error3X
+	push [ebp].Client_Reg_Struc.Client_EFlags
+	or byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, 2	; set client IF so Yield will enable interrupts
 	call dword ptr [esi+eax*4]
+	pop [ebp].Client_Reg_Struc.Client_EFlags
 ExitAX:
 	@dprintf <'DevInt exit, ax=%X',13,10>, ax
 	mov ebx, [pRequest]
@@ -558,7 +561,7 @@ Setup proc
 ;--- get command list/table bases.
 ;--- those are physical addresses and hence "should" be translated to linear ones.
 
-if ?RELOC
+if ?OPTIONR
 	mov eax, [pCLB]						; get command list base
 	mov edi, [pCTBA]					; get command table base address
 	@dprintf <'DevInt, setup, cmdlist=%X/%X, cmdtable=%X/%X',13,10>, eax, dword ptr [ebx].PORT.dqCLB, edi, [eax].CLH.dwCTBA
@@ -787,7 +790,7 @@ nextchar:
 	jz isOptD
 	cmp AL, 'q'
 	jz isOptQ
-if ?RELOC
+if ?OPTIONR
 	cmp AL, 'r'
 	jz isOptR
 endif
@@ -829,7 +832,7 @@ isOptC:
 isOptQ:
 	mov [bQuiet], 1
 	jmp nextchar
-if ?RELOC
+if ?OPTIONR
 isOptR:
 	mov [bReloc], 1
 	jmp nextchar
@@ -931,7 +934,7 @@ donePort:
 	jz errnodisk
 	mov [bCount], cl
 
-if ?RELOC
+if ?OPTIONR
 	mov edi, offset wPort
 	cmp [bReloc], 0
 	jz noreloc
@@ -1009,7 +1012,7 @@ errnoahci:
 	mov edx, CStr('AHCI Controller not in AHCI Mode',13,10)
 	jmp @F
 errcmdl:
-if ?RELOC
+if ?OPTIONR
 	mov edx, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/C:#] /D:devname [/Q][/R]',13,10)
 else
 	mov edx, CStr('SYNTAX: DEVICE=JLOAD.EXE AHCICD.DLL [/C:#] /D:devname [/Q]',13,10)
