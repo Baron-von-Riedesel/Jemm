@@ -59,9 +59,11 @@ local szTmp[24]:byte
 
 	pushad
 	mov ebp, [ebp]
-	push [ebp].Client_Reg_Struc.Client_EBX	; client BH is modified for int 10h, ah=0Eh
+	sub esp, sizeof Client_Reg_Struc
+	mov edi, esp
+	VMMCall Save_Client_State
 	VMMCall Begin_Nest_Exec
-	mov ebp, [esp+4+2*4]	;restore EBP
+	mov ebp, [esp+sizeof Client_Reg_Struc+2*4]	;restore EBP
 	cld
 	lea edi,args
 @@L335:
@@ -77,7 +79,9 @@ nextchar:
 done:
 	mov ebp, [ebp]
 	VMMCall End_Nest_Exec
-	pop [ebp].Client_Reg_Struc.Client_EBX
+	mov esi, esp
+	VMMCall Restore_Client_State
+	add esp, sizeof Client_Reg_Struc
 	popad
 	ret
 

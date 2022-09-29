@@ -9,8 +9,9 @@
 
 	include jlm.inc
 
-?OPTIONR equ 1      ; enable /R option to relocate Port.CLB, Port.FB, Commandlist[0].CTBA
-REQOFS   equ 16h
+?OPTIONR equ 1      ; 1=enable /R option to relocate Port.CLB, Port.FB, Commandlist[0].CTBA
+?IRQWND  equ 1      ; 1=use Jemm's MoveMemory() that allows interrupts during copy op
+REQOFS   equ 16h	; must be at least "sizeof DOSDRV"
 SLCOOKED equ 2048
 
 ;--- macros
@@ -45,9 +46,9 @@ wAttr	dw ?
 ofsStr	dw ?
 ofsInt	dw ?
 name_	db 8 dup (?);+10
-		dw ?		;+18
-		db ?		;+20
-bUnits	db ?
+wRes1	dw ?		;+18 req. for cd drivers, init with 0
+bRes2	db ?		;+20 req. for cd drivers, modified by mscdex
+bUnits	db ?		;+21 set by driver
 DOSDRV ends
 
 ;--- DOS "Request Packet" Layouts.
@@ -60,9 +61,9 @@ wStat   dw  ?       ;+3 Status field.
         db 8 dup (?);+5 .. +12 (reserved).
 RPH ends
 
-RPERR   equ 08003h      ;Packet "error" flags.
-RPDON   equ 00100h      ;Packet "done" flag.
-RPBUSY  equ 00200h      ;Packet "busy" flag.
+RPERR   equ 8003h   ;Packet "error" flags.
+RPDON   equ 0100h   ;Packet "done" flag.
+RPBUSY  equ 0200h   ;Packet "busy" flag.
 
 ;--- Init "Request Packet" Layout
 
@@ -228,8 +229,8 @@ endif
 
 wPort   dw 6 dup (?); port offsets of max. 6 CD/DVDs
 wSecCnt dw ?		; #sectors to read
-bCount  db ?		; found units (during init)
-bCntArg db ?		; /C option default value
+bUnits  db ?		; found units (during init)
+bCntOpt db ?		; /C option default value
 bQuiet  db ?		; /Q option
 if ?OPTIONR
 bReloc  db ?		; /R option
@@ -307,7 +308,7 @@ LVECT2 equ ($ - offset Vect2) / sizeof dword
 
 	and al, al
 	jz @F
-	mov al, [bCount]
+	mov al, [bUnits]
 	cmp [ebx].RPH.bSubU, al
 	mov ax, 8101h
 	jnc ExitAX
@@ -495,11 +496,18 @@ ReadLP:
 ;--- 7-8: transfer length [sector count] ( high byte first )
 ;--- 9: control
 
-	mov ecx, [dwSector]
-	movzx eax, cx
-	shr ecx, 16
+	mov eax, [dwSector]
+	shld ecx, eax, 16
+
+;--- ax=sect[0-15]
+;--- cx=sect[16-31]
+
+	movzx eax, ax
 	xchg al, ah
 	xchg cl, ch
+
+;--- al=sect[8-15], ah=sect[0-7], cl=sect[24-31], ch=sect[16-23]
+
 	shl ecx, 16
 	mov cl, 28H
 
@@ -515,11 +523,17 @@ ReadLP:
 	and al, al
 	jnz readerr
 	push edi
-	mov ecx, SLCOOKED / sizeof dword
 	mov edi, [pDest]
 	mov esi, [pBuff]
 	cld
+if ?IRQWND
+	mov ecx, SLCOOKED
+	VMMCall MoveMemory
+else
+	mov ecx, SLCOOKED / sizeof dword
 	rep movsd
+	VMMCall Yield
+endif
 	pop edi
 	add [pDest], SLCOOKED
 	inc [dwSector]
@@ -540,7 +554,10 @@ ErrorAL:
 	@dprintf <'DevInt, readl, error, ax=%X',13,10>, ax
 	ret
 Exit:
-	@dprintf <'DevInt, readl, ok',13,10>
+ifdef _DEBUG
+	mov ebx, [pRequest]
+	@dprintf <'DevInt, readl, ok, sector=%X',13,10>, [ebx].RPRL.dwStart
+endif
 	mov ax, RPDON
 	ret
 ReadL endp
@@ -648,15 +665,12 @@ ReqECX proc
 	mov [edi].CT.p0.dwCnt, ecx
 	mov [ebx].PORT.dwCI, 1	; bitmask, 1=slot 0 command issued
 contwait:
-	mov eax, [ebx].PORT.dwCI
-	and eax, eax
+	cmp [ebx].PORT.dwCI, 0
 	jz done
-	mov eax, [ebx].PORT.dwIS
-	test eax, PIS_TFES
+	test [ebx].PORT.dwIS, PIS_TFES
 	jnz error
 	VMMCall Yield
-	mov eax, [ebx].PORT.dwSERR
-	and eax, eax
+	cmp [ebx].PORT.dwSERR, 0
 	JZ contwait
 error:
 	call Stop
@@ -667,7 +681,7 @@ done:
 	test al, 1
 	jnz error
 	call Stop
-	xor eax, eax
+	mov al, 0
 	ret
 
 Stop:
@@ -827,7 +841,7 @@ isOptC:
 	cmp al, '9'
 	Ja errcmdl
 	sub al, '0'
-	mov [bCntArg], al
+	mov [bCntOpt], al
 	jmp nextchar
 isOptQ:
 	mov [bQuiet], 1
@@ -853,7 +867,7 @@ nextHBA:
 	mov al, 0			; clear bits 0-7 (interface doesn't matter)
 	cmp eax, 1060100H	; AHCI device?
 	jnz @F
-	dec [bCntArg]		; /C:x argument?
+	dec [bCntOpt]		; /C:x option?
 	js  foundHBA
 @@:
 	VMMCall Yield
@@ -932,7 +946,7 @@ donePort:
 	mov ecx, edi
 	cmp ecx, 0
 	jz errnodisk
-	mov [bCount], cl
+	mov [bUnits], cl
 
 if ?OPTIONR
 	mov edi, offset wPort
@@ -985,7 +999,7 @@ endif
 buffers_done:
 
 	mov ebx, [pBase]
-	mov al, [bCount]
+	mov al, [bUnits]
 	mov [ebx].DOSDRV.bUnits, al
 	cmp [bQuiet], 0
 	jnz @F
@@ -1057,7 +1071,8 @@ local pCmdLine:dword
 	mov [edi].DOSDRV.wAttr, 0C800h		;driver attributes
 	mov [edi].DOSDRV.ofsStr, REQOFS+4
 	mov [edi].DOSDRV.ofsInt, REQOFS+4+SIZERMCODE
-	mov word ptr [edi+20],0 ;clear unit?
+	mov [edi].DOSDRV.wRes1, 0
+	mov [edi].DOSDRV.bRes2, 0
 
 	add edi, REQOFS+4
 	mov esi, offset rmcode
