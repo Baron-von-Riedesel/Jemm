@@ -397,8 +397,21 @@ IOC_done:
 	mov ax, RPDON
 	retn
 
+;--- request "get device status"
+;--- status flag bits:
+;--- 001 - door opened
+;--- 002 - door unlocked
+;--- 004 - supports cooked AND raw
+;--- 008 - read AND write
+;--- 010 - data read AND play audio
+;--- 020 - supports interleaving
+;--- 040 - (res)
+;--- 080 - supports prefetching
+;--- 100 - supports audio channel manipulation
+;--- 200 - supports HSG AND red book addressing modes
+
 IOC_DevSt:
-	mov dword ptr [esi+1], 2	;DOOR LOCK ? OPEN=1 UNLOCK=2
+	mov dword ptr [esi+1], 2	;set "door unlocked"
 	jmp IOC_done
 
 IOC_SecSize:

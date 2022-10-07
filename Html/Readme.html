@@ -192,7 +192,7 @@
  V86EXC0D   makes Jemm route General Protection Faults (GPF) which occur in
             V86-mode to Int 0Dh. Without this option they are routed to
             Int 06h. This option should only be set if a resident program
-            is to be installed that can handle GPFs in v86-mode.
+            is to be installed that can handle GPFs in V86-mode.
  VCPI       (re)enables VCPI. Option can be set from the command line.
  VERBOSE    talk a bit more during the load process (abbreviation: /V).
  VME/NOVME  options will enable/disable using the V86 Mode Extensions
@@ -246,7 +246,7 @@
  5. Emulation of privileged Opcodes
 
  To provide Expanded Memory an EMM Emulator like Jemm runs the cpu in
- so-called v86-mode. This mode does not allow to run privileged opcodes.
+ so-called V86-mode. This mode does not allow to run privileged opcodes.
  Some of these opcodes which might be useful for application programs
  are emulated by Jemm, however. These are:
 
@@ -305,7 +305,7 @@
  v86-mode. So this program should be seen as a test if the emulation of the
  privileged opcodes works as expected.
 
- Optionally, in v86-mode, CPUSTAT may display GDT, IDT and page directory
+ Optionally, in V86-mode, CPUSTAT may display GDT, IDT and page directory
  of the v86-monitor. Run "CPUSTAT -?" for more details.
 
 
@@ -425,6 +425,10 @@
    v1.9x and v2.0x might cause an exception. Adding option NOHI or NORAM
    when installing Jemm should avoid that. In CTMOUSE v2.1 the bug has
    been fixed.
+
+ þ With some BIOSes disk access speed slows down significantly in V86-mode.
+   Most likely this is because the BIOS routines want to avoid using DMA in
+   this mode. Loading XDMA32 ( and XCDROM32 ) might fix that.
 
  þ FreeDOS regrettably accepts just one UMB provider. This makes it impossible
    for example to use UMBM.EXE to supply UMB D000-DFFF and then tell Jemm to

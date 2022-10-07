@@ -39,27 +39,6 @@
 ;        be IGNORED for CD-ROM drives which cannot do UltraDMA, and
 ;        it will be ignored for ALL drives if /UX is also given.
 
-;--- /PM, /PS, /SM and /SS are disabled for XCDROM32!
-;
-;  /PM   Requests the driver to check the IDE primary-master unit for
-;        a CD-ROM drive during driver init.    If a CD-ROM drive is
-;        NOT found as primary-master, driver loading will ABORT!
-;
-;  /PS   Same as /PM but tests the primary-slave unit only.
-;
-;  /SM   Same as /PM but tests the secondary-master unit only.
-;
-;  /SS   Same as /PM but tests the secondary-slave unit only.
-;
-;        --- NOTE ---
-;        Using multiple drives, multiple  /PM /PS /SM /SS  switches
-;        can be given.    The first-specified drive is addressed as
-;        "unit 0", the second as "unit 1", etc.   If fewer switches
-;        than drives are given, the unreferenced drives will NOT be
-;        used.    If NO such switches are given, the driver "scans"
-;        for CD-ROM drives, from primary-master to secondary-slave.
-;        The first drive found will be "unit 0", the second will be
-;        "unit 1", etc.
 ;
 ;  /Q    Quiet mode.
 ;
@@ -83,6 +62,8 @@
 ;
 ;  /W    accept (non-UDMA) devices which can do multiword-DMA.
 ;
+;  /P:vvvvdddd set vendor/device ( for old versions of Qemu )
+;
 ; For each switch, a dash may replace the slash, and lower-case letters
 ; may be used.
 
@@ -99,19 +80,19 @@
 
 SUPPPS      equ 0       ;support /PM /PS /SM /SS option
 SETMODE     equ 1       ;support /M option, set UDMA mode
-SETVD       equ 1       ;support /P option to set IDE vendor/device ID
 SETBM       equ 1       ;test Busmaster support in "class"
 MWDMA       equ 1       ;support /W option to accept multi-word DMA
 DWRDIO      equ 1       ;support /32 option (PIO DWORD IO)
 
-VER     equ <'V1.5, 18.08.2022'>    ;Driver version number and date.
+VER     equ <'V1.5, 06.10.2022'>    ;Driver version number and date.
 MSELECT equ 0A0h        ;"Master" device-select bits.
 SSELECT equ 0B0h        ;"Slave"  device-select bits.
 COOKSL  equ 2048        ;CD-ROM "cooked" sector length.
 RAWSL   equ 2352        ;CD-ROM "raw" sector length.
 CMDTO   equ 00Ah        ;500-msec minimum command timeout.
 SEEKTO  equ 025h        ;2-second minimum "seek"  timeout.
-STARTTO equ 049h        ;4-second minimum startup timeout.
+;STARTTO equ 049h        ;4-second minimum startup timeout.
+STARTTO equ 07Fh        ;7-second minimum startup timeout.
 BIOSTMR equ 0046Ch      ;BIOS "tick" timer address.
 ;VDSFLAG equ 0047Bh      ;BIOS "Virtual DMA" flag address.
 ;IXM     equ 2048        ;IOCTL transfer-length multiplier.
@@ -119,7 +100,7 @@ CR      equ 00Dh        ;ASCII carriage-return.
 LF      equ 00Ah        ;ASCII line-feed.
 TAB     equ 009h        ;ASCII "tab".
 
-REQOFS   equ 16h
+REQOFS   equ 16h        ; must be at least "sizeof DOSDRV"
 
 
 @byte   equ <byte ptr>
@@ -145,32 +126,50 @@ SETM    equ 003h        ;Set Mode subcommand.
 SETF    equ 0EFh        ;Set Features command.
 LBABITS equ 0E0h        ;Fixed LBA command bits.
 
-;
-; DOS "Request Packet" Layout.
-;
-RP      struc
-RPHLen  db  ?       ;+0 Header byte count.
-RPSubU  db  ?       ;+1 Subunit number.
-RPOp    db  ?       ;+2 Command code.
-RPStat  dw  ?       ;+3 Status field.
-        db 8 dup (?);(Unused by us).
-RPUnit  db  ?       ;+13 Number of units found.
-RPSize  dw  ?       ;+14 Resident driver offset
-        dw  ?
-RPCL    dd  ?       ;Command-line data pointer.
-RP      ends
+;--- structures
 
+DOSDRV struct
+		dd ?
+wAttr	dw ?
+ofsStr	dw ?
+ofsInt	dw ?
+name_	db 8 dup (?);+10
+wRes1	dw ?		;+18 req. for cd drivers, init with 0
+bRes2	db ?		;+20 req. for cd drivers, modified by mscdex
+bUnits	db ?		;+21 set by driver
+DOSDRV ends
+
+;
+; DOS "Request Packet" header layout.
+;
+RPH     struc
+bHLen   db  ?       ;+0 Header byte count.
+bSubU   db  ?       ;+1 Subunit number.
+bOp     db  ?       ;+2 Command code.
+wStat   dw  ?       ;+3 Status field.
+        db 8 dup (?);(Unused by us).
+RPH     ends
+
+;--- wStat values
 RPERR   equ 08003h      ;Packet "error" flags.
 RPDON   equ 00100h      ;Packet "done" flag.
 RPBUSY  equ 00200h      ;Packet "busy" flag.
 
-;--- structures
+;--- Init "Request Packet" Layout.
+
+RPINIT  struc
+        RPH <> 
+bUnit   db  ?       ;+13 Number of units found.
+RPSize  dw  ?       ;+14 Resident driver offset
+        dw  ?
+dwCL    dd  ?       ;Command-line data pointer.
+RPINIT  ends
 
 ;
 ; IOCTL "Request Packet" Layout.
 ;
 IOC struc
-        db  13  dup (?) ;Request "header" (unused by us).
+        RPH <>
         db  ?       ;+13 Media descriptor byte (Unused by us).
 IOCAdr  dd  ?       ;+14 Data-transfer address.
 IOCLen  dw  ?       ;+18 Data-transfer length.
@@ -181,15 +180,25 @@ IOC ends
 ; Read Long "Request Packet" Layout.
 ;
 RL struc
-        db  13  dup (?) ;Request "header" (unused by us).
-RLAM    db  ?       ;Addressing mode.
-RLAddr  dd  ?       ;Data-transfer address.
-RLSC    dw  ?       ;Data-transfer sector count.
-RLSec   dd  ?       ;Starting sector number.
-RLDM    db  ?       ;Data-transfer mode.
-RLIntlv db  ?       ;Interleave size.
-RLISkip db  ?       ;Interleave skip factor.
+        RPH <>
+RLAM    db  ?       ;+13 Addressing mode.
+RLAddr  dd  ?       ;+14 Data-transfer address.
+RLSC    dw  ?       ;+18 Data-transfer sector count.
+RLSec   dd  ?       ;+20 Starting sector number.
+RLDM    db  ?       ;+24 Data-transfer mode.
+RLIntlv db  ?       ;+25 Interleave size.
+RLISkip db  ?       ;+26 Interleave skip factor.
 RL  ends
+
+;
+; Play "Request Packet" Layout
+;
+RPPlay struc
+        RPH <>
+bMode   db  ?       ;+13 Addressing mode.
+dwStart dd  ?       ;+14 Data-transfer address.
+dwSize  dd  ?       ;+18 Data-transfer sector count.
+RPPlay ends
 
 IDEPARM struc
 wIDEBase    dw ?
@@ -248,9 +257,6 @@ pRequest    dd 0    ;linear address where request header is stored
 dwRequest   dd 0    ;linear address request header
 dwBase      dd 0    ;linear address driver base
 dwCmdLine   dd 0
-if SETVD
-dwVD        dd 0
-endif
 ;
 ; Main I-O Variables
 ;
@@ -310,9 +316,6 @@ if MWDMA
 FL_W    equ 4       ;/W option
 endif
 FL_UX   equ 8       ;/UX option set
-if SETVD
-FL_P    equ 16      ;/P option set
-endif
 
 ;
 ; Audio Function Buffer (16 bytes) for most CD-ROM "audio" requests.
@@ -324,8 +327,9 @@ IEMsg   dd  0                   ;Init error-message pointer.
 MaxUM   db  -1                  ;UDMA "mode" limit set by /Mn option.
 UFlag   db  0                   ;UltraDMA "mode" flags (set by Init).
 UMode   db  0                   ;UltraDMA "mode" value (set by Init).
-        db  0
-ScanX   dd  offset ScanLPM      ;Scan table index (0FFFFh = no scan).
+bLegacy db  0                   ;allow just one "legacy" mode
+ScanX   dd  offset ScanLPM      ;Scan table index (-1 = no scan).
+pScan   dd  offset ScanLPM
 
 ;
 ; Unit Parameter Tables.   If you want a 4th drive, simply add 1 more
@@ -389,9 +393,9 @@ DspTblC dd  ReqDHA      ;00 -- Device-header address.
         dd  UnSupp      ;03 -- Error Statistics (unused).
         dd  UnSupp      ;04 -- Audio chan. info (unused).
         dd  UnSupp      ;05 -- Read drive bytes (unused).
-        dd  ReqDS       ;06 -- Device status.
-        dd  ReqSS       ;07 -- Sector size.
-@RqVS   dd  ReqVS       ;08 -- Volume size.
+        dd  ReqDevStat  ;06 -- Device status.
+        dd  ReqSecSize  ;07 -- Sector size.
+@RqVS   dd  ReqVolSize  ;08 -- Volume size.
         dd  ReqMCS      ;09 -- Media-change status.
 @RqADI  dd  ReqADI      ;10 -- Audio disk info.
 @RqATI  dd  ReqATI      ;11 -- Audio track info.
@@ -404,10 +408,7 @@ DspLmt3 equ ( $ - offset DspTblC)/4 ;Request-code limit for this table.
 ;--- expected size of IOCTL input requests
         dd  5       ;0
         dd  6       ;1
-        dd  0
-        dd  0
-        dd  0
-        dd  0
+        dd  0,0,0,0 ;2-5
         dd  5       ;6
         dd  4       ;7
         dd  5       ;8
@@ -415,8 +416,7 @@ DspLmt3 equ ( $ - offset DspTblC)/4 ;Request-code limit for this table.
         dd  7       ;10
         dd  7       ;11
         dd  11      ;12
-        dd  0
-        dd  0
+        dd  0,0     ;13-14
         dd  11      ;15
 
 ;
@@ -436,15 +436,9 @@ DspLmt4 equ ( $ - offset DspTblD)/4 ;Request-code limit for this table.
         dd  1
         dd  2
         dd  1
-        dd  0
-        dd  0
+        dd  0,0
         dd  1
 
-;
-; Initialization PCI Class-Code "Interface" Bytes.   The 0BAh and 0B0h
-; bytes handle ALi M5529 chips.   MANY THANKS to David Muller for this
-; VALUABLE addition!
-;
 ; from RBIL, FARCALL.LST, F0087:
 ;Bit(s) Description (Table F0087)
 ; 7 bus mastering (read-only)
@@ -454,24 +448,13 @@ DspLmt4 equ ( $ - offset DspTblD)/4 ;Request-code limit for this table.
 ; 1 primary IDE mode bit is writable (read-only)
 ; 0 primary IDE mode (0 = legacy, 1 = native)
 ;
-ClCodes label byte
-        db 08Ah,080h
-        db 0FAh,0F0h
-        db 0BAh,0B0h
-        db 085h,08Fh    ;native controller
-ClCEnd  equ $
-;
 ; Initialization IDE Parameter-Value Table.
-;
+; each IDE controller needs 4 entries (primary/secondary, master/slave),
+; so currently max. 3 controllers (native/legacy) are supported.
 
-ScanLPM IDEPARM <1F0h,-1,0A0h>  ;legacy IDE primary master
-ScanLPS IDEPARM <1F0h,-1,0B0h>  ;legacy IDE primary slave
-ScanLSM IDEPARM <170h,-1,0A0h>  ;legacy IDE secondary master
-ScanLSS IDEPARM <170h,-1,0B0h>  ;legacy IDE secondary slave
-ScanNPM IDEPARM <  -1,-1,0A0h>  ;native IDE primary master
-ScanNPS IDEPARM <  -1,-1,0B0h>  ;native IDE primary slave
-ScanNSM IDEPARM <  -1,-1,0A0h>  ;native IDE secondary master
-ScanNSS IDEPARM <  -1,-1,0B0h>  ;native IDE secondary slave
+ScanLPM IDEPARM <-1,-1,0A0h>,<-1,-1,0B0h>,<-1,-1,0A0h>,<-1,-1,0B0h>
+        IDEPARM <-1,-1,0A0h>,<-1,-1,0B0h>,<-1,-1,0A0h>,<-1,-1,0B0h>
+        IDEPARM <-1,-1,0A0h>,<-1,-1,0B0h>,<-1,-1,0A0h>,<-1,-1,0B0h>
 ScanE   equ $           ;(End of IDE parameter table).
 
 if MWDMA
@@ -490,40 +473,11 @@ UModes label word
     dw  0133h       ;Mode 6, ATA-133
     dw  0166h       ;Mode 7, ATA-166
 
-;  A)  All message LABELS ("XCMsg" etc.) must appear as shown.
-;
-;  B)  All CR, LF, and ending $ bytes must appear as shown.  Only the
-;      message TEXT bytes (letters, numbers and punctuation) are open
-;      to change.
-;
-;  C)  There must be at least 42 characters from the start of "XCMsg"
-;      to the start of "Suffix", as the driver reads 40 bytes of data
-;      into this area (the name of each drive) and suffixes an ending
-;      $ before displaying the final CD-ROM drive name.
-;
-;  D)  Other messages MODIFIED by driver initialization are:
-;
-;   1) The 8 driver name bytes at "DvrMsg1".
-;   2) The 4 controller address bytes at "CtlrAdr".
-;   3) The 8 controller I.D. bytes at "CtlrID".
-;   4) The drive unit-number byte at "UMsgNo".
-;   5) The 2 UltraDMA mode bytes at "UDMode".
-;
-; For an "Internationalization" example, compare the file XDMAMSGS.ENG
-; with the file XDMAMSGS.NL, both of which are included in the current
-; XDMA driver package.   XDMAMSGS.NL translates all XDMA init messages
-; into the Dutch language.   This file was written by Bernd Blaauw who
-; suggested making XDMA, and now XCDROM, into "International" drivers.
-;
-;
 XCMsg   db  'XCDROM32 '
         db  VER     ;XCDROM.ASM provides version and date!
         db  '.',CR,LF,0
 DvrMsg  db  'Driver name is '
 DvrMsg1 db  '        ',0
-CtlrMsg db  'UltraDMA controller at IDE/DMA ports '
-CtlrAdr db  'xxxx/xxxx, Chip I.D. '
-CtlrID  db  'xxxxxxxxh.',CR,LF,0
 LEMsg   db  '.',CR,LF,'/L Invalid',0
 SyEMsg  db  '.',CR,LF,'ERROR '
 Suffix  db  '; XCDROM32 not loaded!',CR,LF,0
@@ -534,10 +488,6 @@ IDMsg   db  ' Identify Device error',0
 NCMsg   db  " isn't an ATAPI CD-ROM",0
 SEMsg   db  ' UltraDMA Set Mode error',0
 NDMsg   db  'No CD-ROM drive to use',0
-if 0
-PriMsg  db  'Primary-',0
-SecMsg  db  'Secondary-',0
-endif
 MstMsg  db  'Master',0
 SlvMsg  db  'Slave',0
 PortMsg db  ', IDE/DMA ports '
@@ -547,14 +497,6 @@ UDMsg   db  ', ATA-'
 UDMode  db  '   ',0
 PIOMsg  db  ', PIO mode',0
 CRMsg   db  '.',CR,LF,0
-ifdef _DEBUG
-DbgMsg1 db  "Start drive scan",CR,LF,0
-DbgMsg2 db  "End drive scan",CR,LF,0
-DbgMsg4 db  "Executing Identify command, IDE Controller base="
-DbgMsg4_1 db "    ",CR,LF,0
-DbgMsg5 db  "IDE controller ready",CR,LF,0
-DbgMsg6 db  "ATAPI CDROM detected",CR,LF,0
-endif
 
 rmcode label byte
     db 2Eh, 89h, 1eh, REQOFS+0, 0    ;mov cs:[16h],bx
@@ -565,9 +507,7 @@ SIZERMCODE equ $ - offset rmcode
 
     .code
 
-ifdef _DEBUG
 	include printf.inc
-endif
 
 ;
 ; "Device-Interrupt" routine -- This routine processes DOS requests.
@@ -582,8 +522,8 @@ DevInt:
     add esi, eax            ;Point to DOS request packet.
     mov [dwRequest], esi    ;linear address request header
 
-    mov [esi].RP.RPStat,RPDON ;Init status to "done".
-    mov al,[esi].RP.RPSubU  ;Get unit-table offset.
+    mov [esi].RPH.wStat,RPDON ;Init status to "done".
+    mov al,[esi].RPH.bSubU    ;Get unit-table offset.
     mov ah,sizeof UPARM
     mul ah
     lea ebx,[eax+offset UnitTbl]    ;Set unit's audio-start address ptr.
@@ -593,7 +533,7 @@ DevInt:
     push [ebp].Client_Reg_Struc.Client_EFlags           ;save client flags
     or @byte [ebp].Client_Reg_Struc.Client_EFlags+1,2   ;set client's IF
 
-    mov al,[esi].RP.RPOp    ;Get packet request code.
+    mov al,[esi].RPH.bOp    ;Get packet request code.
     mov edi,offset DspTbl1  ;Point to 1st DOS dispatch table.
     call Dspatch            ;Dispatch to desired request handler.
 
@@ -664,7 +604,7 @@ SectNF:
 ReqErr:
     mov esi,[dwRequest]     ;Reload DOS request-packet address.
     mov ah,081h             ;Post error flags & code in packet.
-    mov [esi].RP.RPStat,ax
+    mov [esi].RPH.wStat,ax
 Ignored:
     ret                     ;Exit ("ignored" request handler).
 ;
@@ -678,7 +618,7 @@ ReqDHA:
 ;
 ; IOCTL Input "Return Sector Size" handler
 ;
-ReqSS:
+ReqSecSize:
     cmp @byte [esi+1],1     ;Is read mode "cooked" or "raw"
     ja  GenFail             ;No?  Post "general failure" & exit.
     mov ax,RAWSL            ;Get "raw" sector length.
@@ -823,7 +763,7 @@ DOSSkE:
 ;--- 100 - supports audio channel manipulation
 ;--- 200 - supports HSG AND red book addressing modes
 
-ReqDS:
+ReqDevStat:
     mov @dword [Packet],0002A005Ah  ;Set up mode-sense.
     mov al,16           ;Set input byte count of 16.
     call DoBufIO        ;Issue mode-sense for hardware data.
@@ -840,7 +780,7 @@ ReqDS:
 @@:
     mov [esi+1],eax     ;Set status flags in IOCTL buffer.
 @RqDSX:
-    jmp ReadAST         ;Go post "busy" status and exit.
+    jmp ReadAudioSt     ;Go post "busy" status and exit.
 ;
 ; IOCTL Input "Media-Change Status" handler.
 ;
@@ -1146,6 +1086,9 @@ DoIOExit:
     ret
 
 ;--- operation ended with error "Unit Attention"
+;--- esi=AudAP-1
+;--- AH=
+;--- AL=error code if byte ptr [esi] !=1
     
 DoIO23:
     mov al,2                ;"Attention":  Get "Not Ready" code.
@@ -1157,6 +1100,7 @@ DoIO24:
     dec ah                  ;Is media-change flag already set?
     jnz @F                  ;Yes, set carry flag and exit.
     mov al,15               ;Return "Invalid Media Change".
+;	@dprintf <"DoIO, error 15, esi=%X, eax=%X",13,10>, esi, eax
 @@:
     stc                     ;Set carry flag (error!).
     jmp DoIOExit
@@ -1217,17 +1161,17 @@ ValSNE:
     jmp SectNF              ;Post "sector not found" and exit.
 ValSN endp
 ;
-; Subroutine to test for I-O timeouts. At entry, the CL-reg. is
-;   008h to test for a data-request, also. At exit, the DX-reg.
-;   points to the IDE primary-status register. The AH and ESI
-;   will be lost.
+;--- Subroutine to test for I-O timeouts.
+;--- In: EBX=UPARM
+;--- Out: DX=IDE primary-status register.
+;--- modifies: eax, esi
 ;
 TestTO:
     xor cl,cl           ;Check for only controller-ready.
-TestTO1:
-    mov ah,CMDTO        ;Use 500-msec command timeout.
+TestTO1:                ;<--- CL-reg = 008h to test for a data-request
+    mov ah, CMDTO       ;Use 500-msec command timeout.
 TestTO2:
-    mov esi,BIOSTMR
+    mov esi,BIOSTMR     ;0040:006Ch
     add ah,[esi]        ;Set timeout limit in AH-reg.
 @@:
     VMMCall Yield       ;preserves all registers
@@ -1280,7 +1224,7 @@ Swap32X:
 ;   point are DISMISSED by driver-init when the /AX switch is given.
 ;
 ReqSeek:
-    call ReadAST        ;Read current "audio" status.
+    call ReadAudioSt    ;Read current "audio" status.
     call ZPacket        ;Reset our ATAPI packet area.
     jc  RqSK1           ;If status error, do DOS seek.
     mov al,[edi+1]      ;Get "audio" status flag.
@@ -1312,16 +1256,16 @@ RqSK2:
 ; DOS "Play Audio" handler.
 ;
 ReqPlay:
-    cmp @dword [esi].RL.RLSC,0  ;Is sector count zero?
+    cmp [esi].RPPlay.dwSize,0   ;Is sector count zero?
     je  Swap32X                 ;Yes, just exit above.
     mov edi,[AudAP]             ;Point to audio-start addr.
     mov @byte [Packet],047h     ;Set "Play Audio" command.
-    mov eax,[esi].RL.RLAddr     ;Validate starting address.
+    mov eax,[esi].RPPlay.dwStart;Validate starting address.
     call ValSN1
     mov [edi.AUDADR.dwAudSta],eax       ;Save audio-start address.
     call ConvMSF        ;Set MSF start address in packet.
     mov @dword [PktLBA+1],eax
-    mov eax,[esi+18]    ;Get play-audio "end" address.
+    mov eax,[esi].RPPlay.dwSize ;calc "end" address.
     add eax,[edi.AUDADR.dwAudSta]
     mov edx,00006DD39h  ;Get maximum audio address.
     jc  ReqPL1          ;If "end" WAY too big, use max.
@@ -1369,7 +1313,7 @@ ReqCHL:
 ;
 ; IOCTL Input "Return Volume Size" handler.
 ;
-ReqVS:
+ReqVolSize:
     mov @byte [Packet],025h  ;Set "Read Capacity" code.
     mov al,008h         ;Get 8 byte data-transfer length.
     call DoBufIn        ;Issue "Read Capacity" command.
@@ -1407,7 +1351,7 @@ ReqATI:
     shl al,4
     mov [esi+6],al
 RqATIX:
-    jmp ReadAST         ;Go post "busy" status and exit.
+    jmp ReadAudioSt     ;Go post "busy" status and exit.
 ;
 ; IOCTL Input "Audio Q-Channel Info" handler.
 ;--- db ? ;+1 CONTROL (4-7) and ADR (0-3)
@@ -1444,7 +1388,7 @@ RqATIX:
 ReqAQI:
     mov ax,04010h       ;read sub-channel, SubQ=1, use 16-byte count.
     call RdAST1         ;Read sub-channel
-    jc  ReqErr          ;If error, post return code & exit.
+    jc  ReqErr          ;If error, post return code (AL) & exit.
     mov edx,[edi+5]     ;Set ctrl/track/index in IOCTL.
 if 1
 ;--- xchg ADR and CONTROL
@@ -1508,10 +1452,10 @@ RqASI3:
 ;
 ; Subroutine to read the current "audio" status and disk address.
 ;
-ReadAST:
+ReadAudioSt:
     call ZPacket        ;Status only -- reset ATAPI packet.
     mov ax,00004h       ;set SubQ=0, use 4-byte count.
-RdAST1:
+RdAST1:                 ;<--- entry ReqAQI, ReqASI (ax=4010h)
 ;--- issue a "read sub-channel" packet command (42h)
 ;--- MSF (bit 1 of byte 1) is 1
 ;--- data format is 1 (=Audio Status)
@@ -1525,7 +1469,7 @@ RdAST2:
 RdAST3:
     push esi                    ;Save SI- and ES-regs.
     mov esi,[dwRequest]         ;Reload DOS request-packet addr.
-    or  @word [esi].RP.RPStat,RPBUSY  ;Set "busy" status bit.
+    or [esi].RPH.wStat,RPBUSY   ;Set "busy" status bit.
     pop esi
 RdASTX:
     ret
@@ -1590,46 +1534,6 @@ I_SetHW:
 I_NxtCJ:
     ret
 I_SetPS endp
-
-endif
-
-if SETVD
-
-GetDWord proc
-    push esi
-    mov ch,0
-    xor edx,edx
-Next:
-    lodsb
-    and al,al
-    jz gd_done
-    cmp al,'0'
-    jb gd_done
-    cmp al,'9'
-    jbe isdigit
-    or al,20h
-    cmp al,'a'
-    jb gd_done
-    cmp al,'f'
-    ja gd_done
-    sub al,27h
-isdigit:
-    sub al,'0'
-    shl edx,4
-    movzx eax,al
-    add edx,eax
-    inc ch
-    jmp Next
-gd_done:
-    pop eax
-    cmp ch,1
-    jb failed
-    mov eax,edx
-    ret
-failed:
-    mov esi,eax
-    ret
-GetDWord endp
 
 endif
 
@@ -1700,22 +1604,24 @@ I_SetName endp
 
 I_SetAX proc
     mov eax,offset UnSupp   ;Disable all unwanted dispatches.
-    mov [@RqPlay],eax
-    mov [@RqStop],eax
-    mov [@RqRsum],eax
-    mov [@RqCHL],eax
-    mov [@RqADI],eax
-    mov [@RqATI],eax
-    mov [@RqAQI],eax
-    mov [@RqASI],eax
+    mov [@RqPlay],eax		; play audio
+    mov [@RqStop],eax		; stop audio
+    mov [@RqRsum],eax		; resume audio
+    mov [@RqCHL],eax		; current head location
+    mov [@RqADI],eax		; audio disk info
+    mov [@RqATI],eax		; audio track info
+    mov [@RqAQI],eax		; audio q-channel info
+    mov [@RqASI],eax		; audio status info
     mov eax,offset DOSSeek  ;Do only LBA-address DOS seeks.
     mov [@RqPref],eax
     mov [@RqSeek],eax
-    mov al,004h                     ;Have "Device Status" declare
-    mov @byte ds:[@Status],al       ;  we handle DATA reads only,
-    db  0B0h                        ;  and have it NOT update the
-    ret                             ;  IOCTL "busy" flag & return
-    mov @byte ds:[@RqDSX],al        ;  ["ReadAST" gets DISMISSED]!
+    mov al,004h                     ; Have "Device Status" declare
+    mov @byte ds:[@Status],al       ; we handle DATA reads only
+
+;---  have it NOT update the IOCTL "busy" flag & return.
+;---  ["ReadAudioSt" gets DISMISSED]!
+
+    mov @byte ds:[@RqDSX], 0C3h
     ret
 I_SetAX endp
 
@@ -1739,29 +1645,27 @@ NibOut:
 WordOut endp
 
 ;
-; Driver Initialization Routine.   Note that this routine runs on
-;   the DOS stack.   All logic past this point becomes our local-
-;   stack or is DISMISSED, after initialization is completed.
+; Driver Initialization Routine.
 ;
 I_Init proc
-    cld             ;Ensure FORWARD "string" commands!
+    cld
     mov esi,[dwRequest] ;Point to DOS request packet.
-    cmp [esi].RP.RPOp,0 ;Is this an "Init" packet?
-    jnz I_BadP      ;Go post errors and exit quick!
+    cmp [esi].RPINIT.bOp,0 ;Is this an "Init" packet?
+    jnz I_BadP
     mov esi,[dwCmdLine] ;Point to command line that loaded us.
 I_NxtC:
     lodsb           ;Get next command-line byte.
-    cmp al,0        ;Is byte the command-line terminator?
-    je  I_Term      ;Yes, go test for UltraDMA controller.
-    cmp al,LF       ;Is byte an ASCII line-feed?
-    je  I_Term      ;Yes, go test for UltraDMA controller.
-    cmp al,CR       ;Is byte an ASCII carriage-return?
-    je  I_Term      ;Yes, go test for UltraDMA controller.
-    cmp al,'-'      ;Is byte a dash?
-    je  I_NxtS      ;Yes, see what next "switch" byte is.
-    cmp al,'/'      ;Is byte a slash?
-    jne I_NxtC      ;No, check next command-line byte.
-I_NxtS:
+    cmp al,0
+    je  I_Term
+    cmp al,LF
+    je  I_Term
+    cmp al,CR
+    je  I_Term
+    cmp al,'-'      ; a dash?
+    je  @F          ; Yes, see what next "switch" byte is.
+    cmp al,'/'      ; a slash?
+    jne I_NxtC      ; No, check next command-line byte.
+@@:
     mov ax,[esi]    ;Get next 2 command-line bytes.
     or  ax,2020h    ;convert to lower case
     cmp ax,'xu'     ;/UX?
@@ -1769,11 +1673,13 @@ I_NxtS:
     inc esi         ;Bump pointer past "UX" switch.
     inc esi
     or [bFlags],FL_UX
+    jmp I_NxtC
 @@:
     cmp al,'f'      ;/F?
     jnz @F
     inc esi
     or [bFlags],FL_F
+    jmp I_NxtC
 @@:
     cmp ax,'xa'     ;/AX?
     jne @F
@@ -1789,12 +1695,14 @@ if DWRDIO
     inc esi
     mov @dword ds:[@DWOP+0],6DF3E9D1h   ;shr ecx,1  rep insd
     mov @word ds:[@DWOP+4],0C911h       ;adc ecx,ecx
+    jmp I_NxtC
 @@:
 endif
     cmp al,'l'      ;/L?
     jne @F
     mov @byte [@DMALmt],009h  ;Set 640K "DMA limit" above.
     inc esi         ;Bump pointer past "limit" switch.
+    jmp I_NxtC
 @@:
 if SETMODE
     cmp al,'m'      ;Is this byte an "M" or "m"?
@@ -1806,18 +1714,6 @@ if SETMODE
     jb  I_NxtC
     mov [MaxUM],ah  ;Set maximum UltraDMA "mode" above.
     inc esi         ;Bump pointer past "mode" value.
-@@:
-endif
-
-if SETVD
-    cmp ax,':p'     ;/P:?
-    jnz @F
-    inc esi
-    inc esi
-    call GetDWord
-    jc I_NxtC
-    or [bFlags],FL_P
-    mov [dwVD],eax
     jmp I_NxtC
 @@:
 endif
@@ -1827,12 +1723,12 @@ if SUPPPS
     mov edi,offset ScanLPM  ;Point to primary-channel values.
     cmp al,'p'              ;Is switch byte a "P" or "p"?
     je  @F                  ;No, go see if byte is "S" or "s".
-    mov edi,offset ScanLSM  ;Point to secondary-channel values.
+	add edi, sizeof IDEPARM * 2
     cmp al,'s'              ;Is switch byte an "S" or "s"?
     jne I_ChkD              ;No, check for "D" or "d".
 @@:
     call I_SetPS
-    jmp I_NxtC              ;Go check next command byte.
+    jmp I_NxtC
 endif
 
 I_ChkD:
@@ -1843,13 +1739,14 @@ I_ChkD:
     jne I_NxtC
     inc esi         ;Bump pointer past colon.
     call I_SetName
-    jmp I_NxtC      ;Go get next command byte.
+    jmp I_NxtC
 @@:
 if MWDMA
     cmp al,'w'      ;/W?
     jnz @F
     or [bFlags],FL_W
     inc esi
+    jmp I_NxtC
 @@:
 endif
     cmp al,'q'
@@ -1857,7 +1754,29 @@ endif
     inc esi
     or [bFlags],FL_Q
     jmp I_NxtC
+
+getpci:
+	mov dx, 0cf8h
+	out dx, eax
+	add dl, 4
+	in eax, dx
+	sub dl, 4
+	ret
+setpci:
+	mov dx, 0cf8h
+	out dx, eax
+	add dl, 4
+	mov eax, ecx
+	out dx, eax
+	sub dl, 4
+	ret
+
+;--- done cmdline parsing
+
 I_Term:
+
+;--- check for PCI BIOS
+
     mov edx,offset XCMsg    ;Display driver "title" message.
     call I_DisplaySQ
     xor edi,edi             ;UltraDMA controller check:  Request
@@ -1870,111 +1789,116 @@ I_Term:
     cmp edx," ICP"          ;Do we have a V2.0C or newer PCI BIOS?
     jne I_ChkNm             ;No, check for valid driver name.
     
-if SETVD
-    test [bFlags],FL_P
-    jz @F
-    mov eax,[dwVD]
-    mov [ebp].Client_Reg_Struc.Client_ECX,eax
-    shr eax,16
-    mov [ebp].Client_Reg_Struc.Client_EDX,eax
-    mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
-    mov al,002h             ;find vendor/device
-    call I_Int1A
-    mov esi,offset ClCEnd
-    jmp testdev
+;--- scan for native/legacy IDE controllers
+;--- rewritten for v1.5
+
+	mov edi, [pScan]
+	mov esi, 80000008h
+I_FindC:
+	mov eax, esi
+	call getpci
+	shr eax, 8
+	mov bl, al
+	and al, 80h
+	cmp eax, 10180h         ;storage+IDE+busmaster?
+	jz @F
+I_ContFindC:
+	add esi, 100h
+	cmp esi, 81000008h
+	jb I_FindC
+	jmp I_DoneScan
 @@:
-endif
-    mov esi,offset ClCodes  ;Point to interface byte table.
     
-I_FindC:                    ;<--- next controller
-    cmp esi,offset ClCEnd   ;More interface bytes to check?
-    jae I_ChkNm             ;No, check for valid driver name.
-    mov ecx,000010100h      ;Find class 1 storage, subclass 1 IDE.
-    lodsb                   ;Use next class-code "interface" byte.
-    mov cl,al
-    mov al,003h             ;Inquire about an UltraDMA controller.
-    mov [ebp].Client_Reg_Struc.Client_ESI, 0
-    mov [ebp].Client_Reg_Struc.Client_ECX, ecx
-    call I_Int1A
-testdev:
-    jc  I_FindC             ;Not found -- test for more I/F bytes.
-
 if SETBM
-    mov ebx,[ebp].Client_Reg_Struc.Client_EBX
-    mov ax,4                ;Get low-order PCI command byte.
-    call I_PCID
-;--- it's strange if BM isn't set, since we REQUESTED BM API ( bit 7 )
-;--- but it can be found, at least in emulators.
-	bts [ebp].Client_Reg_Struc.Client_ECX, 2	;busmaster enabled?
+	mov eax, esi
+	mov al, 4
+	call getpci
+	bts eax, 2              ;busmaster enabled?
 	jc @F
-	mov al, 0Bh				; enable BM
-	call I_Int1A
+;--- enable busmaster
+	mov ecx, eax
+	mov eax, esi
+	mov al, 4
+	call setpci
 @@:
 endif
 
-if 0;CLSBM
-    mov ax,8                ;get class code
-    call I_PCID
-    mov edi,[ebp].Client_Reg_Struc.Client_ECX   ;save it in EDI
-    shr edi,8
-    test @byte [ebp].Client_Reg_Struc.Client_ECX+1,80h  ;BusMaster?
-    jz I_FindC
-endif
+	mov eax, esi
+	mov al,16+4*4           ;Get DMA base address (register 4).
+	call getpci
+	and al,0FCh
+	mov ecx, eax
 
-    mov ax,0                ;Get Vendor and Device I.D.
-    call I_PCID
-    push [ebp].Client_Reg_Struc.Client_ECX  ;save it on stack
+	mov ax, 1F0h
+	test bl, 1              ;primary in "native" mode?
+	jnz @F
+	bts dword ptr bLegacy, 0
+	jnc prim_islegacy
+	or eax, -1
+	jmp prim_islegacy
+@@:
+	mov eax, esi
+	mov al,16+0*4           ;Get primary channel base port
+	call getpci
+	and al,0FCh
+prim_islegacy:
+	mov [edi+0*sizeof IDEPARM].IDEPARM.wIDEBase, ax
+	mov [edi+0*sizeof IDEPARM].IDEPARM.wDMABase, cx
+	mov [edi+1*sizeof IDEPARM].IDEPARM.wIDEBase, ax
+	mov [edi+1*sizeof IDEPARM].IDEPARM.wDMABase, cx
 
-    mov ax,16+4*4           ;Get DMA base address (register 4).
-    call I_PCID
+	mov ax, 170h
+	test bl, 4              ;secondary in "native" mode?
+	jnz @F
+	bts dword ptr bLegacy, 1
+	jnc sec_islegacy
+	or eax, -1
+	jmp sec_islegacy
+@@:
+	mov eax, esi
+	mov al,16+2*4           ;Get secondary channel base port
+	call getpci
+	and al,0FCh
+sec_islegacy:
+	add ecx, 8
+	mov [edi+2*sizeof IDEPARM].IDEPARM.wIDEBase, ax
+	mov [edi+2*sizeof IDEPARM].IDEPARM.wDMABase, cx
+	mov [edi+3*sizeof IDEPARM].IDEPARM.wIDEBase, ax
+	mov [edi+3*sizeof IDEPARM].IDEPARM.wDMABase, cx
 
-    mov eax,[ebp].Client_Reg_Struc.Client_ECX ;get our DMA controller address.
-    and al,0FCh
-    test edi,1              ;is it a native controller?
-    jz I_Legacy
-    push eax
-    mov ax,16+0*4           ;Get primary channel base port
-    call I_PCID
-    mov eax,[ebp].Client_Reg_Struc.Client_ECX
-    and al,0FCh
-    mov [ScanNPM.wIDEBase], ax
-    mov [ScanNPS.wIDEBase], ax
-    mov ax,16+2*4           ;Get secondary channel base port
-    call I_PCID
-    mov eax,[ebp].Client_Reg_Struc.Client_ECX
-    and al,0FCh
-    mov [ScanNSM.wIDEBase], ax
-    mov [ScanNSS.wIDEBase], ax
-    pop eax
-    mov edi, offset ScanNPM
-    mov dx,[ScanNPM.wIDEBase]
-    jmp I_Native
-I_Legacy:
-    mov edi, offset ScanLPM
-    mov dx,[ScanLPM.wIDEBase]
-I_Native:
-    lea ecx,[eax+8]
-    mov [edi+0*sizeof IDEPARM].IDEPARM.wDMABase,ax
-    mov [edi+1*sizeof IDEPARM].IDEPARM.wDMABase,ax
-    mov [edi+2*sizeof IDEPARM].IDEPARM.wDMABase,cx
-    mov [edi+3*sizeof IDEPARM].IDEPARM.wDMABase,cx
-    push eax
-    mov eax, edx
-    mov edi,offset CtlrAdr  ;Set IDE port in message.
-    call WordOut
-    pop eax
-    mov edi,offset CtlrAdr+5;Set DMA port in message.
-    call WordOut
-    pop eax
-    mov edi,offset CtlrID   ;Set Vendor & Device I.D. in message.
-    call WordOut
-    shr eax,16
-    call WordOut
-    mov edx,offset CtlrMsg  ;Display UltraDMA controller data.
-    call I_DisplaySQ
-    jmp I_FindC
+	@dprintf <"controller primary base=%X, secondary base=%X, dmabase=%X",13,10>, [edi].IDEPARM.wIDEBase, ax, cx
+	test [bFlags], FL_Q
+	jnz @F
+	mov eax, esi
+	shr eax, 16
+	mov ah, 0
+	mov edx, esi
+	shr edx, 11
+	and edx, 1Fh
+	mov ecx, esi
+	shr ecx, 8
+	and ecx, 7
+	invoke printf, CStr("UDMA controller at bus/dev/fn=%u/%u/%u, P/S/DMA=%X/%X/%X",CR,LF), eax, edx, ecx, [edi].IDEPARM.wIDEBase, [edi+2*sizeof IDEPARM].IDEPARM.wIDEBase, [edi].IDEPARM.wDMABase
+@@:
+	add edi, 4 * sizeof IDEPARM
+	cmp edi, offset ScanE
+	jb I_ContFindC              ;continue PCI scan
+I_DoneScan:
+	mov [pScan], edi
+
+;--- done controller scan
 
 I_ChkNm:
+	cmp [pScan], offset ScanLPM ; any PCI IDE controller found?
+	jnz @F
+	mov ax, 1F0h                ; if no, check legacy ports
+	mov [ScanLPM+0*sizeof IDEPARM].wIDEBase, ax
+	mov [ScanLPM+1*sizeof IDEPARM].wIDEBase, ax
+	mov ax, 170h
+	mov [ScanLPM+2*sizeof IDEPARM].wIDEBase, ax
+	mov [ScanLPM+3*sizeof IDEPARM].wIDEBase, ax
+@@:
+
     mov ecx,[dwBase]
     cmp @byte [ecx+10],' '      ;Is driver "name" valid?
     jnz I_SetNm                 ;Yes, display driver name.
@@ -2004,6 +1928,7 @@ if 0
     ja  I_InitE                 ;Yes?  Display message and exit!
 I_LinkX:
 endif
+
     xor eax, eax
     mov edi, eax
 I_OurUC:
@@ -2012,10 +1937,9 @@ I_OurUC:
     
     mov eax,offset UnitTbl      ;Reset our unit-table pointer.
     mov [UTblP],eax
-ifdef _DEBUG
-    mov edx,offset DbgMsg1
-    call I_DisplayS
-endif
+
+    @dprintf <"Start drive scan",CR,LF>
+
 I_ScanU:                    ;<--- try next
     mov ebx,[UTblP]         ;Get current unit-table pointer.
     mov edi,[ScanX]         ;Get current parameters index.
@@ -2024,8 +1948,7 @@ I_ScanU:                    ;<--- try next
     cmp edi,offset ScanE    ;Any more IDE units to check?
     je  I_AnyCD             ;No, check for any drives to use.
     mov ebx,edi             ;Point to IDE unit parameters.
-    add edi,sizeof IDEPARM  ;Update parameter-table index.
-    mov [ScanX],edi
+    add [ScanX], sizeof IDEPARM
 @@:
     mov ax,[ebx].UPARM.wIDEBase;Get unit's IDE address
     cmp ax,-1               ;Not scanning & unit table "empty"?
@@ -2113,19 +2036,18 @@ I_MsEnd:
 
 ;   inc @byte [Units]       ;Bump number of active units.
     mov eax, [dwBase]
-    inc @byte [eax+21]      ;units
+    inc [eax].DOSDRV.bUnits
 
     inc @byte [UMsgNo]      ;Bump display unit number.
     cmp esi,offset UTblEnd  ;Can we install another drive?
     jb  I_ScanU             ;Yes, loop back & check for more.
 I_AnyCD:
-ifdef _DEBUG
-    mov edx,offset DbgMsg2
-    call I_DisplayS
-endif
+
+    @dprintf <"End drive scan",CR,LF>
+
 ;   cmp [Units],0           ;Do we have any CD-ROM drives to use?
     mov edx, [dwBase]
-    cmp @byte [edx+21],0    ;Do we have any CD-ROM drives to use?
+    cmp [edx].DOSDRV.bUnits,0 ;Do we have any CD-ROM drives to use?
 
     ja  I_ClrSt             ;Yes, success
     mov edx,offset NDMsg    ;NOT GOOD!  Point to "No CD-ROM" msg.
@@ -2144,36 +2066,28 @@ I_ClrSt:
     mov ax,12h+4+SIZERMCODE+5
 I_Exit:
     mov esi,[dwRequest]     ;Set result values in "init" packet.
-    mov [esi].RP.RPSize,ax
-    mov [esi].RP.RPStat,dx
-    mov [esi].RP.RPUnit,0
+    mov [esi].RPINIT.RPSize,ax
+    mov [esi].RPINIT.wStat,dx
+    mov [esi].RPINIT.bUnit,0
     mov eax, edx
     ret
 I_Init endp
 ;
 ; Subroutine to "validate" an IDE unit as an ATAPI CD-ROM drive.
+; in: ebx = UPARM/IDEPARM
 ;
 I_ValDV proc
-ifdef _DEBUG
-    mov edi,offset DbgMsg4_1
-    mov ax,[ebx].UPARM.wIDEBase
-    call WordOut
-    mov edx,offset DbgMsg4
-    call I_DisplayS
-endif
+
+	@dprintf <"Scanning ATA controller, waiting for device ready, Controller base=%X",CR,LF>, [ebx].UPARM.wIDEBase
+
     mov [IEMsg],0       ;Reset our error-message pointer.
     call StopDMA        ;Stop previous DMA & select drive.
     call TestTO         ;Await controller-ready (sets DX to ATA cmd port)
     mov edi,offset TOMsg;Get "select timeout" message ptr.
     jc  I_Val7          ;If timeout, go post pointer & exit.
-ifdef _DEBUG
-    pushfd
-    pushad
-    mov edx,offset DbgMsg5
-    call I_DisplayS
-    popad
-    popfd
-endif
+
+	@dprintf <"Controller ready, executing Identify command",CR,LF>
+
     mov al,0A1h         ;Issue "Identify Packet Device" cmd.
     out dx,al
     call TestTO         ;Await controller-ready.
@@ -2226,12 +2140,9 @@ I_Val7:
 I_Val8:
     ret
 I_Val9:
-ifdef _DEBUG
-    push edx
-    mov edx,offset DbgMsg6
-    call I_DisplayS
-    pop edx
-endif
+
+	@dprintf <"ATAPI CDROM detected",CR,LF>
+
     test @byte [ebx].UPARM.wDMABase,7  ;Will we be using UltraDMA?
     jnz I_Val8                      ;No, go exit above.
     test @byte [UFlag],4            ;Valid UltraDMA "mode" bits?
@@ -2367,10 +2278,12 @@ DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
         jc failed
 
         mov edi, dwBase
-        mov @word [edi+4],0C800h    ;driver attributes
-        mov @word [edi+6],REQOFS+4
-        mov @word [edi+8],REQOFS+4+SIZERMCODE
-        mov @word [edi+20],0
+        mov [edi].DOSDRV.wAttr, 0C800h    ;driver attributes
+        mov [edi].DOSDRV.ofsStr, REQOFS+4
+        mov [edi].DOSDRV.ofsInt, REQOFS+4+SIZERMCODE
+        mov [edi].DOSDRV.wRes1, 0
+        mov [edi].DOSDRV.bRes2, 0
+        mov [edi].DOSDRV.bUnits, 0
 
         add edi, REQOFS+4
         mov esi, offset rmcode

@@ -19,9 +19,6 @@
        controllers.
   /L   limits DMA to "low memory" below 640 kB.
   /Mn  set/restrict UDMA mode to n (0 <= n <= 7).
-  /P:VVVVDDDD set PCI vendor and device ID for IDE Busmaster controller
-       to search for. This option might be useful if the PCI Bios doesn't
-       support to find a PCI class code (Int 1Ah, AX=B103h).
   /Q   quiet mode.
   /UX  disables UltraDMA for all drives and uses "PIO mode" generally.
   /W   handle (non-UDMA) drives which are capable of Multiword-DMA.
@@ -49,16 +46,18 @@
   2. Hints
 
   - the best speed is achieved by setting both /F and /32.
-  - if the driver is used in a Qemu (v0.8x or v0.9) VM, add option
-    /P:80867010 to make it find Qemu's IDE controller.
   - if the driver is used in a VirtualPC VM, set option /W to increase
     speed.
 
 
   3. History
 
-  08/2022: v1.5
+  10/2022: v1.5
+   - fixed: the driver was unable to handle multiple controllers with
+     identical class/subclass/interface values.
    - enable busmaster feature in PCI controller if not set (Qemu).
+   - timeout for startup audio functions increased to 7 secs.
+   - removed obsolete /P option.
   06/20/2012: v1.4
    - function "get q-channel info" did return track number in binary.
    - function "get q-channel info" did return value of ADR as CONTROL 

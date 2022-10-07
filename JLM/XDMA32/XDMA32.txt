@@ -20,17 +20,11 @@
   /L   limits DMA to "low memory" below 640 kB. Addresses above are 
        handled through the XMS buffer.
   /Mn  set/restrict UDMA mode to n (0 <= n <= 7).
-  /P:VVVVDDDD set PCI vendor and device ID for IDE Busmaster controller
-       to search for. This option might be useful if the PCI Bios doesn't
-       support to find a PCI class code (Int 1Ah, AX=B103h).
   /Q   quiet mode.
   /W   handle (non-UDMA) drives which are capable of Multiword-DMA.
 
 
   2. Hints
-
-  - if the driver is used in a Qemu (v0.8x or v0.9) VM, add option
-    /P:80867010 to make it find Qemu's IDE controller.
 
   - xdma32 has no device ID associated with it and hence jload cannot detect
     currently if the driver is already installed.
@@ -38,14 +32,17 @@
 
   3. History
 
-  20.08.2022: v1.5
+  10/2022: v1.5
 
    - ensure that busmaster flag in PCI command register is set.
    - created .data segment with variables to separate them from code.
+   - removed obsolete /P option.
+   - fixed: under certain conditions, an IDE controllers might not have
+     been detected.
  
-  08.08.2022: v1.4
+  08/2022: v1.4
 
-   - option /M was implemented in such a way that it became obligatory
+   - fixed: option /M was implemented in such a way that it became obligatory
      to set it to make the driver work.
 
   07/26/2011: v1.3

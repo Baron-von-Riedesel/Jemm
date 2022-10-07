@@ -18,7 +18,6 @@
 ;      allow DMA.    /L causes I-O requests past 640K to go through
 ;      the driver's buffer.
 ; /Mn  set/restrict UDMA mode.
-; /P:VVVVDDDD set IDE controller's vendor and device ID.
 ; /Q   Quiet mode.
 ; /W   also handle non-UDMA disks which can do multiword-DMA.
 ;
@@ -62,8 +61,6 @@ LBACHECK equ 1          ;check if disk supports LBA
 MWDMA   equ 1           ;support /W option to accept multi-word DMA
 SETMODE equ 1           ;support /Mn option to set UDMA mode
 NOHIGHLBA equ 0         ;avoid 4 OUTs for LBA28
-SETVD   equ 1           ;support /P option to set IDE vendor/device ID
-CLSBM   equ 1           ;test Busmaster support in class
 BUFONLY equ 1           ;support /B option
 HDNUM   equ 0           ;1=rely on value at 0040:0075
 
@@ -229,10 +226,6 @@ XMSHdl      dd 0    ;XMS memory "handle", set by Init
 wBaseSeg    dd 0    ;conventional memory segment ( supplied by loader)
 PRDAd       dd 0    ;PRD 32-bit command addr. (Init set).
 
-if SETVD
-dwVD        dd 0
-endif
-
 ;--- values for bFlags
 
 FL_Q    equ 1       ;/Q option set
@@ -241,9 +234,6 @@ FL_F    equ 2       ;/F option
 endif
 if MWDMA
 FL_W    equ 4       ;/W option
-endif
-if SETVD
-FL_P    equ 8       ;/P:VVVVDDDD option
 endif
 FLB_BUSY equ 7      ;bit 7 is "busy" flag
 
@@ -303,6 +293,10 @@ endif
 CHSSec  db  NUMDSK dup (0)  ;CHS sectors/head   table (Init set).
 CHSHd   db  NUMDSK dup (0)  ;CHS heads/cylinder table (Init set).
 
+;--- scan max 4 PCI IDE controllers
+;--- stored bus/dev/fn
+controllers dw -1,-1,-1,-1
+
 ;--- table for PCI controller programming interfaces to search for.
 ;--- is Plug&Play IDE programming interface, found in table F0087 in
 ;--- RBIL FARCALL.LST.
@@ -312,13 +306,6 @@ CHSHd   db  NUMDSK dup (0)  ;CHS heads/cylinder table (Init set).
 ; 2 secondary IDE mode (0 = legacy, 1 = native)
 ; 1 primary IDE mode bit is writable (read-only)
 ; 0 primary IDE mode (0 = legacy, 1 = native)
-
-iftab label byte
-    db 08Ah, 080h   ;legacy, BM
-    db 08Fh, 085h   ;native, BM
-    db 0FAh, 0F0h
-    db 0BAh, 0B0h   ;???
-endiftab label byte
 
 ;
 ; Initialization Tables And Variables.
@@ -347,9 +334,7 @@ DName   db 26*2 dup (0)
 
     .code
 
-ifdef _DEBUG
 	include printf.inc
-endif
 
 ;
 ; Driver Entry Routine.  For CHS requests, the registers contain:
@@ -373,25 +358,23 @@ endif
 
 Entry:
 
-if 0;def _DEBUG
-    mov esi,CStr("Entry Int 13 PM, ax=")
-    call DsplyM
-    mov ax,@word [ebp].Client_Reg_Struc.Client_EAX
-    call DsplyW
-    cmp @byte [ebp].Client_Reg_Struc.Client_EAX+1, 42h
-    jnz @F
-    mov esi,CStr(" DAP buffer=")
-    call DsplyM
-    movzx esi,@word [ebp].Client_Reg_Struc.Client_DS
-    movzx ecx,@word [ebp].Client_Reg_Struc.Client_ESI
-    shl esi, 4
-    add esi, ecx
-    mov ax,@word [esi+6]
-    call DsplyW
-    mov ax,@word [esi+4]
-    call DsplyW
+ifdef _DEBUG
+	cmp @byte [ebp].Client_Reg_Struc.Client_EAX+1, 42h
+	jz @F
+	cmp @byte [ebp].Client_Reg_Struc.Client_EAX+1, 43h
+	jnz stdpr1
 @@:
-    call DsplyEOL
+	movzx esi,@word [ebp].Client_Reg_Struc.Client_DS
+	movzx ecx,@word [ebp].Client_Reg_Struc.Client_ESI
+	shl esi, 4
+	add esi, ecx
+	@dprintf <"Entry(I13), ax=%X, dx=%X, DAP=%X, buffer=%X, sect=%X",13,10>,\
+		word ptr [ebp].Client_Reg_Struc.Client_EAX,\
+		word ptr [ebp].Client_Reg_Struc.Client_EDX, esi, [esi].DAP.DapBuf, dword ptr [esi].DAP.LBA01
+	jmp stdpr2
+stdpr1:
+	@dprintf <"Entry(I13), ax=%X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
+stdpr2:
 endif
 
     mov edx,[ebp].Client_Reg_Struc.Client_EDX
@@ -404,6 +387,7 @@ NextU:
     jne NextU                   ;No, see if more table entries remain.
     bts @dword [bFlags],FLB_BUSY;set "busy" flag
     jc IsBusy                   ;exit with error AH=01 if driver is busy
+	@dprintf <"Entry(I13), IDE/Alt/DMA=%X/%X/%X",13,10>, [edi*2+IDEAd], [edi*2+IDEAlt], [edi*2+DMAAd]
     mov eax,[ebp].Client_Reg_Struc.Client_EAX
     mov dl,0BEh     ;Mask out LBA and write request bits.
     and dl,ah       ; 02/03/42/43 -> 2
@@ -529,6 +513,7 @@ endif
     VxDCall VDMAD_Lock_DMA_Region   ; lock region esi, size ecx, dl[0] check 64 kb crossing
     jc BufIO            ;Error -- do buffered I-O.
     mov [IOAdr], edx
+;	@dprintf <"Entry(I13), lock ok, addr=%X",13,10>, edx
 
     cmp @word [IOAdr+2],-1  ;DMA I-O above our limit?
 @DMALmt equ $-1         ;(If 640K limit, ffff is patched to 9fff by Init).
@@ -571,6 +556,7 @@ GoOut:
     align 4
 
 BufIO:
+;	@dprintf <"Entry(I13), BufIO",13,10>
     test [IOCmd],012h   ;Is this a write request?
     jnz BufOut          ;Yes, use output routine
 
@@ -696,14 +682,22 @@ skip4:
     inc edx
     out dx, al
 
-if 1  ;was deactivated until v1.4?
+if 0
+
+;--- the DRQ status bit is NOT necessarily set
+;--- for DMA transfers, so this code should not run.
+
     mov dx,[edi*2+IDEAlt]
+	@dprintf <"DoDMA waiting for DRQ=1, esi=%X, dx=%X",13,10>, esi, dx
+	jmp @F
+waitdrq:
+	VMMCall Yield
 @@:
     cmp ch,[esi]    ;Too long without 1st data-request?
     je DMAEnd       ;Yes?  Return carry and DMA timeout!
     in al,dx        ;Read IDE alternate status.
     and al,DRQ      ;Has 1st data-request arrived?
-    jz @B           ;No, loop back and check again.
+    jz waitdrq      ;No, loop back and check again.
 endif
 
     mov dx, [edi*2+DMAAd]
@@ -782,28 +776,26 @@ DMAEnd:
 ; Subroutines to display a DWORD/WORD/BYTE in EAX/AX/AL
 ;
 DsplyD:
-    push eax
-    shr eax,16
-    call DsplyW
-    pop eax
+	invoke printf, CStr("%08X"), eax
+	ret
 DsplyW:
-    push eax
-    mov al,ah
-    call DsplyB
-    pop eax
+	invoke printf, CStr("%04X"), ax
+	ret
 DsplyB:
-    push eax
-    shr al,4
-    call DsplyN
-    pop eax
+	push eax
+	movzx eax, al
+	invoke printf, CStr("%02X"), eax
+	pop eax
+	ret
 DsplyN:
-    and al,00Fh     ;Mask off next hex digit.
-    cmp al,009h     ;Is digit 0-9?
-    jbe @F          ;Yes, convert to ASCII.
-    add al,007h     ;Add A-F offset.
+	and al,00Fh
+	cmp al,009h
+	jbe @F
+	add al,007h
 @@:
-    add al,'0'      ;Convert digit to ASCII.
-    jmp DsplyC      ;Display digit
+	add al,'0'
+	invoke printf, CStr("%c"), eax
+	ret
 
 DsplyMQ:
     test [bFlags],FL_Q
@@ -816,30 +808,8 @@ DsplyEOL:
 ;   At entry, the "text" pointer is in the ESI-register.
 ;
 DsplyM:
-DspNxt:
-    lodsb           ;Get next output byte.
-    or al,al        ;Are we at the terminating "null"?
-    jz DspEx        ;No, loop back & display next byte.
-    call DsplyC     ;Display character using the BIOS.
-    jmp DspNxt
-DspEx:
-    ret
-;
-; Subroutine to display a character using a BIOS "Int 010h" call.
-;
-DsplyC:
-    push [ebp].Client_Reg_Struc.Client_EBX
-    push [ebp].Client_Reg_Struc.Client_EAX
-    VMMCall Begin_Nest_Exec
-    mov ah,0Eh
-    mov word ptr [ebp].Client_Reg_Struc.Client_EAX, ax
-    mov byte ptr [ebp].Client_Reg_Struc.Client_EBX+1, 0
-    mov eax, 10h
-    VMMCall Exec_Int
-    VMMCall End_Nest_Exec
-    pop [ebp].Client_Reg_Struc.Client_EAX
-    pop [ebp].Client_Reg_Struc.Client_EBX
-    ret
+	invoke printf, CStr("%s"), esi
+	ret
     align 4
 
 ; wait for IDE controller to become "ready"
@@ -1066,6 +1036,23 @@ I_SErr:
 
 I_ValDisk endp
 
+getpci:
+	mov dx, 0cf8h
+	out dx, eax
+	add dl, 4
+	in eax, dx
+	sub dl, 4
+	ret
+setpci:
+	mov dx, 0cf8h
+	out dx, eax
+	add dl, 4
+	mov eax, ecx
+	out dx, eax
+	sub dl, 4
+	ret
+
+
 ;--- get DMA and IDE controller ports for a HD
 ;--- EBX=bus/device/func
 ;--- EDI=drive
@@ -1076,72 +1063,86 @@ I_ValDisk endp
 I_GetPorts proc
 
 ;--- v1.5: ensure that Busmaster flag is set in command register
-    mov word ptr [ebp].Client_Reg_Struc.Client_EBX, bx
-    mov word ptr [ebp].Client_Reg_Struc.Client_EDI, 4
-    mov ax, 8               ;read command register (byte)
-    call Int1A_B1
-    bts word ptr [ebp].Client_Reg_Struc.Client_ECX, 2  ; enable busmaster
-    jc @F
-    mov word ptr [ebp].Client_Reg_Struc.Client_EBX, bx
-    mov word ptr [ebp].Client_Reg_Struc.Client_EDI, 4
-    mov ax, 0Bh             ;write command register (byte)
-    call Int1A_B1
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al, 4               ;read command register (byte)
+	call getpci
+	bts eax, 2              ;busmaster set?
+	jc @F
+	mov ecx, eax
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al, 4
+	call setpci
 @@:
 
-    mov ax, 8               ;get class code
-    call Int1A_B10A
-    @dprintf <"GetPorts: get class code for BX=%X, CX=%X",13,10>, bx, word ptr [ebp].Client_Reg_Struc.Client_ECX
-if CLSBM
-    test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,80h   ;BusMaster?
-    stc
-    jz exit
-endif
-    test byte ptr [ebp].Client_Reg_Struc.Client_ECX+1,1 ;native controller?
-    jz islegacy
-    @dprintf <"GetPorts: native IDE controller",13,10>
-    mov ax,16+0*4           ;Get primary IDE base address
-    call Int1A_B10A
-    @dprintf <"primary base=%X - %X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_ECX, word ptr [edi*2+IDEAd]
-    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-    and cl,0FCh
-    cmp cx,[edi*2+IDEAd]
-    jz getDMA
-    mov ax,16+2*4           ;Get secondary IDE base address
-    call Int1A_B10A
-    @dprintf <"secondary base=%X - %X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_ECX, word ptr [edi*2+IDEAd]
-    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-    and cl,0FCh
-    cmp cx,[edi*2+IDEAd]
-    stc
-    jnz exit 
-    call getDMA
-    add ecx,8
-    clc
-    ret
-islegacy:
-    call getDMA
-    cmp [edi*2+IDEAd],1F0h
-    jz @F
-    add ecx,8
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al, 8               ;get class code
+	call getpci
+	shr eax, 8
+	test eax, 1             ;native controller?
+	jz islegacy
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al,16+0*4           ;Get primary IDE base address
+	call getpci
+	and al, 0fch
+	mov ecx, eax
+	@dprintf <"GetPorts: pri bases=%X-%X",13,10>, ecx, word ptr [edi*2+IDEAd]
+	cmp cx,[edi*2+IDEAd]
+	jnz @F
+	call getDMA
+	@dprintf <"GetPorts: native, DMA port=%X",13,10>, ecx
+	clc
+	ret
 @@:
-    @dprintf <"GetPorts: legacy IDE controller, DMA port=%X",13,10>, cx
-    clc
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al,16+2*4           ;Get secondary IDE base address
+	call getpci
+	and al, 0fch
+	mov ecx, eax
+	@dprintf <"GetPorts: cmp sec base=%X-%X",13,10>, ecx, word ptr [edi*2+IDEAd]
+	cmp cx,[edi*2+IDEAd]
+	stc
+	jnz exit 
+	call getDMA
+	add ecx,8
+	@dprintf <"GetPorts: native, DMA=%X",13,10>, ecx
+	clc
+	ret
+islegacy:
+	call getDMA
+	cmp [edi*2+IDEAd],1F0h
+	jz @F
+	add ecx,8
+@@:
+	@dprintf <"GetPorts: legacy, IDE=%X, DMA=%X",13,10>, [edi*2+IDEAd], ecx
+	clc
 exit:
-    ret
+	ret
 getDMA:
-    mov ax,16+4*4           ;Get PCI DMA base address (register 4).
-    call Int1A_B10A
-    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-    and cl,0FCh
-    ret
-    align 4
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al,16+4*4           ;Get PCI DMA base address (register 4).
+	call getpci
+	mov ecx, eax
+	and cl, 0fch
+	ret
+	align 4
 I_GetPorts endp
 
-;--- get Ultra-DMA port for EDD 2.0
+;--- get Ultra-DMA port for EDD 2.0/3.0
 ;--- inp: EDI=drive
 ;--- out: NC + DMA controller port base in CX
 ;--- C on errors
-;--- scans iftab
 
 ;--- PCI command register
 ;--- 0001: I/O access enabled
@@ -1150,92 +1151,43 @@ I_GetPorts endp
 ;--- 0008:
 
 I_GetUDMAC proc
-if SETVD
-    test [bFlags],FL_P
-    jz @F
-    @dprintf <"GetUDMAC: using vendor/device of /P switch",13,10>
-    mov eax,[dwVD]
-    mov [ebp].Client_Reg_Struc.Client_ECX,eax
-    shr eax,16
-    mov [ebp].Client_Reg_Struc.Client_EDX,eax
-    mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
-    mov al,2                ;int 1ah, ax=b102: find CX=device/DX=vendor/SI=index
-    call Int1A_B1
-    mov esi,offset endiftab	;8A-80/8F-85/FA-F0/BA-B0
-    jmp testdev
-@@:
-endif
-    mov esi,offset iftab    ;Point to interface byte table.
+    mov esi, offset controllers
 NextIF:
-    mov ecx,000010100h      ;We want class 1 [16-23], storage), subclass 1 ([8-15], IDE).
-    lodsb                   ;Get next "valid" PCI interface byte.
-    mov cl,al
-    mov [ebp].Client_Reg_Struc.Client_ECX, ecx
-    mov @word [ebp].Client_Reg_Struc.Client_ESI, 0  ;controller index
-    mov al,3                ;int 1ah, ax=b103: find ECX=class code (out: BX=bus/device/function).
-    call Int1A_B1
-testdev:
-    jc I_Continue           ;Succeeded?
-    mov ebx, [ebp].Client_Reg_Struc.Client_EBX
-    @dprintf <"GetUDMAC: IDE controller found, BUS/FUNC=%X",13,10>, ebx
-    mov ax,4                ;Get PCI command + status register
-    call Int1A_B10A
-    @dprintf <"GetUDMAC: cmd+status register=%X",13,10>, [ebp].Client_Reg_Struc.Client_ECX
-    mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-if CLSBM
-    and ecx,1               ;Mask I-O Space bits.
-    cmp ecx,1               ;Is this how our controller is set up?
-else
+	lodsw
+	cmp ax,-1
+	jz error
+	movzx ebx, ax
+ifdef _DEBUG
+	shr eax, 8
+	movzx eax, al
+	mov edx, ebx
+	shr edx, 3
+	and edx, 1Fh
+	mov ecx, ebx
+	and ecx, 7
+	@dprintf <"GetUDMAC: check IDE controller Bus/Dev/Fn=%u/%u/%u",13,10>, eax, edx, ecx
+endif
+	mov eax, ebx
+	shl eax, 8
+	bts eax, 31
+	mov al, 4               ;Get PCI command + status register
+	call getpci
+	mov ecx, eax
+	@dprintf <"GetUDMAC: cmd+status register=%X",13,10>, ecx
     and ecx,4+1             ;Mask Bus-Master and I-O Space bits.
     cmp ecx,4+1             ;Is this how our controller is set up?
-endif
-    jnz I_Continue          ;No?  Continue scan!
+    jnz @F
     call I_GetPorts
     jnc exit
-I_Continue:
-    cmp esi,offset endiftab ;More interface bytes to try?
-    jb NextIF               ;Yes, go try next one.
+@@:
+    cmp esi, offset controllers + sizeof controllers
+    jb NextIF               ; go try next one.
+error:
     stc
 exit:
     ret
     align 4
 I_GetUDMAC endp
-
-GetDWord proc
-    push esi
-    mov ch,0
-    xor edx,edx
-Next:
-    lodsb
-    and al,al
-    jz gd_done
-    cmp al,'0'
-    jb gd_done
-    cmp al,'9'
-    jbe isdigit
-    or al,20h
-    cmp al,'a'
-    jb gd_done
-    cmp al,'f'
-    ja gd_done
-    sub al,27h
-isdigit:
-    sub al,'0'
-    shl edx,4
-    movzx eax,al
-    add edx,eax
-    inc ch
-    jmp Next
-gd_done:
-    pop eax
-    cmp ch,1
-    jb error
-    mov eax,edx
-    ret
-error:
-    mov esi,eax
-    ret
-GetDWord endp
 
 ;--- get cmdline parameters
 ;--- modifies ESI
@@ -1291,18 +1243,6 @@ if SETMODE
     jb I_NxtC
     mov [MaxUM],ah  ;Set maximum UltraDMA "mode" above.
     inc esi         ;Bump pointer past "mode" value.
-@@:
-endif
-if SETVD
-    cmp ax,':p'     ;/P:?
-    jnz @F
-    inc esi
-    inc esi
-    call GetDWord
-    jc I_NxtC
-    or [bFlags],FL_P
-    mov [dwVD],eax
-    jmp I_NxtC
 @@:
 endif
 if BUFONLY
@@ -1411,7 +1351,7 @@ I_NoDskDisp:
     jc  I_CHSE              ;If BIOS error, zero sectors/head.
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
     mov edx,[ebp].Client_Reg_Struc.Client_EDX
-    @dprintf <"SetDisk: int 13,ax=8 ok, cx=%X dx=%X",13,10>, cx, dx
+    @dprintf <"SetDisk: int 13, ax=8 ok, cx=%X dx=%X",13,10>, cx, dx
     and ecx,03Fh            ;Get sectors/head value (low 6 bits).
     inc dh                  ;Get heads/cylinder (BIOS value + 1).
     jnz I_SetC              ;If non-zero, save disk's CHS values.
@@ -1454,6 +1394,39 @@ InitXDMA proc
     mov esi,CStr('PCI BIOS Invalid')
     cmp edx," ICP"          ;Is PCI BIOS V2.0C or newer?
     jne I_Err               ;Go display error message and exit.
+
+    @dprintf <"PCI BIOS detected",13,10>
+
+;--- get all PCI IDE controllers
+	mov esi, 80000008h
+	mov edi, offset controllers
+nextctrl:
+	mov eax, esi
+	call getpci
+	shr eax, 8
+	and al,80h
+	cmp eax, 10180h
+	jnz @F
+	mov eax, esi
+	shr eax, 8
+	stosw
+ifdef _DEBUG
+	movzx eax, ax
+	mov ecx, eax
+	shr ecx, 3
+	and ecx, 1Fh
+	mov edx, eax
+	and edx, 7
+	shr eax, 8
+	@dprintf <"PCI IDE controller found at %u/%u/%u",13,10>, eax, ecx, edx
+endif
+	cmp edi, offset controllers + sizeof controllers
+	jnc donectrl
+@@:
+	add esi,100h
+	cmp esi,81000008h
+	jb nextctrl
+donectrl:
 
     mov ax,03513h           ;Get and save current Int 13h vector.
     call Int21
@@ -1604,6 +1577,7 @@ I_IsEDD20:
     jmp I_EDDdone
 
 ;--- BIOS/drive is EDD30
+;--- edx=DPTE (if lpCfg != -1)
 
 I_IsEDD30:
     @dprintf <"drive is EDD30, szIFType=%X",13,10>, dword ptr [esi].EDD30.szIFType
@@ -1632,7 +1606,7 @@ I_IsEDD30:
 ;--- lpCfg might be -1!!!
     cmp [esi].EDD20.lpCfg,-1;Valid "DPTE" pointer?
     je @F
-    mov ax,[edx]            ;the PCI info doesn't tell if prim or secondary!
+    mov ax,[edx].DPTE.wIDEBase  ;the PCI info doesn't tell if prim or secondary!
     and ax,ax
     jz I_ErED
     mov [edi*2+IDEAd],ax    ;so we need the DPTE
@@ -1773,23 +1747,8 @@ Int13 proc
     ret
 Int13 endp
 
-;--- call Int 1Ah, ax=b10A: read config dword
-;--- in: ax=register# ( will be in DI)
-;---     bx=bus/device/function
-
-Int1A_B10A proc
-    mov [ebp].Client_Reg_Struc.Client_EBX, ebx
-    mov [ebp].Client_Reg_Struc.Client_EDI, eax
-    mov al,00Ah     ;Set "PCI doubleword" request code.
-Int1A_B10A endp
-
-;--- fall thru
-
 ;--- call int 1Ah, ax=B1xx; in: al=xx
 ;--- al=01h: install check, in: edi=0, out: edx="PCI ", BX=version
-;--- al=02h: find PCI device, in: cx=deviceID, dx=vendorID, si=index
-;--- al=03h: find PCI class code, in: ecx=class code (class,subclass,programming if)
-;--- al=0Ah: read config dword
 
 Int1A_B1 proc
     mov ah,0B1h     ;Issue PCI BIOS interrupt.
