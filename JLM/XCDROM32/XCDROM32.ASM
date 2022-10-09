@@ -1803,6 +1803,7 @@ I_FindC:
 	cmp eax, 10180h         ;storage+IDE+busmaster?
 	jz @F
 I_ContFindC:
+	VMMCall Yield
 	add esi, 100h
 	cmp esi, 81000008h
 	jb I_FindC

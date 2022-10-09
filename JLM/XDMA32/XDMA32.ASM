@@ -1052,92 +1052,73 @@ setpci:
 	sub dl, 4
 	ret
 
-
-;--- get DMA and IDE controller ports for a HD
-;--- EBX=bus/device/func
-;--- EDI=drive
-;--- for a "native" controller, IDE port bases are in registers 0-3
+;--- get DMA controller port for a HD.
+;--- for a "native" controller, IDE port bases are in registers 0-3:
 ;--- 0+1=primary base+alternate, 2+3=secondary base+alternate
-;--- out: DMA port in CX
+;--- in: BX=bus/device/func
+;---     EDI=drive#
+;---     [edi][IDEAd]=IDE port
+;--- out: CX=DMA port
 
-I_GetPorts proc
+I_GetDMAPort proc uses esi
+
+	movzx ebx, bx
+	shl ebx, 8
+	bts ebx, 31
 
 ;--- v1.5: ensure that Busmaster flag is set in command register
 	mov eax, ebx
-	shl eax, 8
-	bts eax, 31
 	mov al, 4               ;read command register (byte)
 	call getpci
 	bts eax, 2              ;busmaster set?
 	jc @F
 	mov ecx, eax
 	mov eax, ebx
-	shl eax, 8
-	bts eax, 31
 	mov al, 4
 	call setpci
 @@:
-
 	mov eax, ebx
-	shl eax, 8
-	bts eax, 31
-	mov al, 8               ;get class code
-	call getpci
-	shr eax, 8
-	test eax, 1             ;native controller?
-	jz islegacy
-	mov eax, ebx
-	shl eax, 8
-	bts eax, 31
-	mov al,16+0*4           ;Get primary IDE base address
-	call getpci
-	and al, 0fch
-	mov ecx, eax
-	@dprintf <"GetPorts: pri bases=%X-%X",13,10>, ecx, word ptr [edi*2+IDEAd]
-	cmp cx,[edi*2+IDEAd]
-	jnz @F
-	call getDMA
-	@dprintf <"GetPorts: native, DMA port=%X",13,10>, ecx
-	clc
-	ret
-@@:
-	mov eax, ebx
-	shl eax, 8
-	bts eax, 31
-	mov al,16+2*4           ;Get secondary IDE base address
-	call getpci
-	and al, 0fch
-	mov ecx, eax
-	@dprintf <"GetPorts: cmp sec base=%X-%X",13,10>, ecx, word ptr [edi*2+IDEAd]
-	cmp cx,[edi*2+IDEAd]
-	stc
-	jnz exit 
-	call getDMA
-	add ecx,8
-	@dprintf <"GetPorts: native, DMA=%X",13,10>, ecx
-	clc
-	ret
-islegacy:
-	call getDMA
-	cmp [edi*2+IDEAd],1F0h
-	jz @F
-	add ecx,8
-@@:
-	@dprintf <"GetPorts: legacy, IDE=%X, DMA=%X",13,10>, [edi*2+IDEAd], ecx
-	clc
-exit:
-	ret
-getDMA:
-	mov eax, ebx
-	shl eax, 8
-	bts eax, 31
 	mov al,16+4*4           ;Get PCI DMA base address (register 4).
 	call getpci
 	mov ecx, eax
 	and cl, 0fch
+
+	mov eax, ebx
+	mov al, 8               ;get class code
+	call getpci
+	shr eax, 8
+	mov esi, eax
+	mov eax, 1F0h
+	bt esi, 0               ;primary native?
+	jnc @F
+	mov eax, ebx
+	mov al,16+0*4           ;Get primary IDE base address
+	call getpci
+	and al, 0fch
+@@:
+	@dprintf <"GetPorts: cmp pri base=%X-%X",13,10>, eax, word ptr [edi*2+IDEAd]
+	cmp ax,[edi*2+IDEAd]
+	jz found
+	mov eax, 170h
+	bt esi, 2               ;secondary native?
+	jnc @F
+	mov eax, ebx
+	mov al,16+2*4           ;Get secondary IDE base address
+	call getpci
+	and al, 0fch
+@@:
+	@dprintf <"GetPorts: cmp sec base=%X-%X",13,10>, eax, word ptr [edi*2+IDEAd]
+	cmp ax,[edi*2+IDEAd]
+	stc
+	jnz exit 
+	add ecx, 8
+found:
+	@dprintf <"GetPorts: DMA=%X",13,10>, ecx
+	clc
+exit:
 	ret
 	align 4
-I_GetPorts endp
+I_GetDMAPort endp
 
 ;--- get Ultra-DMA port for EDD 2.0/3.0
 ;--- inp: EDI=drive
@@ -1151,7 +1132,7 @@ I_GetPorts endp
 ;--- 0008:
 
 I_GetUDMAC proc
-    mov esi, offset controllers
+	mov esi, offset controllers
 NextIF:
 	lodsw
 	cmp ax,-1
@@ -1174,19 +1155,19 @@ endif
 	call getpci
 	mov ecx, eax
 	@dprintf <"GetUDMAC: cmd+status register=%X",13,10>, ecx
-    and ecx,4+1             ;Mask Bus-Master and I-O Space bits.
-    cmp ecx,4+1             ;Is this how our controller is set up?
-    jnz @F
-    call I_GetPorts
-    jnc exit
+	and ecx,4+1             ;Mask Bus-Master and I-O Space bits.
+	cmp ecx,4+1             ;Is this how our controller is set up?
+	jnz @F
+	call I_GetDMAPort
+	jnc exit
 @@:
-    cmp esi, offset controllers + sizeof controllers
-    jb NextIF               ; go try next one.
+	cmp esi, offset controllers + sizeof controllers
+	jb NextIF               ; go try next one.
 error:
-    stc
+	stc
 exit:
-    ret
-    align 4
+	ret
+	align 4
 I_GetUDMAC endp
 
 ;--- get cmdline parameters
@@ -1383,7 +1364,7 @@ I_SetDisk endp
 ;
 InitXDMA proc
     cld
-    @dprintf <"Init entry",13,10>
+    @dprintf <"InitXDMA entry, eflags=%X",13,10>, [ebp].Client_Reg_Struc.Client_EFlags
     call I_GetParams        ;get cmdline params
     mov esi,CStr("XDMA32",VERSION, CR,LF)
     call DsplyMQ
@@ -1404,7 +1385,7 @@ nextctrl:
 	mov eax, esi
 	call getpci
 	shr eax, 8
-	and al,80h
+	and al, 80h
 	cmp eax, 10180h
 	jnz @F
 	mov eax, esi
@@ -1423,8 +1404,9 @@ endif
 	cmp edi, offset controllers + sizeof controllers
 	jnc donectrl
 @@:
-	add esi,100h
-	cmp esi,81000008h
+	VMMCall Yield
+	add esi, 100h
+	cmp esi, 81000008h
 	jb nextctrl
 donectrl:
 
@@ -1603,7 +1585,9 @@ I_IsEDD30:
     jmp I_SkipDrv
 
 @@:
-;--- lpCfg might be -1!!!
+;--- lpCfg might be -1!
+;--- if this happens, we can't distinguish primary and secondary
+
     cmp [esi].EDD20.lpCfg,-1;Valid "DPTE" pointer?
     je @F
     mov ax,[edx].DPTE.wIDEBase  ;the PCI info doesn't tell if prim or secondary!
@@ -1617,7 +1601,7 @@ I_IsEDD30:
     shl bl,3
     and al,7
     or bl,al
-    call I_GetPorts
+    call I_GetDMAPort
 
 ifdef _DEBUG
     jnc I_EDDdone
