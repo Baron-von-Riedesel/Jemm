@@ -4,6 +4,7 @@
  __.__.2022: v5.83
  - AHCICD: new JLM for CD/DVD devices attached to a SATA controller running
    in AHCI mode (cooked mode only).
+ - XDMA32, XCDROM32: now accepting "AHCI-disabled" SATA controllers.
 
  09.08.2022: v5.82
  - JemmEx: minor adjustment to always keep monitor stack dword-aligned.
