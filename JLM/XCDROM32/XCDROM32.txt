@@ -3,7 +3,11 @@
 
  XCDROM32 is a JLM based on Jack R. Ellis' XCDROM Ultra-DMA CD-ROM driver.
  It supports PCI IDE controllers running in "legacy" or "native" mode.
- To load it, add the following line to your CONFIG.SYS:
+
+
+ 2. Usage
+
+ To load the driver, add the following line to your CONFIG.SYS:
 
    DEVICE=JLOAD.EXE XCDROM32.DLL [options]
 
@@ -23,8 +27,11 @@
   /UX  disables UltraDMA for all drives and uses "PIO mode" generally.
   /W   handle (non-UDMA) drives which are capable of Multiword-DMA.
 
+
+ 3. Details
+
   XCDROM32 has 3 modes of operation:
-  
+
   1. "direct" mode: the target address is used for DMA input. This usually
      is the fastest way and is used whenever possible.
   2. "buffered" mode: the VDS DMA buffer is used for DMA input, then the
@@ -41,44 +48,6 @@
        CD-ROM/DVD device has no valid Multiword-DMA mode set.
      - "buffered mode" cannot be used because VDS DMA buffer isn't
        accessible or is too small.
-
-
-  2. Hints
-
-  - the best speed is achieved by setting both /F and /32.
-  - if the driver is used in a VirtualPC VM, set option /W to increase
-    speed.
-
-
-  3. History
-
-  10/2022: v1.5
-   - fixed: the driver was unable to handle multiple controllers with
-     identical class/subclass/interface values.
-   - enable busmaster feature in PCI controller if not set (Qemu).
-   - timeout for startup audio functions increased to 7 secs.
-   - removed obsolete /P option.
-  06/20/2012: v1.4
-   - function "get q-channel info" did return track number in binary.
-   - function "get q-channel info" did return value of ADR as CONTROL 
-     and vice versa.
-   - function "get audio status" did return start and end address as
-     LBA sector numbers.
-
-  05/21/2012: v1.3
-   - scan for native (=SATA) controllers didn't succeed usually.
-
-  12/28/2007: v1.2
-   - /P, /W and /32 options added, /UF option changed to /F
-   - Jemm's VDS DMA buffer used if user buffer cannot be used.
-   - IDE/DMA ports are now displayed for each unit.
-
-  12/03/2007: v1.1
-   - now both "legacy" and "native" IDE controllers are supported.
-   - some bugfixes.
-
-  05/24/2007: v1.0
-   - initial. Ported from XCDROM v1.9.
 
 
   4. License

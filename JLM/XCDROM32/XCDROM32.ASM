@@ -62,8 +62,6 @@
 ;
 ;  /W    accept (non-UDMA) devices which can do multiword-DMA.
 ;
-;  /P:vvvvdddd set vendor/device ( for old versions of Qemu )
-;
 ; For each switch, a dash may replace the slash, and lower-case letters
 ; may be used.
 
@@ -78,11 +76,11 @@
 ; General Program Equations.
 ;
 
-SUPPPS      equ 0       ;support /PM /PS /SM /SS option
 SETMODE     equ 1       ;support /M option, set UDMA mode
 SETBM       equ 1       ;test Busmaster support in "class"
 MWDMA       equ 1       ;support /W option to accept multi-word DMA
 DWRDIO      equ 1       ;support /32 option (PIO DWORD IO)
+SAVESTAT    equ 1       ;call save/restore "client reg struct" on init
 
 VER     equ <'V1.5, 06.10.2022'>    ;Driver version number and date.
 MSELECT equ 0A0h        ;"Master" device-select bits.
@@ -120,6 +118,7 @@ CSTAT   equ 7           ;Primary status register (read)
 BSY     equ 080h        ;IDE controller is busy.
 DRQ     equ 008h        ;IDE data request.
 ERR     equ 001h        ;IDE general error flag.
+
 DMI     equ 004h        ;DMA interrupt occured.
 DME     equ 002h        ;DMA error occurred.
 SETM    equ 003h        ;Set Mode subcommand.
@@ -222,16 +221,13 @@ bDevSel     db ?    ;Device-select (set by Init).
             dw ?    ;not used
             db ?    ;Media-change flag (one byte below dwAudSta).
             AUDADR <>
-;dwAudSta    dd ?    ;Current audio-start address.
-;            dd ?    ;Current audio-end   address.
-;            dd ?    ;Last-session starting LBA.
 UPARM ends
 
 ;--- macros
 
 CStr macro text:vararg
 local sym
-	.const
+	.data
 sym db text,0
 	.code
 	exitm <offset sym>
@@ -323,13 +319,12 @@ FL_UX   equ 8       ;/UX option set
 ;
 InBuf   equ $
 UTblP   dd  offset UnitTbl      ;Initialization unit table pointer.
-IEMsg   dd  0                   ;Init error-message pointer.
+ScanX   dd  offset ScanLPM      ;Scan table index (-1 = no scan).
+pScan   dd  offset ScanLPM
 MaxUM   db  -1                  ;UDMA "mode" limit set by /Mn option.
 UFlag   db  0                   ;UltraDMA "mode" flags (set by Init).
 UMode   db  0                   ;UltraDMA "mode" value (set by Init).
-bLegacy db  0                   ;allow just one "legacy" mode
-ScanX   dd  offset ScanLPM      ;Scan table index (-1 = no scan).
-pScan   dd  offset ScanLPM
+bLegacy db  0                   ;allow just one "legacy" controller
 
 ;
 ; Unit Parameter Tables.   If you want a 4th drive, simply add 1 more
@@ -459,44 +454,26 @@ ScanE   equ $           ;(End of IDE parameter table).
 
 if MWDMA
 MWModes label word
-    dw  0004h       ;Mode 0
-    dw  0013h       ;Mode 1
-    dw  0016h       ;Mode 2
+    dw  0004       ;Mode 0
+    dw  0013       ;Mode 1
+    dw  0016       ;Mode 2
 endif
 UModes label word
-    dw  0016h       ;Mode 0, ATA-16  UDMA mode table
-    dw  0025h       ;Mode 1, ATA-25
-    dw  0033h       ;Mode 2, ATA-33
-    dw  0044h       ;Mode 3, ATA-44  (Unusual but possible).
-    dw  0066h       ;Mode 4, ATA-66
-    dw  0100h       ;Mode 5, ATA-100
-    dw  0133h       ;Mode 6, ATA-133
-    dw  0166h       ;Mode 7, ATA-166
+    dw  0016       ;Mode 0, ATA-16  UDMA mode table
+    dw  0025       ;Mode 1, ATA-25
+    dw  0033       ;Mode 2, ATA-33
+    dw  0044       ;Mode 3, ATA-44  (Unusual but possible).
+    dw  0066       ;Mode 4, ATA-66
+    dw  0100       ;Mode 5, ATA-100
+    dw  0133       ;Mode 6, ATA-133
+    dw  0166       ;Mode 7, ATA-166
 
-XCMsg   db  'XCDROM32 '
-        db  VER     ;XCDROM.ASM provides version and date!
-        db  '.',CR,LF,0
-DvrMsg  db  'Driver name is '
-DvrMsg1 db  '        ',0
-LEMsg   db  '.',CR,LF,'/L Invalid',0
-SyEMsg  db  '.',CR,LF,'ERROR '
-Suffix  db  '; XCDROM32 not loaded!',CR,LF,0
-UnitMsg db  'Unit '
-UMsgNo  db  '0: ',0
-TOMsg   db  ' device select timeout',0
-IDMsg   db  ' Identify Device error',0
-NCMsg   db  " isn't an ATAPI CD-ROM",0
-SEMsg   db  ' UltraDMA Set Mode error',0
-NDMsg   db  'No CD-ROM drive to use',0
-MstMsg  db  'Master',0
-SlvMsg  db  'Slave',0
-PortMsg db  ', IDE/DMA ports '
-IDEPort db  '    /'
-DMAPort db  '    , ',0
-UDMsg   db  ', ATA-'
-UDMode  db  '   ',0
-PIOMsg  db  ', PIO mode',0
-CRMsg   db  '.',CR,LF,0
+UnitNo  dw  0
+wDmaMode dw 0
+        db -1
+DrvName db 40+1 dup (0)
+szDriver db 9 dup (0)
+
 
 rmcode label byte
     db 2Eh, 89h, 1eh, REQOFS+0, 0    ;mov cs:[16h],bx
@@ -1031,7 +1008,6 @@ DoIO14:
     in  ax,dx               ;"Eat" residual input bytes.
     loop @B
 DoIO17:
-    VMMCall Yield
     mov ah,SEEKTO           ;Allow 2 seconds if drive must "seek".
     jmp ContPioIO           ;Go see if more I-O is needed.
     align 4
@@ -1155,10 +1131,12 @@ ValSN1::
 @@: 
 ;   cmp eax,00006DD3Ah
     cmp eax,001000000h      ;Is starting sector too big?
-    jb  TestTOX             ;No, all is well -- exit above.
+    jb  done                ;No, all is well -- exit.
 ValSNE:
     pop eax                 ;Error!  Discard our exit address.
     jmp SectNF              ;Post "sector not found" and exit.
+done:
+	ret
 ValSN endp
 ;
 ;--- Subroutine to test for I-O timeouts.
@@ -1166,29 +1144,30 @@ ValSN endp
 ;--- Out: DX=IDE primary-status register.
 ;--- modifies: eax, esi
 ;
-TestTO:
+TestTO proc
     xor cl,cl           ;Check for only controller-ready.
-TestTO1:                ;<--- CL-reg = 008h to test for a data-request
+TestTO1::               ;<--- CL-reg = 008h to test for DRQ
     mov ah, CMDTO       ;Use 500-msec command timeout.
-TestTO2:
+TestTO2::               ;<--- AH=STARTTO
     mov esi,BIOSTMR     ;0040:006Ch
     add ah,[esi]        ;Set timeout limit in AH-reg.
 @@:
     VMMCall Yield       ;preserves all registers
     cmp ah,[esi]        ;Has our I-O timed out?
     stc                 ;(If so, set carry flag).
-    je  TestTOX         ;Yes?  Exit with carry flag on.
+    je  exit            ;Yes?  Exit with carry flag on.
     mov dx,[ebx].UPARM.wIDEBase
     add edx,7
     in  al,dx           ;Read IDE primary status.
     test al,BSY         ;Is our controller still busy?
     jnz @B              ;Yes, loop back and test again.
     or  cl,cl           ;Are we also awaiting I-O data?
-    jz  TestTOX         ;No, just exit.
+    jz  exit            ;No, just exit.
     test al,cl          ;Is data-request (DRQ) also set?
     jz  @B              ;No, loop back and test again.
-TestTOX:
+exit:
     ret                 ;Exit -- carry indicates timeout.
+TestTO endp
 ;
 ; Subroutine to ensure UltraDMA is stopped and then select our CD-ROM
 ;   drive.   For some older chipsets, if UltraDMA is running, reading
@@ -1506,37 +1485,6 @@ ConvMSF:
     div cl
     ret             ;Exit -- EAX-reg. contains MSF value.
 
-if SUPPPS
-
-;--- handle /PM /PS /SM /SS switches
-;--- EDI-> IDEPARM
-;--- AH=M or S
-
-I_SetPS proc
-    inc esi         ;Bump pointer past "channel" switch.
-    cmp ah,'m'      ;Is following byte an "M" or "m"?
-    je  I_SetHW     ;Yes, set desired hardware values.
-    cmp ah,'s'      ;Is following byte an "S" or "s"?
-    jne I_NxtCJ     ;No, see if byte is a terminator.
-    add edi,sizeof IDEPARM      ;Point to channel "slave" values.
-I_SetHW:
-    inc esi         ;Bump pointer past master/slave byte.
-    or  [ScanX],-1  ;Set "no scan" flag.
-    xor edx,edx     ;Get this device's hardware values.
-    xchg edx,@dword [edi].IDEPARM.wIDEBase
-    or  edx,edx     ;Have we already used these values?
-    jz  I_NxtCJ     ;Yes, IGNORE duplicate switches!
-    mov edi,[UTblP] ;Get current unit-table pointer.
-    cmp edi,offset UTblEnd  ;Have we already set up all units?
-    je  I_NxtCJ             ;Yes, IGNORE any more switches!
-    mov @dword [edi].UPARM.wIDEBase,edx    ;Set parameters in unit table.
-    add [UTblP],sizeof UPARM   ;Bump to next unit table.
-I_NxtCJ:
-    ret
-I_SetPS endp
-
-endif
-
 ;--- set device name (/D:xxxx)
 
 I_SetName proc    
@@ -1604,14 +1552,14 @@ I_SetName endp
 
 I_SetAX proc
     mov eax,offset UnSupp   ;Disable all unwanted dispatches.
-    mov [@RqPlay],eax		; play audio
-    mov [@RqStop],eax		; stop audio
-    mov [@RqRsum],eax		; resume audio
-    mov [@RqCHL],eax		; current head location
-    mov [@RqADI],eax		; audio disk info
-    mov [@RqATI],eax		; audio track info
-    mov [@RqAQI],eax		; audio q-channel info
-    mov [@RqASI],eax		; audio status info
+    mov [@RqPlay],eax       ; play audio
+    mov [@RqStop],eax       ; stop audio
+    mov [@RqRsum],eax       ; resume audio
+    mov [@RqCHL],eax        ; current head location
+    mov [@RqADI],eax        ; audio disk info
+    mov [@RqATI],eax        ; audio track info
+    mov [@RqAQI],eax        ; audio q-channel info
+    mov [@RqASI],eax        ; audio status info
     mov eax,offset DOSSeek  ;Do only LBA-address DOS seeks.
     mov [@RqPref],eax
     mov [@RqSeek],eax
@@ -1625,24 +1573,49 @@ I_SetAX proc
     ret
 I_SetAX endp
 
-WordOut proc
+;--- for SATA controllers, check if AHCI mode is disabled
+;--- in: EAX=phys. address HBA
+
+IsAHCIdisabled proc uses edi ebx
+
+	@dprintf <"SATA controller at %X",13,10>, eax
+	mov edi, eax
+    push 0
+    push 1
+    push PR_SYSTEM
+    VMMCall _PageReserve    ;allocate a 4 kB block of address space
+    add esp,3*4
+    cmp eax,-1
+    jz error
+    mov ebx, eax            ; save linear address in ebx
+    @dprintf <"HBA mapped at %X",13,10>, ebx
+
+    shr eax, 12             ;convert linear address to page number
+
+    push PC_INCR or PC_WRITEABLE
+    mov edx, edi
+    shr edx, 12
+    push edx
+    push 1
     push eax
-    mov al,ah
-    call ByteOut
-    pop eax
-ByteOut:
-    push eax
-    shr eax,4
-    call NibOut
-    pop eax
-NibOut:
-    and al,0Fh
-    cmp al,10
-    sbb al,69H
-    das
-    stosb
-    ret
-WordOut endp
+    VMMCall _PageCommitPhys ;backup address space
+    add esp,4*4
+
+	and edi, 0fffh
+	mov eax, [ebx+edi+4]
+
+	@dprintf <"HBA.GHC=%X",13,10>, eax
+
+;--- todo: free address space
+
+	and eax, eax
+	js error
+	or eax, -1
+	ret
+error:
+	xor eax, eax
+	ret
+IsAHCIdisabled endp
 
 ;
 ; Driver Initialization Routine.
@@ -1718,19 +1691,6 @@ if SETMODE
 @@:
 endif
 
-if SUPPPS
-
-    mov edi,offset ScanLPM  ;Point to primary-channel values.
-    cmp al,'p'              ;Is switch byte a "P" or "p"?
-    je  @F                  ;No, go see if byte is "S" or "s".
-	add edi, sizeof IDEPARM * 2
-    cmp al,'s'              ;Is switch byte an "S" or "s"?
-    jne I_ChkD              ;No, check for "D" or "d".
-@@:
-    call I_SetPS
-    jmp I_NxtC
-endif
-
 I_ChkD:
     cmp al,'d'      ;Is switch byte a "D" or "d"?
     jne @F
@@ -1775,20 +1735,23 @@ setpci:
 
 I_Term:
 
+	test [bFlags],FL_Q
+	jnz @F
+    invoke printf, CStr('XCDROM32 ',VER,'.',CR,LF)
+@@:
+
 ;--- check for PCI BIOS
 
-    mov edx,offset XCMsg    ;Display driver "title" message.
-    call I_DisplaySQ
-    xor edi,edi             ;UltraDMA controller check:  Request
-    mov al,001h             ;  PCI BIOS I.D. (should be "PCI ").
-    mov [ebp].Client_Reg_Struc.Client_EDI, 0
-    call I_Int1A
-
-    mov edi, [ebp].Client_Reg_Struc.Client_EDI
+	mov @word [ebp].Client_Reg_Struc.Client_EAX, 0B101h ; get PCI BIOS version
+	VMMCall Begin_Nest_Exec
+	mov eax, 1Ah
+	VMMCall Exec_Int
+	VMMCall End_Nest_Exec
     mov edx, [ebp].Client_Reg_Struc.Client_EDX
+
     cmp edx," ICP"          ;Do we have a V2.0C or newer PCI BIOS?
     jne I_ChkNm             ;No, check for valid driver name.
-    
+
 ;--- scan for native/legacy IDE controllers
 ;--- rewritten for v1.5
 
@@ -1798,18 +1761,28 @@ I_FindC:
 	mov eax, esi
 	call getpci
 	shr eax, 8
-	mov bl, al
+	mov ebx, eax
 	and al, 80h
 	cmp eax, 10180h         ;storage+IDE+busmaster?
-	jz @F
+	jz isEIDE
+	cmp ebx, 10601h         ;SATA controller?
+	jz isSATA
 I_ContFindC:
 	VMMCall Yield
 	add esi, 100h
 	cmp esi, 81000008h
 	jb I_FindC
 	jmp I_DoneScan
-@@:
-    
+isSATA:
+;--- for SATA controllers, check if AHCI is enabled
+	mov eax, esi
+	mov al, 16+5*4
+	call getpci
+	and al, 0fch
+	call IsAHCIdisabled
+	and eax, eax
+	jz I_ContFindC          ;if AHCI active, ignore device
+isEIDE:
 if SETBM
 	mov eax, esi
 	mov al, 4
@@ -1830,44 +1803,44 @@ endif
 	and al,0FCh
 	mov ecx, eax
 
-	mov ax, 1F0h
 	test bl, 1              ;primary in "native" mode?
-	jnz @F
+	jnz prim_native
+	mov ax, 1F0h
 	bts dword ptr bLegacy, 0
-	jnc prim_islegacy
+	jnc @F
 	or eax, -1
-	jmp prim_islegacy
-@@:
+	jmp @F
+prim_native:
 	mov eax, esi
 	mov al,16+0*4           ;Get primary channel base port
 	call getpci
 	and al,0FCh
-prim_islegacy:
+@@:
 	mov [edi+0*sizeof IDEPARM].IDEPARM.wIDEBase, ax
 	mov [edi+0*sizeof IDEPARM].IDEPARM.wDMABase, cx
 	mov [edi+1*sizeof IDEPARM].IDEPARM.wIDEBase, ax
 	mov [edi+1*sizeof IDEPARM].IDEPARM.wDMABase, cx
 
-	mov ax, 170h
 	test bl, 4              ;secondary in "native" mode?
-	jnz @F
+	jnz sec_native
+	mov ax, 170h
 	bts dword ptr bLegacy, 1
-	jnc sec_islegacy
+	jnc @F
 	or eax, -1
-	jmp sec_islegacy
-@@:
+	jmp @F
+sec_native:
 	mov eax, esi
 	mov al,16+2*4           ;Get secondary channel base port
 	call getpci
 	and al,0FCh
-sec_islegacy:
+@@:
 	add ecx, 8
 	mov [edi+2*sizeof IDEPARM].IDEPARM.wIDEBase, ax
 	mov [edi+2*sizeof IDEPARM].IDEPARM.wDMABase, cx
 	mov [edi+3*sizeof IDEPARM].IDEPARM.wIDEBase, ax
 	mov [edi+3*sizeof IDEPARM].IDEPARM.wDMABase, cx
 
-	@dprintf <"controller primary base=%X, secondary base=%X, dmabase=%X",13,10>, [edi].IDEPARM.wIDEBase, ax, cx
+	@dprintf <"controller primary base=%X, secondary base=%X, dmabase=%X",13,10>, [edi].IDEPARM.wIDEBase, ax, [edi].IDEPARM.wDMABase
 	test [bFlags], FL_Q
 	jnz @F
 	mov eax, esi
@@ -1879,7 +1852,7 @@ sec_islegacy:
 	mov ecx, esi
 	shr ecx, 8
 	and ecx, 7
-	invoke printf, CStr("UDMA controller at bus/dev/fn=%u/%u/%u, P/S/DMA=%X/%X/%X",CR,LF), eax, edx, ecx, [edi].IDEPARM.wIDEBase, [edi+2*sizeof IDEPARM].IDEPARM.wIDEBase, [edi].IDEPARM.wDMABase
+	invoke printf, CStr("IDE controller at bus/dev/fn=%u/%u/%u, P/S/DMA=%X/%X/%X",CR,LF), eax, edx, ecx, [edi].IDEPARM.wIDEBase, [edi+2*sizeof IDEPARM].IDEPARM.wIDEBase, [edi].IDEPARM.wDMABase
 @@:
 	add edi, 4 * sizeof IDEPARM
 	cmp edi, offset ScanE
@@ -1902,16 +1875,18 @@ I_ChkNm:
 
     mov ecx,[dwBase]
     cmp @byte [ecx+10],' '      ;Is driver "name" valid?
-    jnz I_SetNm                 ;Yes, display driver name.
+    jnz @F
     mov @dword [ecx+10],"RDCX"  ;Set our default "name".
     mov @dword [ecx+10+4],"$$MO"
-I_SetNm:
+@@:
+	test [bFlags],FL_Q
+	jnz @F
     mov eax,[ecx+10+0]
-    mov @dword [DvrMsg1+0],eax
+    mov @dword [szDriver+0],eax
     mov eax,[ecx+10+4]
-    mov @dword [DvrMsg1+4],eax
-    mov edx,offset DvrMsg       ;Display our driver "name".
-    call I_DisplaySQ
+    mov @dword [szDriver+4],eax
+    invoke printf, CStr('Driver name is %s.',13,10), offset szDriver
+@@:
     
     mov esi, offset DmaAdr
     mov ecx, 4*4
@@ -1930,101 +1905,52 @@ if 0
 I_LinkX:
 endif
 
-    xor eax, eax
-    mov edi, eax
-I_OurUC:
-    mov edx,offset CRMsg        ;Display ending CR/LF message.
-    call I_DisplaySQ
-    
-    mov eax,offset UnitTbl      ;Reset our unit-table pointer.
-    mov [UTblP],eax
-
     @dprintf <"Start drive scan",CR,LF>
+    mov [UTblP], offset UnitTbl ;Reset our unit-table pointer.
 
 I_ScanU:                    ;<--- try next
-    mov ebx,[UTblP]         ;Get current unit-table pointer.
-    mov edi,[ScanX]         ;Get current parameters index.
-    cmp edi,-1              ;Are we "scanning" for drives?
-    je  @F                  ;No, get unit-table parameters.
-    cmp edi,offset ScanE    ;Any more IDE units to check?
+    mov ebx,[ScanX]         ;Get current parameters index.
+    cmp ebx,[pScan]         ;Any more IDE units to check?
     je  I_AnyCD             ;No, check for any drives to use.
-    mov ebx,edi             ;Point to IDE unit parameters.
     add [ScanX], sizeof IDEPARM
-@@:
+
     mov ax,[ebx].UPARM.wIDEBase;Get unit's IDE address
-    cmp ax,-1               ;Not scanning & unit table "empty"?
-    je  I_AnyCD             ;Yes, check for any drives to use.
-    call I_ValDV            ;Validate device as an ATAPI CD-ROM.
-    jnc I_AnySy             ;If no error, we can USE this drive!
-    cmp [ScanX],-1          ;"Scanning" for drives?
-    je  I_AnySy             ;No, must show unit & error.
-ifndef _DEBUG    
-    cmp @dword [IEMsg],offset SEMsg ;UltraDMA "Set-Mode" error?
-    jne I_ScanU             ;No, ignore & try next unit.
-endif    
-I_AnySy:
+    cmp ax,-1               ;valid address?
+    je  I_ScanU             ;no, skip this entry
+    call I_ValDV            ;check if device is an ATAPI CD-ROM
+    jnc  I_ScnVN            ;if yes, display device and update UnitTbl
+    @dprintf <"port %X: ValDV returned error '%s'",13,10>, [ebx].UPARM.wIDEBase, edi
+    jmp I_ScanU             ;try next unit.
+I_ScnVN:
     test [bFlags],FL_UX     ;Was the /UX switch given?
     je  @F                  ;No, display all drive data.
     or  @byte [ebx].UPARM.wDMABase,1   ;Post drive "DMA disabled".
 @@:
-    mov edx,offset UnitMsg  ;Display "Unit n:" message.
-    call I_DisplaySQ
-if 0
-    mov edx,offset PriMsg   ;Point to "Primary" message.
-    test [ebx].UPARM.wDMABase,8;Primary-channel drive?
-    je  @F                  ;Yes, display "Primary" message.
-    mov edx,offset SecMsg   ;Point to "Secondary" message.
+	test [bFlags],FL_Q
+	jnz nodisp
+
+    mov edi,offset DrvName + sizeof DrvName - 1
 @@:
-    call I_DisplaySQ        ;Display our CD-ROM's IDE channel.
-endif
-    mov edx,offset MstMsg   ;Point to "Master" message.
-    test [ebx].UPARM.bDevSel,10h   ;Is our drive a "slave"?
-    jz  @F                  ;No, display "Master".
-    mov edx,offset SlvMsg   ;Point to "Slave" message.
+    mov @byte [edi],0       ; skip trailing spaces of drive name
+    dec edi
+    cmp @byte [edi],' '
+    je  @B
+
+    mov edx, CStr("Master")
+    test [ebx].UPARM.bDevSel,10h
+    jz  @F
+    mov edx, CStr("Slave")
 @@:
-    call I_DisplaySQ        ;Display "Master" or "Slave".
+	invoke printf, CStr("Unit %u: %s, IDE/DMA ports %X/%X, %s, "),
+		UnitNo, edx, [ebx].UPARM.wIDEBase, [ebx].UPARM.wDMABase, offset DrvName
+	mov ecx,CStr("PIO mode",13,10)
+	test @byte [ebx].UPARM.wDMABase,7  ;Will drive be using UltraDMA?
+	jnz @F
+	mov ecx, CStr("ATA-%u",13,10)
+@@:
+	invoke printf, ecx, wDmaMode
+nodisp:
 
-    mov ax,[ebx].UPARM.wIDEBase
-    mov edi,offset IDEPort
-    call WordOut
-    inc edi
-    mov ax,[ebx].UPARM.wDMABase
-    call WordOut
-    mov edx,offset PortMsg
-    call I_DisplaySQ        ;Display IDE/DMA ports
-
-
-    cmp [IEMsg],0           ;Did any validation ERROR occur?
-    jz  I_ScnVN             ;No, scan "vendor name" for data.
-    mov edx,[IEMsg]         ;Get init error-message pointer.
-ifdef _DEBUG
-    call I_DisplaySQ
-    mov edx,offset CRMsg    ;Display terminating CR/LF/$.
-    call I_DisplaySQ
-    jmp I_ScanU             ;ignore & try next unit.
-else
-    jmp I_InitE             ;Go display error message and exit.
-endif    
-I_ScnVN:
-    mov edi,offset XCMsg+40 ;Point to CD-ROM "vendor name" end.
-I_ScnV1:
-    mov @byte [edi],0       ;Set message terminator after name.
-    dec edi                 ;Point to previous name byte.
-    cmp @byte [edi],' '     ;Is this byte a space?
-    je  I_ScnV1             ;Yes, keep scanning for a non-space.
-    cmp @byte [XCMsg],0     ;Is CD-ROM "name" all spaces?
-    je  I_ModeM             ;Yes, no need to display it!
-    mov edx,offset XCMsg    ;Display manufacturer CD-ROM "name".
-    call I_DisplaySQ
-I_ModeM:
-    mov edx,offset PIOMsg   ;Point to "PIO mode" message.
-    test @byte [ebx].UPARM.wDMABase,7  ;Will drive be using UltraDMA?
-    jnz I_MsEnd             ;No, display "PIO mode" message.
-    mov edx,offset UDMsg    ;Point to "ATA-xx" message.
-I_MsEnd:
-    call I_DisplaySQ        ;Display drive's operating "mode".
-    mov edx,offset CRMsg    ;Display terminating CR/LF/$.
-    call I_DisplaySQ
     mov esi,[UTblP]         ;Update all unit-table parameters.
     mov ax,[ebx].UPARM.wIDEBase
     mov cx,[ebx].UPARM.wDMABase
@@ -2039,7 +1965,7 @@ I_MsEnd:
     mov eax, [dwBase]
     inc [eax].DOSDRV.bUnits
 
-    inc @byte [UMsgNo]      ;Bump display unit number.
+    inc [UnitNo]            ;Bump display unit number.
     cmp esi,offset UTblEnd  ;Can we install another drive?
     jb  I_ScanU             ;Yes, loop back & check for more.
 I_AnyCD:
@@ -2051,18 +1977,20 @@ I_AnyCD:
     cmp [edx].DOSDRV.bUnits,0 ;Do we have any CD-ROM drives to use?
 
     ja  I_ClrSt             ;Yes, success
-    mov edx,offset NDMsg    ;NOT GOOD!  Point to "No CD-ROM" msg.
+    mov edx, CStr('No CD-ROM drive to use')
 I_InitE:
-I_DsplE:
-    call I_DisplayS         ;Display desired error message.
-    mov edx,offset Suffix   ;Display error message suffix.
-I_Quit:
-    call I_DisplayS
+    invoke printf, CStr('%s; XCDROM32 not loaded!',CR,LF), edx
 I_BadP:
     xor eax,eax             ;Get "null" length & error flags.
     mov dx,RPDON+RPERR
     jmp I_Exit              ;Go set "init" packet values & exit.
 I_ClrSt:
+
+if 0
+	invoke printf, CStr("xcdrom32: v86 ss:sp=%X:%X",CR,LF),
+		[ebp].Client_Reg_Struc.Client_SS, [ebp].Client_Reg_Struc.Client_ESP
+endif
+
     mov dx,RPDON            ;Get initialization "success" code.
     mov ax,12h+4+SIZERMCODE+5
 I_Exit:
@@ -2075,49 +2003,64 @@ I_Exit:
 I_Init endp
 ;
 ; Subroutine to "validate" an IDE unit as an ATAPI CD-ROM drive.
-; in: ebx = UPARM/IDEPARM
+; in: ebx = IDEPARM
+; ebx must be preserved!
 ;
 I_ValDV proc
 
-	@dprintf <"Scanning ATA controller, waiting for device ready, Controller base=%X",CR,LF>, [ebx].UPARM.wIDEBase
-
-    mov [IEMsg],0       ;Reset our error-message pointer.
     call StopDMA        ;Stop previous DMA & select drive.
+    mov edi,CStr('Device select timeout')
     call TestTO         ;Await controller-ready (sets DX to ATA cmd port)
-    mov edi,offset TOMsg;Get "select timeout" message ptr.
     jc  I_Val7          ;If timeout, go post pointer & exit.
 
-	@dprintf <"Controller ready, executing Identify command",CR,LF>
+;--- check if BSY and DRQ are 0; bit 6 (device ready ) should be 1,
+;--- but this is nothing to rely on...
+	and al, BSY or DRQ  ;check BSY+DRQ, both must be 0
+	jnz I_Val7
+
+	@dprintf <"ValDV: ready, base=%X, executing Identify Packet command",CR,LF>, [ebx].UPARM.wIDEBase
 
     mov al,0A1h         ;Issue "Identify Packet Device" cmd.
     out dx,al
     call TestTO         ;Await controller-ready.
-    mov edi,offset IDMsg;Get "Identify" message pointer.
+    mov edi, CStr('Identify Device error')
+ifdef _DEBUG
+	pushfd
+	lahf
+	@dprintf <"ValDV: Identify Packet command returned, ax=%X",CR,LF>, ax
+	popfd
+endif
     jc  I_Val7          ;If timeout, go post pointer & exit.
-    test al,DRQ         ;Did we also get a data-request?
-    jz  I_Val6          ;No, post "not ATAPI" ptr. & exit.
+    test al,ERR         ;non-ATAPI devices will respond with ERR set
+    jnz I_Val6
+
+if 1
+	@dprintf <"ValDV, identify ok, al=%X, port=%X",CR,LF>, eax, [ebx].UPARM.wIDEBase
+else
+	invoke printf, CStr("ValDV, identify ok, al=%X, port=%X",CR,LF), eax, [ebx].UPARM.wIDEBase
+endif
+
     sub edx,7           ;Point back to IDE data register.
-    mov ecx,128
+    mov ecx,90
     sub esp,ecx
     sub esp,ecx
     mov edi,esp
     rep insw
-    mov ecx,128         ;skip the last half
+    mov ecx,256-90      ;skip the rest
 @@:
     in  ax,dx
     loop @B
     
-    mov esi,esp
-    mov edi,offset XCMsg;Point to drive "name" input buffer.
+    mov edi,offset DrvName ;Point to drive "name" input buffer.
     mov cl,20           ;Read & swap words 27-46 into buffer.
-    push esi
-    lea esi,[esi+27*2]  ;(Manufacturer "name" of this drive).
+    lea esi,[esp+27*2]  ;(Manufacturer "name" of this drive).
 @@:
     lodsw
     xchg al,ah
     stosw
     loop @B
-    pop esi
+
+    mov esi,esp
     mov al,[esi+53*2]
     mov [UFlag],al      ;Save UltraDMA "valid" flags.
     mov dx,[esi+88*2]
@@ -2128,15 +2071,14 @@ I_ValDV proc
 if MWDMA
     mov ch,[esi+63*2+1] ;copy multiword flags to CH
 endif    
-    add esp,128*2       ;restore ESP
+    add esp,90*2       ;restore ESP
     
     and ax,0DF03h       ;Mask off flags for an ATAPI CD-ROM.
     cmp ax,08500h       ;Do device flags say "ATAPI CD-ROM"?
     je  I_Val9          ;Yes, see about UltraDMA use.
 I_Val6:
-    mov edi,offset NCMsg;Get "not an ATAPI CD-ROM" msg. ptr.
+    mov edi, CStr("No ATAPI CD-ROM")
 I_Val7:
-    mov [IEMsg],edi     ;Post desired error-message pointer.
     stc                 ;Set carry flag on (error!).
 I_Val8:
     ret
@@ -2146,14 +2088,14 @@ I_Val9:
 
     test @byte [ebx].UPARM.wDMABase,7  ;Will we be using UltraDMA?
     jnz I_Val8                      ;No, go exit above.
-    test @byte [UFlag],4            ;Valid UltraDMA "mode" bits?
+    test @byte [UFlag], 4           ;Valid UltraDMA "mode" bits?
     jz  noudma                      ;No, jump
 
 if SETMODE
     cmp [MaxUM],-1      ;/Mn switch used?
     jz nomopt
     movzx edx,dl        ;supported UDMA modes in EDX now
-    bsr eax,edx
+    bsr eax, edx
     jz nomopt
     mov dl,[MaxUM]
     cmp dl,al           ;supported mode < /Mn?
@@ -2174,8 +2116,9 @@ if SETMODE
     mov al,SETF         ;Issue "set features" command.
     out dx,al
     call TestTO         ;Await controller-ready.
-    mov edi,offset SEMsg;Get "Set Mode error" message ptr.
-    jc I_Val7           ;If timeout, go post pointer & exit.
+	test al, ERR
+    jz nomopt
+    invoke printf, CStr('UltraDMA Set Mode failed',CR,LF)
 nomopt:
 endif
     mov edi,offset UModes
@@ -2204,54 +2147,11 @@ I_Val11:
     mov cl,[MaxUM]
 @@:
     mov ax,@word [ecx*2+edi]
-    mov edi,offset UDMode-1
-    call WordOut
-    mov byte ptr [edi-4],'-'    ;restore first byte
+	mov wDmaMode, ax
     clc
     ret
 I_ValDV endp
-;
-; Subroutines to do all initialization "external" calls.
-;
-I_PCID:
-    mov [ebp].Client_Reg_Struc.Client_EDI, eax
-    mov [ebp].Client_Reg_Struc.Client_EBX, ebx
-    mov al,00Ah         ;Set "PCI doubleword" request code.
-I_Int1A:                ;<--- entry al = 1, 3
-    mov ah,0B1h         ;PCI BIOS -- execute desired request.
-    mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
-    VMMCall Begin_Nest_Exec
-    mov eax, 1Ah
-    VMMCall Exec_Int
-    VMMCall End_Nest_Exec
-    mov ah,@byte [ebp].Client_Reg_Struc.Client_EFlags
-    sahf
-    mov eax,[ebp].Client_Reg_Struc.Client_EAX
-I_In1AX:
-    ret
 
-I_DisplaySQ:
-    test [bFlags],FL_Q
-    jnz I_In1AX
-
-I_DisplayS proc
-    push esi
-    mov esi, edx
-    VMMCall Begin_Nest_Exec
-@@nextitem:
-    lodsb
-    cmp al,0
-    jz  I_DisplayS_done
-    mov @byte [ebp].Client_Reg_Struc.Client_EDX, al
-    mov @byte [ebp].Client_Reg_Struc.Client_EAX+1, 2
-    mov eax, 21h
-    VMMCall Exec_Int
-    jmp @@nextitem
-I_DisplayS_done:
-    VMMCall End_Nest_Exec
-    pop esi
-    ret
-I_DisplayS endp
 
 DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 
@@ -2292,18 +2192,31 @@ DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
         rep movsb
         stosd
 
-        VMMCall Get_Cur_VM_Handle
-
 ;--- set EBP to the client pointer before calling I_Init
 
         push ebp
+        VMMCall Get_Cur_VM_Handle
         mov ebp,[ebx].cb_s.CB_Client_Pointer
+if SAVESTAT
+        sub esp, sizeof Client_Reg_Struc
+        mov edi, esp
+        VMMCall Save_Client_State
+endif
+
         call I_Init
-        pop ebp
 
         cmp ax,RPDON
         setz al
-        movzx eax,al
+if SAVESTAT
+        movzx edi,al
+        mov esi, esp
+        VMMCall Restore_Client_State
+        add esp, sizeof Client_Reg_Struc
+        mov eax, edi
+else
+        movzx eax, al
+endif
+        pop ebp
 ;    .endif
 done:
     ret

@@ -1,0 +1,32 @@
+
+  History
+
+  10/2022: v1.5
+   - fixed: the driver was unable to handle multiple controllers with
+     identical class/subclass/interface values.
+   - enable busmaster feature in PCI controller if not set (Qemu).
+   - timeout for startup audio functions increased to 7 secs.
+   - removed obsolete /P option.
+   - SATA controllers in non-AHCI mode handled correctly.
+  06/20/2012: v1.4
+   - function "get q-channel info" did return track number in binary.
+   - function "get q-channel info" did return value of ADR as CONTROL 
+     and vice versa.
+   - function "get audio status" did return start and end address as
+     LBA sector numbers.
+
+  05/21/2012: v1.3
+   - scan for native (=SATA) controllers didn't succeed usually.
+
+  12/28/2007: v1.2
+   - /P, /W and /32 options added, /UF option changed to /F
+   - Jemm's VDS DMA buffer used if user buffer cannot be used.
+   - IDE/DMA ports are now displayed for each unit.
+
+  12/03/2007: v1.1
+   - now both "legacy" and "native" IDE controllers are supported.
+   - some bugfixes.
+
+  05/24/2007: v1.0
+   - initial. Ported from XCDROM v1.9.
+

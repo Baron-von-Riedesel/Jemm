@@ -44,6 +44,10 @@
 
     include jlm.inc
 
+ifndef ?PCISCAN
+?PCISCAN equ 1
+endif
+
 ;
 ; General Program Equations.
 ;
@@ -94,7 +98,7 @@ CSTAT2  equ CDATA+206h  ;Alternate status register.
 ; Controller Status and Command Definitions.
 ;
 BSY     equ 080h        ;IDE controller is busy.
-RDY     equ 040h        ;IDE disk is "ready".
+RDY     equ 040h        ;disk device is "ready".
 FLT     equ 020h        ;IDE disk has a "fault".
 DRQ     equ 008h        ;IDE data request.
 ERR     equ 001h        ;IDE general error flag.
@@ -814,6 +818,8 @@ DsplyM:
 
 ; wait for IDE controller to become "ready"
 ; out: C if error occured
+;--- used for cmds EC (identify), EF (set features)
+;--- just the BSY+ERR flags are checked, "device ready" and DRQ are ignored!
 
 WaitRdy proc
 
@@ -825,8 +831,8 @@ WaitRdy proc
     cmp cl,[esi]            ;Has our command timed out?
     je Error                ;Yes, set CPU carry flag & exit.
     in al,dx                ;Get IDE controller status.
-    test al,BSY+RDY         ;Controller or disk still busy?
-    jle @B                  ;Yes, loop back and check again.
+    test al,BSY             ;Controller or disk still busy?
+    jnz @B                  ;Yes, loop back and check again.
     test al,ERR             ;Did command cause any errors?
     jz Exit                 ;No, exit
 Error:
@@ -1473,7 +1479,7 @@ endif
 
 ;--- scan the HDs, max 2 times
 ;--- first with int 13h calls (ah=41h)
-;--- then  with int 1ah (PCI).
+;--- if none found, try with int 1ah ("PCI disk scan").
 
     mov [HDUnit],80h        ;Reset hard-disk unit number
     mov al,[BiosHD]         ;Reset remaining hard-disk count.
@@ -1567,6 +1573,8 @@ I_IsEDD30:
     cmp eax ,"ATA"          ;ATA interface?
     jz @F
     cmp eax ," ATA"
+    jz @F
+    cmp eax ,"ATAS"                ;for SATA, check if AHCI mode is disabled!
     jnz I_SkipDrv
 @@:
     mov al, [esi].EDD30.szDevPath  ;for ATA, device path contains master/slave flag
@@ -1588,12 +1596,12 @@ I_IsEDD30:
 ;--- lpCfg might be -1!
 ;--- if this happens, we can't distinguish primary and secondary
 
-    cmp [esi].EDD20.lpCfg,-1;Valid "DPTE" pointer?
-    je @F
-    mov ax,[edx].DPTE.wIDEBase  ;the PCI info doesn't tell if prim or secondary!
+    cmp [esi].EDD20.lpCfg,-1    ; Valid "DPTE" pointer?
+    jz I_SkipDrv
+    mov ax,[edx].DPTE.wIDEBase  ; the PCI info doesn't tell if prim or secondary!
     and ax,ax
     jz I_ErED
-    mov [edi*2+IDEAd],ax    ;so we need the DPTE
+    mov [edi*2+IDEAd],ax        ; so we need the DPTE
 @@:
     mov bh, [esi].EDD30.qwIFPath   ;get interface path (Bus)
     mov bl, [esi].EDD30.qwIFPath+1 ;get interface path (Device)
@@ -1627,6 +1635,7 @@ I_SkipDrv:
 
 ;--- PCI scan
 
+if ?PCISCAN
     mov esi,CStr('PCI disk scan:',CR,LF)
     call DsplyMQ
     mov [HDUnit],80h        ;Reset hard-disk unit number
@@ -1647,6 +1656,7 @@ NextDev2:
     inc [HDUnit]            ;Bump BIOS unit
     dec @byte [HDCount]     ;More BIOS disks to check?
     jnz NextDev2            ;Yes, loop back and do next one.
+endif
     and edi,edi             ;any disk in unit table?
     jz I_None
 

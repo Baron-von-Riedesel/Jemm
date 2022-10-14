@@ -1,0 +1,37 @@
+
+  10/2022: v1.5
+
+   - ensure that busmaster flag in PCI command register is set.
+   - created .data segment with variables to separate them from code.
+   - removed obsolete /P option.
+   - fixed: under certain conditions, an IDE controllers might not have
+     been detected.
+ 
+  08/2022: v1.4
+
+   - fixed: option /M was implemented in such a way that it became obligatory
+     to set it to make the driver work.
+
+  07/26/2011: v1.3
+
+   - to determine the number of HDs in the system, an Int 13h, ah=08
+     is issued. BIOS variable 0040:0075 is ignored.
+
+  04/20/2011: v1.2
+
+   - bugfix: HDs attached to the "native" secondary channel were
+     ignored.
+
+  12/28/2007: v1.1
+
+   - bugfix: HDs attached to the "legacy" secondary channel didn't
+     work (wrong DMA ports).
+   - options /B, /M, /W and /P added, /UF option changed to /F.
+   - now max. 8 HDs are supported.
+   - usage of Jemm's new export 'MoveMemory' reduces interrupt latency,
+     and also makes this version incompatible with Jemm v5.68 and below.
+
+  12/03/2007: v1.0
+
+   - initial. Ported from XDMA v3.3. Added support for both "legacy"
+     and "native" IDE controllers.

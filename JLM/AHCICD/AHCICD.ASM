@@ -899,29 +899,34 @@ foundHBA:
 
 	call RestPCI
 
+;--- HBA does not necessarily have to start at a page boundary
+;--- so always reserve 2 pages.
+
 	@dprintf <'HBA physical addr=%X',13,10>, edi
 
 	push 0
-	push 1
+	push 2
 	push PR_SYSTEM
 	VMMCall _PageReserve
 	add esp, 3*4
 	cmp eax, -1
 	jz errpr
-	mov [pHBA], eax
 	mov ebx, eax
 
-	@dprintf <'HBA mapped at linear addr=%X',13,10>, eax
-
 	shr eax, 12		; convert linear address to page#
-	shr edi, 12
+	mov ecx, edi
+	shr ecx, 12
 	push PC_WRITEABLE
-	push edi
-	push 1			; map 1 page ( in theory 2 might be needed )
+	push ecx
+	push 2			; map 2 pages ( in theory even 3 might be needed )
 	push eax
 	VMMCall _PageCommitPhys
 	add esp, 4*4
 
+	and edi, 0fffh
+	add ebx, edi
+	mov [pHBA], ebx
+	@dprintf <'HBA mapped at linear addr=%X',13,10>, ebx
 	mov eax, [ebx].HBA.dwGHC	; get Global HBA Control
 	@dprintf <'HBA.GHC=%X',13,10>, eax
 	test eax, 80000000H	; AHCI enabled?
