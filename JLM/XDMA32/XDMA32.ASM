@@ -58,6 +58,7 @@ HDISKS  equ 0475h       ;BIOS hard-disk count address.
 HDIOFS  equ 048Eh       ;BIOS flag for HD IRQ
 NUMDSK  equ 8           ;max HDs supported
 SAVESTAT equ 1          ;save/restore client state on init
+SETBM   equ 1           ;set busmaster flag in PCI status
 SCATTER equ 1           ;support /F option to use DMA scatter/gather lists
                         ;if a 64 kb boundary is crossed.
 IRQWND  equ 1           ;allow interrupts during memory copy
@@ -1073,6 +1074,7 @@ I_GetDMAPort proc uses esi
 	bts ebx, 31
 
 ;--- v1.5: ensure that Busmaster flag is set in command register
+if SETBM
 	mov eax, ebx
 	mov al, 4               ;read command register (byte)
 	call getpci
@@ -1083,6 +1085,7 @@ I_GetDMAPort proc uses esi
 	mov al, 4
 	call setpci
 @@:
+endif
 	mov eax, ebx
 	mov al,16+4*4           ;Get PCI DMA base address (register 4).
 	call getpci
@@ -1154,6 +1157,7 @@ ifdef _DEBUG
 	and ecx, 7
 	@dprintf <"GetUDMAC: check IDE controller Bus/Dev/Fn=%u/%u/%u",13,10>, eax, edx, ecx
 endif
+ife SETBM
 	mov eax, ebx
 	shl eax, 8
 	bts eax, 31
@@ -1164,6 +1168,7 @@ endif
 	and ecx,4+1             ;Mask Bus-Master and I-O Space bits.
 	cmp ecx,4+1             ;Is this how our controller is set up?
 	jnz @F
+endif
 	call I_GetDMAPort
 	jnc exit
 @@:
