@@ -8,6 +8,7 @@
    - timeout for startup audio functions increased to 7 secs.
    - removed obsolete /P option.
    - SATA controllers in non-AHCI mode handled correctly.
+
   06/20/2012: v1.4
    - function "get q-channel info" did return track number in binary.
    - function "get q-channel info" did return value of ADR as CONTROL 

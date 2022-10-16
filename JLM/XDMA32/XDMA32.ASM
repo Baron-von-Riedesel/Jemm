@@ -48,15 +48,8 @@ ifndef ?PCISCAN
 ?PCISCAN equ 1
 endif
 
-;
-; General Program Equations.
-;
-VERSION equ <' V1.5, 12-08-2022'>
-RDYTO   equ 08h         ;389-msec minimum I-O timeout.
-BIOSTMR equ 046Ch       ;BIOS "tick" timer address.
-HDISKS  equ 0475h       ;BIOS hard-disk count address.
-HDIOFS  equ 048Eh       ;BIOS flag for HD IRQ
 NUMDSK  equ 8           ;max HDs supported
+NUMCTRL equ 4           ;max IDE controllers supported
 SAVESTAT equ 1          ;save/restore client state on init
 SETBM   equ 1           ;set busmaster flag in PCI status
 SCATTER equ 1           ;support /F option to use DMA scatter/gather lists
@@ -65,9 +58,17 @@ IRQWND  equ 1           ;allow interrupts during memory copy
 LBACHECK equ 1          ;check if disk supports LBA
 MWDMA   equ 1           ;support /W option to accept multi-word DMA
 SETMODE equ 1           ;support /Mn option to set UDMA mode
-NOHIGHLBA equ 0         ;avoid 4 OUTs for LBA28
+NOHIGHLBA equ 1         ;avoid 4 OUTs for LBA28
 BUFONLY equ 1           ;support /B option
 HDNUM   equ 0           ;1=rely on value at 0040:0075
+;
+; General Program Equations.
+;
+VERSION equ <' V1.5, 15-10-2022'>
+RDYTO   equ 08h         ;389-msec minimum I-O timeout.
+BIOSTMR equ 046Ch       ;BIOS "tick" timer address.
+HDISKS  equ 0475h       ;BIOS hard-disk count address.
+HDIOFS  equ 048Eh       ;BIOS flag for HD IRQ
 
 CR      equ 00Dh        ;ASCII carriage-return.
 LF      equ 00Ah        ;ASCII line-feed.
@@ -94,7 +95,7 @@ CDSEL   equ CDATA+6     ;offset Disk-select and upper LBA.
 CCMD    equ CDATA+7     ;offset Command register.
 
 CSTAT   equ CDATA+7     ;Primary status register.
-CSTAT2  equ CDATA+206h  ;Alternate status register.
+;CSTAT2  equ CDATA+206h  ;Alternate status register. (legacy only)
 ;
 ; Controller Status and Command Definitions.
 ;
@@ -103,12 +104,13 @@ RDY     equ 040h        ;disk device is "ready".
 FLT     equ 020h        ;IDE disk has a "fault".
 DRQ     equ 008h        ;IDE data request.
 ERR     equ 001h        ;IDE general error flag.
+
+DRCMD   equ 0C8h        ;DMA read command (write is 0CAh, LBA48 commands are 025h/035h).
+SETFEAT equ 0EFh        ;Set Features command.
+SETM    equ 003h        ;Set Mode subcommand.
+
 DMI     equ 004h        ;DMA interrupt occured.
 DME     equ 002h        ;DMA error occurred.
-DRCMD   equ 0C8h        ;DMA read command (write is 0CAh,
-                        ;    LBA48 commands are 025h/035h).
-SETM    equ 003h        ;Set Mode subcommand.
-SETFEAT equ 0EFh        ;Set Features command.
 ;
 ; LBA "Disk Address Packet" Layout.
 ;
@@ -197,29 +199,23 @@ RPDONE  equ 00100h      ;Packet "done" flag.
 
 CStr macro text:VARARG
 local sym
-    .code .text$01
-sym db text,0
-    .code
-    exitm <offset sym>
-    endm
-
-@dprintf macro text,args:vararg
-local sym
-ifdef _DEBUG
-	.const
+	.code .text$01
 sym db text,0
 	.code
+	exitm <offset sym>
+endm
+
+@dprintf macro text,args:vararg
+ifdef _DEBUG
 	ifnb <args>
-		invoke printf, offset sym, args
+		invoke printf, CStr(text), args
 	else
-		invoke printf, offset sym
+		invoke printf, CStr(text)
 	endif
 endif
 endm
 
-    .data
-
-;startcode label byte
+	.data
 
 dwBase      dd 0    ;linear address driver base ( conv. memory )
 dwCmdLine   dd 0
@@ -249,7 +245,7 @@ endif
 BiosHD  db  0       ;(Number of BIOS disks, during Init).
 HDCount db  0       ;(BIOS hard-disk count, during Init).
 
-    align 4
+	align 4
 
 ;--- the following is written to the IDE port
 ;--- SecCt2/LBA2447 and SecCt/LBA0023 must be consecutive
@@ -265,7 +261,7 @@ IOCmd   db  0       ;IDE command byte.
 
 HDUnit  db  0       ;Current BIOS unit number.
 
-    align 4
+	align 4
 
 VDSLn   dd  0           ;buffer length
 VDSOf   dd  0           ;linear address of buffer
@@ -298,13 +294,10 @@ endif
 CHSSec  db  NUMDSK dup (0)  ;CHS sectors/head   table (Init set).
 CHSHd   db  NUMDSK dup (0)  ;CHS heads/cylinder table (Init set).
 
-;--- scan max 4 PCI IDE controllers
-;--- stored bus/dev/fn
-controllers dw -1,-1,-1,-1
+;--- stored IDE controllers (bus/dev/fn) by PCI scan
+controllers dw NUMCTRL dup (-1)
 
-;--- table for PCI controller programming interfaces to search for.
-;--- is Plug&Play IDE programming interface, found in table F0087 in
-;--- RBIL FARCALL.LST.
+;--- flags for PCI IDE controller programming interface
 ; 7 bus mastering (read-only)
 ; 6-4   reserved (read-only)
 ; 3 secondary IDE mode bit is writable (read-only)
@@ -318,26 +311,26 @@ controllers dw -1,-1,-1,-1
 
 if MWDMA
 MWModes label word
-    dw 0004h       ;Mode 0
-    dw 0013h       ;Mode 1
-    dw 0016h       ;Mode 2
+    dw 004       ;Mode 0
+    dw 013       ;Mode 1
+    dw 016       ;Mode 2
 endif
 UModes label word
-    dw 0016h       ;Mode 0, ATA-16  UDMA mode table
-    dw 0025h       ;Mode 1, ATA-25
-    dw 0033h       ;Mode 2, ATA-33
-    dw 0044h       ;Mode 3, ATA-44  (Unusual but possible).
-    dw 0066h       ;Mode 4, ATA-66
-    dw 0100h       ;Mode 5, ATA-100
-    dw 0133h       ;Mode 6, ATA-133
-    dw 0166h       ;Mode 7, ATA-166
+    dw 016       ;Mode 0, ATA-16  UDMA mode table
+    dw 025       ;Mode 1, ATA-25
+    dw 033       ;Mode 2, ATA-33
+    dw 044       ;Mode 3, ATA-44  (Unusual but possible).
+    dw 066       ;Mode 4, ATA-66
+    dw 100       ;Mode 5, ATA-100
+    dw 133       ;Mode 6, ATA-133
+    dw 166       ;Mode 7, ATA-166
 
 SIZENAME    equ 40
 
 DNMsg   db  ', '
 DName   db 26*2 dup (0)
 
-    .code
+	.code
 
 	include printf.inc
 
@@ -378,7 +371,11 @@ ifdef _DEBUG
 		word ptr [ebp].Client_Reg_Struc.Client_EDX, esi, [esi].DAP.DapBuf, dword ptr [esi].DAP.LBA01
 	jmp stdpr2
 stdpr1:
-	@dprintf <"Entry(I13), ax=%X",13,10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
+	@dprintf <"Entry(I13), ax=%X, dx=%X, buffer=%X:%X",13,10>,\
+		word ptr [ebp].Client_Reg_Struc.Client_EAX,\
+		word ptr [ebp].Client_Reg_Struc.Client_EDX,\
+		word ptr [ebp].Client_Reg_Struc.Client_ES,\
+		word ptr [ebp].Client_Reg_Struc.Client_EBX
 stdpr2:
 endif
 
@@ -392,7 +389,7 @@ NextU:
     jne NextU                   ;No, see if more table entries remain.
     bts @dword [bFlags],FLB_BUSY;set "busy" flag
     jc IsBusy                   ;exit with error AH=01 if driver is busy
-	@dprintf <"Entry(I13), IDE/Alt/DMA=%X/%X/%X",13,10>, [edi*2+IDEAd], [edi*2+IDEAlt], [edi*2+DMAAd]
+;	@dprintf <"Entry(I13), IDE/Alt/DMA=%X/%X/%X",13,10>, [edi*2+IDEAd], [edi*2+IDEAlt], [edi*2+DMAAd]
     mov eax,[ebp].Client_Reg_Struc.Client_EAX
     mov dl,0BEh     ;Mask out LBA and write request bits.
     and dl,ah       ; 02/03/42/43 -> 2
@@ -634,10 +631,8 @@ DoDMA:
     add edx,CDSEL
     out dx,al
 
-    mov cx,(RDYTO*256)+FLT  ;Get timeout & "fault" mask.
-
+    mov cx, (RDYTO shl 8) or FLT  ;Get timeout & "fault" mask.
     mov esi,BIOSTMR
-
     add ch,[esi]            ;Set timeout limit in CH-reg.
     call ChkRdy             ;Await controller- and disk-ready.
     jc _ret                 ;If any errors, exit!
@@ -663,9 +658,11 @@ DoDMA:
     mov eax, dword ptr [SecCt2]
     mov dx,[edi*2+IDEAd]
     add edx, 2
+if NOHIGHLBA
     and eax, eax
     jz skip4
-    mov cl,4         ;(1st 4 overlayed by 2nd 4 if LBA28!).
+endif
+    mov cl,4         ;(1st 4 overlayed by 2nd 4 if LBA48!).
 @@:
     out dx, al
     inc edx
@@ -693,7 +690,7 @@ if 0
 ;--- for DMA transfers, so this code should not run.
 
     mov dx,[edi*2+IDEAlt]
-	@dprintf <"DoDMA waiting for DRQ=1, esi=%X, dx=%X",13,10>, esi, dx
+;	@dprintf <"DoDMA waiting for DRQ=1, esi=%X, dx=%X",13,10>, esi, dx
 	jmp @F
 waitdrq:
 	VMMCall Yield
@@ -709,21 +706,21 @@ endif
     in al, dx       ;Set DMA Start/Stop bit (starts DMA).
     or al, 1
     out dx, al
-ChkDMA:
-    VMMCall Yield
     inc edx         ;Point to DMA status register.
     inc edx
+@@:
+    VMMCall Yield
     in al,dx        ;Read DMA controller status.
-    dec edx         ;Point back to DMA command register.
-    dec edx
     and al,DMI+DME  ;DMA interrupt or DMA error?
     jnz @F          ;Yes, halt DMA and check results.
     cmp ch,[esi]    ;Has our DMA transfer timed out?
     je @F           ; then exit loop.
     test @byte ds:[HDIOFS],80h	; interrupt occured?
-    jz ChkDMA
+    jz @B
     mov al,DMI
 @@:
+    dec edx         ;Point back to DMA command register.
+    dec edx
     push eax        ;Save ending DMA status.
     in al,dx        ;Reset DMA Start/Stop bit.
     and al,0FEh
@@ -772,50 +769,9 @@ ErrDMA:
 DMAEnd:
     mov ax,(256*DMAERR)+DMATIMO  ;(Get DMA error codes).
     jmp WhichE      ;Go see which error code to return.
-    align 4
 
 ;--- end of "resident" part
 ;--- (for a JLM, this is irrelevant)
-
-;
-; Subroutines to display a DWORD/WORD/BYTE in EAX/AX/AL
-;
-DsplyD:
-	invoke printf, CStr("%08X"), eax
-	ret
-DsplyW:
-	invoke printf, CStr("%04X"), ax
-	ret
-DsplyB:
-	push eax
-	movzx eax, al
-	invoke printf, CStr("%02X"), eax
-	pop eax
-	ret
-DsplyN:
-	and al,00Fh
-	cmp al,009h
-	jbe @F
-	add al,007h
-@@:
-	add al,'0'
-	invoke printf, CStr("%c"), eax
-	ret
-
-DsplyMQ:
-    test [bFlags],FL_Q
-    jz DsplyM
-    ret
-DsplyEOL:
-    mov esi,CStr(CR,LF)
-;
-; Subroutine to display an error-message "text" element.
-;   At entry, the "text" pointer is in the ESI-register.
-;
-DsplyM:
-	invoke printf, CStr("%s"), esi
-	ret
-    align 4
 
 ; wait for IDE controller to become "ready"
 ; out: C if error occured
@@ -1005,34 +961,20 @@ I_NxtM:
     inc ecx                 ;Get next UltraDMA mode number.
     jmp I_NxtM
 I_GotM:
-    mov ebx,offset DName+SIZENAME   ;Point to end of disk name.
-I_NxtN:
-    cmp ebx,offset DName    ;Are we at the disk-name start?
-    je I_Name               ;Yes, disk name is all spaces!
-    dec ebx                 ;Decrement disk name pointer.
-    cmp @byte [ebx],' '     ;Is this name byte a space?
-    je I_NxtN               ;No, continue scan for non-space.
-    inc ebx                 ;Skip non-space character.
-    mov @word [ebx]," ,"    ;End disk name with comma/space.
-    inc ebx                 ;Skip comma and space.
-    inc ebx
-I_Name:
-    mov @dword [ebx],"-ATA" ;Set "ATA-" and null after name.
-    mov @byte [ebx+4],0
     test [bFlags],FL_Q
     jnz I_Exit
-    mov esi,offset DNMsg    ;Display "name" of this disk.
-    call DsplyM
-    mov ax,[edi]            ;Get disk "mode" value.
-    and ah,ah               ;mode value needs 3 digits?
-    jz @F
-    push eax
-    mov al,ah
-    call DsplyN             ;Display highest digit
-    pop eax
+    mov ebx,offset DName+SIZENAME   ;Point to end of disk name.
 @@:
-    call DsplyB             ;Display lower 2 digits
-    call DsplyEOL
+    cmp ebx,offset DName    ;Are we at the disk-name start?
+    je @F                   ;Yes, disk name is all spaces!
+    dec ebx                 ;Decrement disk name pointer.
+    cmp @byte [ebx],' '     ;Is this name byte a space?
+    je @B                   ;No, continue scan for non-space.
+    inc ebx                 ;Skip non-space character.
+@@:
+	mov byte ptr [ebx], 0
+	mov ax,[edi]            ;Get disk "mode" value.
+	invoke printf, CStr("%s, ATA-%u",13,10), ebx, ax
     clc
 I_Exit:
     ret
@@ -1096,7 +1038,11 @@ endif
 	mov al, 8               ;get class code
 	call getpci
 	shr eax, 8
+	or esi, 1111b
+	cmp ah, 6               ;SATA controller? then no "legacy" bits
+	jz @F
 	mov esi, eax
+@@:
 	mov eax, 1F0h
 	bt esi, 0               ;primary native?
 	jnc @F
@@ -1129,7 +1075,7 @@ exit:
 	align 4
 I_GetDMAPort endp
 
-;--- get Ultra-DMA port for EDD 2.0/3.0
+;--- get Ultra-DMA port for EDD 2.0 (or 3.0 if no BIOS disk has been found)
 ;--- inp: EDI=drive
 ;--- out: NC + DMA controller port base in CX
 ;--- C on errors
@@ -1257,13 +1203,15 @@ I_GetParams endp
 ;--- on errors, set Carry and error msg in ESI
 
 InitXMS proc
-    mov ax,04300h           ;Inquire about an XMS manager.
-    call Int2F
+    mov ax, 4300h           ;Inquire about an XMS manager.
+    push 2Fh
+    call IntXX
     mov eax, [ebp].Client_Reg_Struc.Client_EAX
     cmp al,080h             ;Is an XMS manager installed?
     jne I_XErr1             ;No, display message & disable XMS.
-    mov ax,04310h           ;Get XMS manager "entry" address.
-    call Int2F
+    mov ax, 4310h           ;Get XMS manager "entry" address.
+    push 2Fh
+    call IntXX
     mov bx, @word [ebp].Client_Reg_Struc.Client_ES
     shl ebx, 16
     mov bx, @word [ebp].Client_Reg_Struc.Client_EBX
@@ -1316,26 +1264,13 @@ I_SetDisk proc
 
     test [bFlags],FL_Q
     jnz I_NoDskDisp
-    mov esi,CStr('HD ')
-    call DsplyM
-    mov al,[HDUnit]
-    call DsplyB
-    mov esi,CStr(', Master')
-    test [edi+SelCmd],10h   ;Is this disk the master?
-    jz @F                   ;Yes, display "master" name.
-    mov esi,CStr(', Slave')
+	mov esi, CStr('Master')
+	test [edi+SelCmd],10h   ;Is this disk the master?
+	jz @F                   ;Yes, display "master" name.
+	mov esi, CStr('Slave')
 @@:
-    call DsplyM             ;Display disk's master/slave name.
+	invoke printf, CStr("HD %u, %s, ATA/DMA ports %X/%X"), edi, esi, [edi*2][IDEAd], [edi*2][DMAAd]
 
-    mov esi,CStr(', ATA/DMA ports ')
-    call DsplyM             ;Display controller-data trailer.
-    xor ebx,ebx             ;Display DMA controller address.
-    mov ax,[edi*2+IDEAd]
-    call DsplyW
-    mov esi,CStr('/')
-    call DsplyM             ;Display controller-data trailer.
-    mov ax,[edi*2+DMAAd]
-    call DsplyW
 I_NoDskDisp:
 
     mov ah,08h              ;Get BIOS CHS values for this disk.
@@ -1358,13 +1293,9 @@ I_SetC:
     jc I_ErrD               ;If any errors, DELETE this disk!
     cmp [edi+CHSSec],0      ;Were disk's CHS values legitimate?
     jne exit                ;Yes, check for more disks to use.
-    mov esi,CStr("** BIOS must do above disk's CHS I-O",CR,LF)
-    call DsplyM
-    stc
-    ret
+    mov esi,CStr("** BIOS must do above disk's CHS I-O")
 I_ErrD:
-    call DsplyM             ;Display error for this disk.
-    call DsplyEOL
+    invoke printf, CStr("%s",13,10), esi ;Display error for this disk.
     stc
 exit:
     ret
@@ -1377,11 +1308,14 @@ InitXDMA proc
     cld
     @dprintf <"InitXDMA entry, eflags=%X",13,10>, [ebp].Client_Reg_Struc.Client_EFlags
     call I_GetParams        ;get cmdline params
-    mov esi,CStr("XDMA32",VERSION, CR,LF)
-    call DsplyMQ
+	test [bFlags],FL_Q
+	jnz @F
+	invoke printf, CStr("XDMA32",VERSION,CR,LF)
+@@:
     mov [ebp].Client_Reg_Struc.Client_EDI, 0    ;Get PCI BIOS "I.D." code.
-    mov al,1
-    call Int1A_B1
+    mov ax, 0B101h
+    push 1ah
+    call IntXX
     mov edx, [ebp].Client_Reg_Struc.Client_EDX
     mov esi,CStr('PCI BIOS Invalid')
     cmp edx," ICP"          ;Is PCI BIOS V2.0C or newer?
@@ -1390,6 +1324,8 @@ InitXDMA proc
     @dprintf <"PCI BIOS detected",13,10>
 
 ;--- get all PCI IDE controllers
+;--- todo: also get SATA controllers with AHCI disabled.
+
 	mov esi, 80000008h
 	mov edi, offset controllers
 nextctrl:
@@ -1422,7 +1358,8 @@ endif
 donectrl:
 
     mov ax,03513h           ;Get and save current Int 13h vector.
-    call Int21
+    push 21h
+    call IntXX
     mov bx, @word [ebp].Client_Reg_Struc.Client_ES
     shl ebx, 16
     mov bx, @word [ebp].Client_Reg_Struc.Client_EBX
@@ -1511,7 +1448,7 @@ NextDev:
 
     mov eax,[wBaseSeg]
     mov @word [ebp].Client_Reg_Struc.Client_DS, ax
-    mov eax,0020h           ;don't touch the first 32 bytes
+    mov eax, 20h            ;don't touch the first 32 bytes
     mov [ebp].Client_Reg_Struc.Client_ESI, eax
     mov esi, [dwBase]
     add esi, eax
@@ -1524,6 +1461,7 @@ NextDev:
 @@:
 
 ;--- call int 13h, ah=48h: Get this disk's "EDD" parameters.
+;--- v86 DS:SI=EDD, has been set above to wBaseSeg:0020h
 
     mov ah, 48h
     call Int13
@@ -1547,8 +1485,7 @@ NextDev:
     jns @B
     jecxz I_IsEDD20         ;If checksum O.K., use parameters.
 I_ErED:
-    mov esi,CStr('EDD BIOS error!  Unit ignored',CR,LF)
-    call DsplyM             ;Display error for this disk.
+    invoke printf, CStr('EDD BIOS error!  Unit ignored',CR,LF)
     jmp I_SkipDrv
 
 I_IsEDD20:
@@ -1641,12 +1578,14 @@ I_SkipDrv:
 ;--- PCI scan
 
 if ?PCISCAN
-    mov esi,CStr('PCI disk scan:',CR,LF)
-    call DsplyMQ
-    mov [HDUnit],80h        ;Reset hard-disk unit number
+	cmp [controllers], -1   ; any EIDE controller found?
+	jz I_None               ; if no, the PCI scan is useless.
+
+    @dprintf <'PCI disk scan:',CR,LF>
+    mov [HDUnit], 80h       ;Reset hard-disk unit number
     mov al,[BiosHD]         ;Reset remaining hard-disk count.
-    mov [HDCount],al
-    xor edi,edi             ;Init unit table index
+    mov [HDCount], al
+    xor edi, edi            ;Init unit table index
 NextDev2:
     call I_GetUDMAC
     jc @F
@@ -1680,7 +1619,8 @@ I_DiskFound:
     shr eax, 16
     mov @word [ebp].Client_Reg_Struc.Client_DS, ax
     mov ax,02513h
-    call Int21              ;"Hook" this driver into Int 13h.
+    push 21h
+    call IntXX              ;"Hook" this driver into Int 13h.
 
     mov ax,RPDONE           ;Get initialization "success" code.
     jmp I_Exit
@@ -1692,16 +1632,14 @@ I_Err:
     jz @F                   ;No, go display error message.
     call I_ReleaseXMS       ;Get rid of our XMS buffer.
 @@:
-    call DsplyM             ;Display error message in ESI.
-    mov esi,CStr('; XDMA32 not loaded!',CR,LF)
-    call DsplyM
+    invoke printf, CStr("%s; XDMA32 not loaded!",CR,LF), esi
     mov ax,RPDONE+RPERR
 I_Exit:
     @dprintf <"Init exit",13,10>
     ret
 InitXDMA endp
 ;
-; Subroutines to issue initialization "external" calls.
+;--- free XMS memory block on errors
 ;
 I_ReleaseXMS proc
     mov ah,00Dh     ;Error -- unlock & free XMS buffer.
@@ -1728,60 +1666,34 @@ I_XMS proc
 I_XMS endp
 
 ;--- call int 13h,
-;--- ah=08h
-;--- ah=41h
-;--- ah=48h, DS:SI->EDD1/2/3
+;--- ah=08h, DL=dsk
+;--- ah=41h, DL=dsk, BX=55AAh
+;--- ah=48h, DL=dsk, DS:SI->EDD1/2/3
 
 Int13 proc
-    mov [ebp].Client_Reg_Struc.Client_EAX, eax
-    mov [ebp].Client_Reg_Struc.Client_EBX, ebx
-    mov al,[HDUnit] ;Set BIOS unit in DL-reg.
-    mov @byte [ebp].Client_Reg_Struc.Client_EDX, al
-    VMMCall Begin_Nest_Exec
-    mov eax, 13h
-    VMMCall Exec_Int
-    VMMCall End_Nest_Exec
-    mov ah,@byte [ebp].Client_Reg_Struc.Client_EFlags
-    sahf
+    mov @word [ebp].Client_Reg_Struc.Client_EBX, bx
+    mov dl,[HDUnit] ;Set BIOS unit in DL-reg.
+    mov @byte [ebp].Client_Reg_Struc.Client_EDX, dl
+    push 13h
+    call IntXX
     ret
 Int13 endp
 
-;--- call int 1Ah, ax=B1xx; in: al=xx
-;--- al=01h: install check, in: edi=0, out: edx="PCI ", BX=version
+;--- call int 1Ah (ax=B101h)
+;--- call int 21h (ah=25h/35h)    
+;--- call int 2Fh (ax=4300h, 4310h)
+;--- 1A, B101h: install check, in: edi=0, out: edx="PCI ", BX=version
 
-Int1A_B1 proc
-    mov ah,0B1h     ;Issue PCI BIOS interrupt.
-    mov [ebp].Client_Reg_Struc.Client_EAX, eax
+IntXX proc
+    mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
     VMMCall Begin_Nest_Exec
-    mov eax, 1Ah
+    mov eax, [esp+4]
     VMMCall Exec_Int
     VMMCall End_Nest_Exec
     mov ah,@byte [ebp].Client_Reg_Struc.Client_EFlags
     sahf
-    ret
-Int1A_B1 endp
-
-;--- int 21h calls (ah=25h/35h)    
-
-Int21 proc
-    mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
-    VMMCall Begin_Nest_Exec
-    mov eax, 21h
-    VMMCall Exec_Int
-    VMMCall End_Nest_Exec
-    ret
-Int21 endp
-
-;--- int 2Fh calls (ax=4300h, 4310h)
-
-Int2F proc
-    mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
-    VMMCall Begin_Nest_Exec
-    mov eax, 2Fh
-    VMMCall Exec_Int
-    VMMCall End_Nest_Exec
-    ret
-Int2F endp
+    ret 4
+IntXX endp
 
 DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 
