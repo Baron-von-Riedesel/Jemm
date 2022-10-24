@@ -1226,14 +1226,16 @@ else
 	shr edx, 10
 endif
 e820_itemok:
+	cmp si,?PREDEFXMSHDLS	;reached max capacity of the static handle array?
+	jnz @F
+	invoke printf, CStr("%s: free I15 memory block %lX ignored!", LF), offset szWarning, edx
+	jmp e820_itemdone
+@@:
 	call I15SetHandle	;set xms block, sizeK in ECX, baseK in EDX
 	inc si
-	cmp si,?PREDEFXMSHDLS	;reached max capacity of the static handle array?
-	jz e820_done
 e820_itemdone:
 	cmp ebx,0		;was this the last entry?
 	jnz e820_nextitem
-
 e820_bad:
 e820_done:
 	mov eax, xms_mem_largest

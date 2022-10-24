@@ -457,6 +457,11 @@
    then that region is not used by Jemm. If you are sure that the region
    is ok to be used, include it with 'I=XXXX-XXXX'.
 
+ þ JemmEx will display warning "free I15 memory block xxxxxxxx ignored!" if
+   int 15h, ax=e820h returns more than 8 available memory blocks. It's very  
+   well possible that super-extended memory isn't available if this warning
+   has occured.
+
  þ The I=XXXX commandline option may be used to include the VGA "graphics"
    segment A000h. It might be possible to increase DOS conventional memory
    up to 736 kB by option I=A000-B7FF. However, there are quite a few
