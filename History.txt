@@ -6,7 +6,7 @@
    in AHCI mode (cooked mode only).
  - XDMA32, XCDROM32: now accepting "AHCI-disabled" SATA controllers.
  - Jemmex: warning displayed if I15 memory blocks had to be ignored due
-   to insufficient XMS "static" handles (8).
+   to insufficient XMS "static" handles (8); static handles increased to 10.
 
  09.08.2022: v5.82
  - JemmEx: minor adjustment to always keep monitor stack dword-aligned.

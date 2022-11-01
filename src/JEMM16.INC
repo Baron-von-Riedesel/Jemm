@@ -54,7 +54,7 @@ VDWORDOUT proto
 VWORDOUT  proto
 endif
 if ?INTEGRATED
-?PREDEFXMSHDLS equ 8	;free xms handles to be used for int 15h, ax=e820h
+?PREDEFXMSHDLS equ 10	;free xms handles to be used for int 15h, ax=e820h
 I15SetHandle proto c
 I15AllocMemory proto stdcall :WORD, :DWORD
 GetEMBBase proto stdcall: word

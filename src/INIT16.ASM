@@ -277,6 +277,7 @@ handle_char endp
 
 ;--- ltoa(long n, char * s, int base);
 ;--- convert long to string
+;--- modifies SI
 
 ltoa PROC stdcall uses edi number:dword, outb:word, base:word
 
@@ -291,10 +292,10 @@ ltoa PROC stdcall uses edi number:dword, outb:word, base:word
 	neg eax
 	mov ch,'-'
 @@:
-	mov bx,outb
-	add bx,10
-	mov BYTE PTR [bx],0
-	dec bx
+	mov si,outb
+	add si,10
+	mov BYTE PTR [si],0
+	dec si
 @@nextdigit:
 	xor edx, edx
 	div edi
@@ -303,17 +304,17 @@ ltoa PROC stdcall uses edi number:dword, outb:word, base:word
 	jbe @F
 	add dl,7+20h
 @@:
-	mov [bx],dl
-	dec bx
+	mov [si],dl
+	dec si
 	and eax, eax
 	jne @@nextdigit
 	cmp ch,0
 	je @F
-	mov [bx],ch
-	dec bx
+	mov [si],ch
+	dec si
 @@:
-	inc bx
-	mov ax,bx
+	inc si
+	mov ax,si
 	ret
 
 ltoa ENDP
@@ -322,6 +323,7 @@ ltoa ENDP
 ;--- understands type %c, %x, %d, %i, u%, %s 
 ;--- and modifier l(ong)
 ;--- assumes DS=SS=DGROUP
+;--- preserves BX,SI,DI,ES
 
 printf PROC c public uses si di fmt:ptr byte, args:VARARG
 
@@ -350,21 +352,20 @@ formatitem:
 	push @@L335
 	xor dx,dx
 	mov [longarg],dl
-	mov bl,1
+	mov al,1
 	mov cl,' '
 	cmp BYTE PTR [si],'-'
 	jne @F
-	dec bx
+	dec ax
 	inc si
 @@:
-	mov [flag],bl
+	mov [flag],al
 	cmp BYTE PTR [si],'0'
 	jne @F
 	mov cl,'0'
 	inc si
 @@:
 	mov [fill],cl
-	mov bx,dx	;bx=0
 nextdigit:
 	cmp BYTE PTR [si],'0'
 	jb donenumber
@@ -373,12 +374,11 @@ nextdigit:
 	lodsb
 	sub al,'0'
 	cbw
-	imul cx,bx,10		;cx = bx * 10
-	add ax,cx
-	mov bx,ax
+	imul dx,dx,10		;dx = dx * 10
+	add dx,ax
 	jmp nextdigit
 donenumber:
-	mov [size_],bx
+	mov [size_],dx
 	cmp BYTE PTR [si],'l'
 	jne @F
 	mov [longarg],1
@@ -414,19 +414,19 @@ handle_s:
 	jmp @@do_outputstring260
 
 handle_x:
-	mov bx,16
+	mov cx,16
 	jmp @@lprt262
 handle_d:
 handle_i:
-	mov bx,-10
+	mov cx,-10
 	jmp @@lprt262
 handle_u:
-	mov bx,10
+	mov cx,10
 @@lprt262:
 	mov ax,[di]
 	add di,2
 	sub dx,dx
-	cmp bx,0		;signed or unsigned?
+	cmp cx,0		;signed or unsigned?
 	jge @F
 	cwd
 @@:
@@ -435,25 +435,25 @@ handle_u:
 	mov dx,[di]
 	add di,2
 @@:
-	lea cx,[szTmp]
-	invoke ltoa, dx::ax, cx, bx
+	lea si,[szTmp]
+	invoke ltoa, dx::ax, si, cx
 	mov si,ax
 
 @@do_outputstring260:
 	mov ax,si
-	mov bx,size_
+	mov cx,size_
 	.while byte ptr [si]
 		inc si
 	.endw
 	sub si,ax
 	xchg ax,si
-	sub bx,ax
+	sub cx,ax
 
 	.if flag == 1
-		.while sword ptr bx > 0
+		.while sword ptr cx > 0
 			mov al,[fill]
 			call handle_char
-			dec bx
+			dec cx
 		.endw
 	.endif
 
@@ -462,10 +462,10 @@ handle_u:
 		call handle_char
 	.endw
 	
-	.while sword ptr bx > 0
+	.while sword ptr cx > 0
 		mov al,[fill]
 		call handle_char
-		dec bx
+		dec cx
 	.endw
 	retn
 
@@ -1117,10 +1117,8 @@ nextitem:
 	mov si,ax
 	.if bVerbose
 		push cx
-		push bx
 		shl cx,2
 		invoke printf, CStr(<"Int15, ax=E820: reserved region=%04X, size=%u kB",LF>), si, cx
-		pop bx
 		pop cx
 	.endif
 	.while cx
@@ -1228,7 +1226,7 @@ endif
 e820_itemok:
 	cmp si,?PREDEFXMSHDLS	;reached max capacity of the static handle array?
 	jnz @F
-	invoke printf, CStr("%s: free I15 memory block %lX ignored!", LF), offset szWarning, edx
+	invoke printf, CStr("%s: E820 - too many ext memory blocks, block %lX ignored!", LF), offset szWarning, edx
 	jmp e820_itemdone
 @@:
 	call I15SetHandle	;set xms block, sizeK in ECX, baseK in EDX
