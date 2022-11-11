@@ -61,8 +61,8 @@ local szTmp[24]:byte
 	mov ebp, [ebp]
 	sub esp, sizeof Client_Reg_Struc
 	mov edi, esp
-	VMMCall Save_Client_State
-	VMMCall Begin_Nest_Exec
+	@VMMCall Save_Client_State
+	@VMMCall Begin_Nest_Exec
 	mov ebp, [esp+sizeof Client_Reg_Struc+2*4]	;restore EBP
 	cld
 	lea edi,args
@@ -78,9 +78,9 @@ nextchar:
 	jmp nextchar
 done:
 	mov ebp, [ebp]
-	VMMCall End_Nest_Exec
+	@VMMCall End_Nest_Exec
 	mov esi, esp
-	VMMCall Restore_Client_State
+	@VMMCall Restore_Client_State
 	add esp, sizeof Client_Reg_Struc
 	popad
 	ret
@@ -214,7 +214,7 @@ handle_char:
 	mov [ebp].Client_Reg_Struc.Client_EAX, eax
 	mov byte ptr [ebp].Client_Reg_Struc.Client_EBX+1, 0
 	mov eax, 10h
-	VMMCall Exec_Int
+	@VMMCall Exec_Int
 	pop ebp
 	retn
 

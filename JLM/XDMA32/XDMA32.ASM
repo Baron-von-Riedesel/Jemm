@@ -549,7 +549,7 @@ Done:
 GoOut:
     mov @byte [ebp].Client_Reg_Struc.Client_EAX+1, al   ;Set error code in exiting AH-reg.
     push eax
-    VMMCall Simulate_Iret
+    @VMMCall Simulate_Iret
     pop eax
     and @byte [ebp].Client_Reg_Struc.Client_EFlags,not 1
     and ah,1
@@ -580,7 +580,7 @@ endif
     mov edi, [VDSOf]
     mov esi, [dwBufferLin]
 if IRQWND
-    VMMCall MoveMemory
+    @VMMCall MoveMemory
 else
     shr ecx, 2
     rep movsd
@@ -597,7 +597,7 @@ BufOut:
     mov esi, [VDSOf]
     mov edi, [dwBufferLin]
 if IRQWND
-    VMMCall MoveMemory
+    @VMMCall MoveMemory
 else
     shr ecx, 2
     rep movsd
@@ -693,7 +693,7 @@ if 0
 ;	@dprintf <"DoDMA waiting for DRQ=1, esi=%X, dx=%X",13,10>, esi, dx
 	jmp @F
 waitdrq:
-	VMMCall Yield
+	@VMMCall Yield
 @@:
     cmp ch,[esi]    ;Too long without 1st data-request?
     je DMAEnd       ;Yes?  Return carry and DMA timeout!
@@ -709,7 +709,7 @@ endif
     inc edx         ;Point to DMA status register.
     inc edx
 @@:
-    VMMCall Yield
+    @VMMCall Yield
     in al,dx        ;Read DMA controller status.
     and al,DMI+DME  ;DMA interrupt or DMA error?
     jnz @F          ;Yes, halt DMA and check results.
@@ -744,7 +744,7 @@ ChkRdy:
     test al,BSY+RDY ;Controller or disk still busy?
     jg ChkErr       ;No, go check for "fault" or error.
 if 1
-    VMMCall Yield   ;yield CPU 
+    @VMMCall Yield   ;yield CPU 
 endif
     cmp ch,[esi]    ;Too long without becoming ready?
     jne ChkRdy      ;No, loop back and check again.
@@ -784,7 +784,7 @@ WaitRdy proc
     mov cl,RDYTO            ;Set I-O timeout limit in CL-reg.
     add cl,[esi]
 @@:
-    VMMCall Yield
+    @VMMCall Yield
     cmp cl,[esi]            ;Has our command timed out?
     je Error                ;Yes, set CPU carry flag & exit.
     in al,dx                ;Get IDE controller status.
@@ -1351,7 +1351,7 @@ endif
 	cmp edi, offset controllers + sizeof controllers
 	jnc donectrl
 @@:
-	VMMCall Yield
+	@VMMCall Yield
 	add esi, 100h
 	cmp esi, 81000008h
 	jb nextctrl
@@ -1373,7 +1373,7 @@ donectrl:
     push 0
     push 16
     push PR_SYSTEM
-    VMMCall _PageReserve    ;allocate a 64 kB block of address space
+    @VMMCall _PageReserve    ;allocate a 64 kB block of address space
     add esp,3*4
     mov esi,CStr('No address space for buffer')
     cmp eax,-1
@@ -1389,7 +1389,7 @@ donectrl:
     push edx
     push 16
     push eax
-    VMMCall _PageCommitPhys ;backup address space with XMS memory
+    @VMMCall _PageCommitPhys ;backup address space with XMS memory
     add esp,4*4
 
     @dprintf <"Init: Buffer committed",13,10>
@@ -1612,7 +1612,7 @@ I_DiskFound:
 
     mov esi, offset Entry
     xor edx, edx
-    VMMCall Allocate_V86_Call_Back
+    @VMMCall Allocate_V86_Call_Back
     mov esi,CStr('No callbacks available anymore',CR,LF)
     jc I_Err
     mov @word [ebp].Client_Reg_Struc.Client_EDX, ax
@@ -1654,12 +1654,12 @@ I_ReleaseXMS endp
 I_XMS proc
     mov [ebp].Client_Reg_Struc.Client_EAX, eax
     mov [ebp].Client_Reg_Struc.Client_EDX, edx
-    VMMCall Begin_Nest_Exec
+    @VMMCall Begin_Nest_Exec
     movzx edx, @word [XMSEntry+0]
     mov cx, @word [XMSEntry+2]
-    VMMCall Simulate_Far_Call
-    VMMCall Resume_Exec
-    VMMCall End_Nest_Exec
+    @VMMCall Simulate_Far_Call
+    @VMMCall Resume_Exec
+    @VMMCall End_Nest_Exec
     mov eax,[ebp].Client_Reg_Struc.Client_EAX
     dec ax              ;Zero AX-reg. if success, -1 if error.
     ret
@@ -1686,10 +1686,10 @@ Int13 endp
 
 IntXX proc
     mov @word [ebp].Client_Reg_Struc.Client_EAX, ax
-    VMMCall Begin_Nest_Exec
+    @VMMCall Begin_Nest_Exec
     mov eax, [esp+4]
-    VMMCall Exec_Int
-    VMMCall End_Nest_Exec
+    @VMMCall Exec_Int
+    @VMMCall End_Nest_Exec
     mov ah,@byte [ebp].Client_Reg_Struc.Client_EFlags
     sahf
     ret 4
@@ -1709,12 +1709,12 @@ DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 ;--- set EBP to the client pointer before calling InitXDMA
 
         push ebp
-        VMMCall Get_Cur_VM_Handle   ;get VM handle in EBX
+        @VMMCall Get_Cur_VM_Handle   ;get VM handle in EBX
         mov ebp,[ebx].cb_s.CB_Client_Pointer
 if SAVESTAT
         sub esp, sizeof Client_Reg_Struc
         mov edi, esp
-        VMMCall Save_Client_State
+        @VMMCall Save_Client_State
 endif
         push esi
         call InitXDMA
@@ -1734,7 +1734,7 @@ endif
         @dprintf <"exit DllMain",13,10>
 if SAVESTAT
         mov esi, esp
-        VMMCall Restore_Client_State
+        @VMMCall Restore_Client_State
         add esp, sizeof Client_Reg_Struc
 endif
         pop ebp

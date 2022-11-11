@@ -12,14 +12,16 @@
 ;--- "handle" in EBX.
 ;--------------------------------------------------------------------------
 
+;--- v5.83: VMMCall renamed to @VMMCall ( VMMCALL is a x86 instruction now )
+
 ifndef __POASM__
-VMMCall macro name_
+@VMMCall macro name_
     int 20h
     dw VMM_&name_
     dw 1
     endm
 else
-VMMCall macro name_
+@VMMCall macro name_
     int 20h
     dw VMM_ # name_
     dw 1
@@ -127,6 +129,11 @@ VMM_Service _PageCommitPhys
 VMM_Service Free_V86_Call_Back      ;release v86 callback in EAX
 VMM_Service Yield                   ;release cpu for IRQs
 VMM_Service MoveMemory              ;copy memory with ints enabled
+
+;--- added in v5.83
+
+VMM_Service _Allocate_GDT_Selector
+VMM_Service _Free_GDT_Selector
 
 ;--- equates for the page memory functions
 

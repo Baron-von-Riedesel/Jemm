@@ -12,7 +12,7 @@
 ;--- "handle" in EBX.
 ;--------------------------------------------------------------------------
 
-macro VMMCall name_ {
+macro @VMMCall name_ {
     int 20h
     dw VMM_#name_
     dw 1

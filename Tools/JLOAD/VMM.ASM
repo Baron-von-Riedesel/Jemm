@@ -118,6 +118,8 @@ Simulate_IO 		dd 0
 					dd Free_V86_Call_Back
 Yield				dd 0        
 MoveMemory  		dd 0        
+					dd _Allocate_GDT_Selector ; v5.83
+					dd _Free_GDT_Selector ; v5.83
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 
@@ -465,6 +467,55 @@ Restore_Client_State proc
 	align 4
 Restore_Client_State endp
 
+;--- Allocate_GDT_Selector( high32 descriptor, low32 descriptor, flags )
+;--- returns selector in eax, GDT selector in loword edx, GDT size in hiword edx
+;--- high32 desc: [esp+4][8]
+;--- low32  desc: [esp+4][4]
+;--- flags:       [esp+4][0]
+
+_Allocate_GDT_Selector proc
+	mov ecx, 8
+	sub esp, ecx
+	sgdt [esp]
+	movzx edx, word ptr [esp]
+	mov eax, [esp+2]
+	inc edx
+	add esp, ecx
+nextdesc:
+	cmp ecx, edx
+	jae notfound
+	cmp byte ptr [eax+ecx+5], 0
+	jz found
+	add ecx, 8
+	jmp nextdesc
+found:
+	push edx
+	mov edx, [esp+8][1*4]
+	mov [eax+ecx+0], edx
+	mov edx, [esp+8][2*4]
+	mov [eax+ecx+4], edx
+	pop edx
+	mov eax, ecx
+	ret
+notfound:
+	xor eax, eax
+	xor edx, edx
+	ret
+_Allocate_GDT_Selector endp
+
+;--- Free_GDT_Selector( wSelector, flags )
+;--- todo: limit checks
+
+_Free_GDT_Selector proc
+	mov ecx, [esp+4]
+	sub esp, 8
+	sgdt [esp]
+	mov eax, [esp+2]
+	add esp, 8
+	mov byte ptr [eax+ecx+5],0
+	ret
+_Free_GDT_Selector endp
+
 ;-------------------------
 ;--- the IO-port trapping is implemented very simple
 ;--- there is an array of 65536 vectors in a 256 kB memory region
@@ -707,11 +758,22 @@ Set_V86_Int_Vector proc
 	align 4
 Set_V86_Int_Vector endp
 
+;--- the Get_PM/Set_PM API is supposed to set the vectors of the current VM
+;--- if it's in protected-mode. So not really needed by Jemm.
+
+;--- in: eax=int#
+;--- out: cx=segment
+;---     edx=offset
+
 Get_PM_Int_Vector proc
 	stc
 	ret
 	align 4
 Get_PM_Int_Vector endp
+
+;--- in: eax=int#
+;---      cx=segment
+;---     edx=offset
 
 Set_PM_Int_Vector proc
 	stc

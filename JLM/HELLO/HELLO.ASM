@@ -16,7 +16,7 @@ szText  db "Hello, world!", 13,10,0
 _main   proc
 
         push esi
-        VMMCall Begin_Nest_Exec     ;start nested execution
+        @VMMCall Begin_Nest_Exec     ;start nested execution
         mov esi, offset szText
 @@nextitem:
         lodsb
@@ -30,11 +30,11 @@ _main   proc
         mov byte ptr [ebp].Client_Reg_Struc.Client_EDX,al
         mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,2
         mov eax,21h
-        VMMCall Exec_Int
+        @VMMCall Exec_Int
 
         jmp @@nextitem
 @@done:
-        VMMCall End_Nest_Exec       ;end nested execution
+        @VMMCall End_Nest_Exec       ;end nested execution
         pop esi
         ret
 

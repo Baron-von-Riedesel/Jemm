@@ -332,7 +332,7 @@ ExitAX:
 	@dprintf <'DevInt exit, ax=%X',13,10>, ax
 	mov ebx, [pRequest]
 	mov [ebx].RPH.wStat, ax
-	VMMCall Simulate_Far_Ret
+	@VMMCall Simulate_Far_Ret
 	ret
 Error3X:
 	push ExitAX
@@ -541,11 +541,11 @@ ReadLP:
 	cld
 if ?IRQWND
 	mov ecx, SLCOOKED
-	VMMCall MoveMemory
+	@VMMCall MoveMemory
 else
 	mov ecx, SLCOOKED / sizeof dword
 	rep movsd
-	VMMCall Yield
+	@VMMCall Yield
 endif
 	pop edi
 	add [pDest], SLCOOKED
@@ -682,7 +682,7 @@ contwait:
 	jz done
 	test [ebx].PORT.dwIS, PIS_TFES
 	jnz error
-	VMMCall Yield
+	@VMMCall Yield
 	cmp [ebx].PORT.dwSERR, 0
 	JZ contwait
 error:
@@ -759,7 +759,7 @@ endif
 dispString proc
 	push esi
 	mov esi, edx
-	VMMCall Begin_Nest_Exec
+	@VMMCall Begin_Nest_Exec
 nextitem:
 	lodsb
 	cmp al,0
@@ -767,10 +767,10 @@ nextitem:
 	mov byte ptr [ebp].Client_Reg_Struc.Client_EDX, al
 	mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, 2
 	mov eax, 21h
-	VMMCall Exec_Int
+	@VMMCall Exec_Int
 	jmp nextitem
 done:
-	VMMCall End_Nest_Exec
+	@VMMCall End_Nest_Exec
 	pop esi
 	ret
 dispString endp
@@ -883,7 +883,7 @@ nextHBA:
 	dec [bCntOpt]		; /C:x option?
 	js  foundHBA
 @@:
-	VMMCall Yield
+	@VMMCall Yield
 	add edx, 100H		; next "function"
 	cmp edx, 81000008H
 	jc nextHBA
@@ -907,7 +907,7 @@ foundHBA:
 	push 0
 	push 2
 	push PR_SYSTEM
-	VMMCall _PageReserve
+	@VMMCall _PageReserve
 	add esp, 3*4
 	cmp eax, -1
 	jz errpr
@@ -920,7 +920,7 @@ foundHBA:
 	push ecx
 	push 2			; map 2 pages ( in theory even 3 might be needed )
 	push eax
-	VMMCall _PageCommitPhys
+	@VMMCall _PageCommitPhys
 	add esp, 4*4
 
 	and edi, 0fffh
@@ -1082,7 +1082,7 @@ local pCmdLine:dword
 
 	mov esi, offset DevInt
 	xor edx, edx
-	VMMCall Allocate_V86_Call_Back
+	@VMMCall Allocate_V86_Call_Back
 	jc failed
 
 	mov edi, [pBase]
@@ -1099,7 +1099,7 @@ local pCmdLine:dword
 	rep movsb
 	stosd
 
-	VMMCall Get_Cur_VM_Handle
+	@VMMCall Get_Cur_VM_Handle
 
 	mov esi, [pCmdLine]
 

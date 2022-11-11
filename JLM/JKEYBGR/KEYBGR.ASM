@@ -151,7 +151,7 @@ introu15 proc
 ;--- this is the entry from v86-mode when a key has been pressed
 ;--- (int 15h, ah=4Fh)
 
-        VMMCall Simulate_Iret   ;emulate an IRET in v86
+        @VMMCall Simulate_Iret   ;emulate an IRET in v86
 
         mov     eax,[ebp].Client_Reg_Struc.Client_EAX
         cmp     al,0E0h
@@ -264,7 +264,7 @@ install proc uses esi edi
         push ecx
         mov esi, offset introu15
         mov edx, 0
-        VMMCall Allocate_V86_Call_Back      ;get a v86 callback
+        @VMMCall Allocate_V86_Call_Back      ;get a v86 callback
         pop esi
         jc failed
         mov dword ptr ds:[newvec+1], eax    ;patch the 16-bit code

@@ -224,7 +224,7 @@ endif
     db " X=TEST        scan memory region C000-EFFF for UMB exclusion",LF
 if ?INTEGRATED
     db " X2MAX=n       max. value in Kb for XMS V2 free memory report (default=65535)",LF
-    db " XMSHANDLES=n  number of available XMS handles (8<=n<=",@CatStr(!",%?XMS_MAXHDLS,!"),", default=",@CatStr(!",%?XMS_DEFHDLS,!"),")",LF
+    db " XMSHANDLES=n  number of available XMS handles (",@CatStr(!",%?XMS_STATICHDLS,!"),"<=n<=",@CatStr(!",%?XMS_MAXHDLS,!"),", default=",@CatStr(!",%?XMS_DEFHDLS,!"),")",LF
 endif
     db LF
     db " '+': option can be set dynamically by running ",NAMEMOD," from the command line",LF
@@ -1224,7 +1224,7 @@ else
 	shr edx, 10
 endif
 e820_itemok:
-	cmp si,?PREDEFXMSHDLS	;reached max capacity of the static handle array?
+	cmp si,?XMS_STATICHDLS	;reached max capacity of the static handle array?
 	jnz @F
 	invoke printf, CStr("%s: E820 - too many ext memory blocks, block %lX ignored!", LF), offset szWarning, edx
 	jmp e820_itemdone
@@ -2768,8 +2768,8 @@ if ?INTEGRATED
 	invoke FindCommand, CStr("XMSHANDLES=")
 	.if ax
 		invoke GetValue, ax, 10, FALSE
-		.if ax < 8
-			mov ax, 8
+		.if ax < ?XMS_STATICHDLS
+			mov ax, ?XMS_STATICHDLS
 		.elseif ( ax > ?XMS_MAXHDLS )
 			mov ax, ?XMS_MAXHDLS
 		.endif

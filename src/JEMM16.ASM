@@ -430,7 +430,7 @@ else
 endif
 
 xms_handle_table XMS_HANDLETABLE <01, size XMS_HANDLE, 0, xms_handle_array>
-xms_handle_array XMS_HANDLE ?PREDEFXMSHDLS+1+?EXTRAHDL dup (<XMSF_INPOOL,0,0,0>)
+xms_handle_array XMS_HANDLE ?XMS_STATICHDLS+1+?EXTRAHDL dup (<XMSF_INPOOL,0,0,0>)
 	db XMSF_INPOOL
 
 endif

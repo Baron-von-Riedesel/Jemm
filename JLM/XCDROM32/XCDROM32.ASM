@@ -509,7 +509,7 @@ DevInt:
 
     pop [ebp].Client_Reg_Struc.Client_EFlags    ;restore client flags
 
-    VMMCall Simulate_Far_Ret
+    @VMMCall Simulate_Far_Ret
     ret
 ;
 ; Function-Code "Dispatch" Routines.
@@ -931,7 +931,7 @@ DoIO1:                      ;<--- new try
     jnz @F                  ;Yes, halt DMA and check results.
     cmp ah,[esi]            ;Has our DMA transfer timed out?
     jz  @F
-    VMMCall Yield           ;run client's ISRs
+    @VMMCall Yield           ;run client's ISRs
     cmp @byte ds:[48Eh],0   ;Did BIOS get a disk interrupt?
     je  @B                  ;No, loop back & retest status.
     mov al,DMI              ;Set "simulated" interrupt flag.
@@ -1145,7 +1145,7 @@ TestTO2::               ;<--- AH=STARTTO
     mov esi,BIOSTMR     ;0040:006Ch
     add ah,[esi]        ;Set timeout limit in AH-reg.
 @@:
-    VMMCall Yield       ;preserves all registers
+    @VMMCall Yield       ;preserves all registers
     cmp ah,[esi]        ;Has our I-O timed out?
     stc                 ;(If so, set carry flag).
     je  exit            ;Yes?  Exit with carry flag on.
@@ -1576,7 +1576,7 @@ IsAHCIdisabled proc uses edi ebx
     push 0
     push 1
     push PR_SYSTEM
-    VMMCall _PageReserve    ;allocate a 4 kB block of address space
+    @VMMCall _PageReserve    ;allocate a 4 kB block of address space
     add esp,3*4
     cmp eax,-1
     jz error
@@ -1591,7 +1591,7 @@ IsAHCIdisabled proc uses edi ebx
     push edx
     push 1
     push eax
-    VMMCall _PageCommitPhys ;backup address space
+    @VMMCall _PageCommitPhys ;backup address space
     add esp,4*4
 
 	and edi, 0fffh
@@ -1736,10 +1736,10 @@ I_Term:
 ;--- check for PCI BIOS
 
 	mov @word [ebp].Client_Reg_Struc.Client_EAX, 0B101h ; get PCI BIOS version
-	VMMCall Begin_Nest_Exec
+	@VMMCall Begin_Nest_Exec
 	mov eax, 1Ah
-	VMMCall Exec_Int
-	VMMCall End_Nest_Exec
+	@VMMCall Exec_Int
+	@VMMCall End_Nest_Exec
     mov edx, [ebp].Client_Reg_Struc.Client_EDX
 
     cmp edx," ICP"          ;Do we have a V2.0C or newer PCI BIOS?
@@ -1761,7 +1761,7 @@ I_FindC:
 	cmp ebx, 10601h         ;SATA controller?
 	jz isSATA
 I_ContFindC:
-	VMMCall Yield
+	@VMMCall Yield
 	add esi, 100h
 	cmp esi, 81000008h
 	jb I_FindC
@@ -1921,7 +1921,7 @@ if ?EXTDISP
 		[ebp].Client_Reg_Struc.Client_SS,
 		[ebp].Client_Reg_Struc.Client_ESP, edi
 else
-	VMMCall Yield           ;don't remove, may avoid v86 stack errors
+	@VMMCall Yield           ;don't remove, may avoid v86 stack errors
 endif
     jmp I_ScanU             ;try next unit.
 I_ScnVN:
@@ -2186,7 +2186,7 @@ DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 
         mov esi, offset DevInt
         xor edx, edx
-        VMMCall Allocate_V86_Call_Back
+        @VMMCall Allocate_V86_Call_Back
         jc failed
 
         mov edi, dwBase
@@ -2206,12 +2206,12 @@ DllMain proc stdcall public hModule:dword, dwReason:dword, dwRes:dword
 ;--- set EBP to the client pointer before calling I_Init
 
         push ebp
-        VMMCall Get_Cur_VM_Handle
+        @VMMCall Get_Cur_VM_Handle
         mov ebp,[ebx].cb_s.CB_Client_Pointer
 if SAVESTAT
         sub esp, sizeof Client_Reg_Struc
         mov edi, esp
-        VMMCall Save_Client_State
+        @VMMCall Save_Client_State
 endif
 
         call I_Init
@@ -2221,7 +2221,7 @@ endif
 if SAVESTAT
         movzx edi,al
         mov esi, esp
-        VMMCall Restore_Client_State
+        @VMMCall Restore_Client_State
         add esp, sizeof Client_Reg_Struc
         mov eax, edi
 else

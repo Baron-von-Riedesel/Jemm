@@ -13,9 +13,11 @@
 	include jemm32.inc		;declarations for Jemm32
 	include debug.inc
 
+if ?BUFFERED
 ?BUFFSTA	equ 4F8h;physical start address buffer
 ?BUFFOFS	equ 4FCh;offset in buffer
 ?BUFFSIZ	equ 100000h
+endif
 
 ;--- publics/externals
 
@@ -27,9 +29,11 @@
 
 if ?DBGOUT
 
+if ?BUFFERED
 .text$01 segment
 DbgPTE	dd 0
 .text$01 ends
+endif
 
 .text$03 segment
 
@@ -244,16 +248,16 @@ if ?BUFFERED
 	ret
 @@ok:
 	mov edx, [XMS_Handle_Table.xht_pArray]
-if 1;e ?INTEGRATED
+ if 1;e ?INTEGRATED
 	movzx ecx, [XMS_Handle_Table.xht_numhandles]
 	movzx eax, [XMS_Handle_Table.xht_sizeof]
 @@nextitem:
 	test [edx].XMS_HANDLE.xh_flags, XMSF_FREE
 	jz @@skipitem
-if 1;?XMS35
+  if 1;?XMS35
 	test word ptr [edx].XMS_HANDLE.xh_baseK+2, 0FFC0h
 	jnz @@skipitem
-endif
+  endif
 	cmp [edx].XMS_HANDLE.xh_sizeK, ?BUFFSIZ / 1024
 	jnc  @@founditem
 @@skipitem:
@@ -285,7 +289,7 @@ endif
 	mov [edx].XMS_HANDLE.xh_locks, 1
 	mov [edx].XMS_HANDLE.xh_sizeK, ?BUFFSIZ / 1024
 	mov eax, [edx].XMS_HANDLE.xh_baseK
-else
+ else
 	mov eax, ?BUFFSIZ / 1024
 	cmp [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_sizeK, eax
 	jc @@error
@@ -293,7 +297,7 @@ else
 	add [edx].XMS_HANDLE.xh_sizeK, eax
 	mov eax, [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_baseK
 	add [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_baseK, ?BUFFSIZ / 1024
-endif
+ endif
 
 ;--- now in EAX physical address of debug output buffer.
 ;--- we need a 4 kB page of linear address space to map
@@ -325,7 +329,7 @@ endif
 
 	xor eax, eax
 	mov ds:[?BUFFOFS],eax
-endif
+endif ;?BUFFERED
 	ret
 Debug_Init endp
 

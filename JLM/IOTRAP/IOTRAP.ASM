@@ -48,7 +48,7 @@ callbacks label dword
 
 dispatch proc
 
-	VMMCall Simulate_Far_Ret	;emulate a RETF in v86
+	@VMMCall Simulate_Far_Ret	;emulate a RETF in v86
 
 	and [ebp].Client_Reg_Struc.Client_EFlags,not 1  ;clear Carry flag
 	movzx eax, word ptr [ebp].Client_Reg_Struc.Client_EAX
@@ -80,7 +80,7 @@ register_callback proc
 	.if ( cntCB == 0 )
 		mov esi, offset iocb
 		mov edx, PORT
-		VMMCall Install_IO_Handler
+		@VMMCall Install_IO_Handler
 		.if ( CARRY? )
 			or [ebp].Client_Reg_Struc.Client_EFlags,1  ;set Carry flag
 			mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 9
@@ -117,8 +117,8 @@ if 0 ;if the client is to be called in v86-mode
 	push ecx
 	push edx
 	push eax
-	VMMCall Save_Client_State
-	VMMCall Begin_Nest_Exec 	;start nested execution
+	@VMMCall Save_Client_State
+	@VMMCall Begin_Nest_Exec 	;start nested execution
 	mov esi, offset callbacks
 	mov ecx, cntCB
 
@@ -134,17 +134,17 @@ if 0 ;if the client is to be called in v86-mode
 		movzx edx,ax
 		shr eax,16
 		mov ecx, eax
-		VMMCall Simulate_Far_Call
+		@VMMCall Simulate_Far_Call
 		lodsd
 		mov [ebp].Client_Reg_Struc.Client_EBX, eax
-		VMMCall Resume_Exec		;run the VM
+		@VMMCall Resume_Exec		;run the VM
 		pop ecx
 		dec ecx
 	.endw
 
-	VMMCall End_Nest_Exec		;end nested execution
+	@VMMCall End_Nest_Exec		;end nested execution
 	lea esi, [esp+3*4]
-	VMMCall Restore_Client_State
+	@VMMCall Restore_Client_State
 	pop eax
 	pop edx
 	pop ecx
@@ -221,7 +221,7 @@ deinstall proc pcomm:ptr JLCOMM
 
 	.if ( cntCB )
 		mov edx, PORT
-		VMMCall Remove_IO_Handler
+		@VMMCall Remove_IO_Handler
 	.endif
 	mov eax,1
 	ret

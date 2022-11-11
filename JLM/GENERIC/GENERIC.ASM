@@ -39,7 +39,7 @@ szHello db "Hello from JLM GENERIC",cr,lf,0
 
 dispatch proc
 
-	VMMCall Simulate_Far_Ret	;emulate a RETF in v86
+	@VMMCall Simulate_Far_Ret	;emulate a RETF in v86
 
 	and [ebp].Client_Reg_Struc.Client_EFlags,not 1  ;clear Carry flag
 	movzx eax, word ptr [ebp].Client_Reg_Struc.Client_EAX
@@ -63,7 +63,7 @@ getversion endp
 
 display_hello proc uses esi
 
-	VMMCall Begin_Nest_Exec 	;start nested execution
+	@VMMCall Begin_Nest_Exec 	;start nested execution
 	mov esi, offset szHello
 @@:
 	lodsb
@@ -77,10 +77,10 @@ display_hello proc uses esi
 	mov byte ptr [ebp].Client_Reg_Struc.Client_EDX,al
 	mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,2
 	mov eax,21h
-	VMMCall Exec_Int
+	@VMMCall Exec_Int
 	jmp @B
 done:
-	VMMCall End_Nest_Exec		;end nested execution
+	@VMMCall End_Nest_Exec		;end nested execution
 	ret
 	align 4
 
