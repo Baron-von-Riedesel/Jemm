@@ -1,7 +1,7 @@
 
  1. About
 
- This directory contains some JLM samples:
+ This directory contains some JLMs:
 
  AHCICD:   AHCI Optical disk driver.
  GENERIC:  protected-mode TSR sample in ASM (Masm/JWasm).
@@ -9,11 +9,12 @@
  HELLO2:   "hello world" JLM in C (MS VC, Open Watcom)
  IOTRAP:   sample how to trap IO port access.
  JCLOCK:   shows clock in text mode.
+ JEMMDBG:  a ring 0 debugger for Jemm386/JemmEx
  JKEYBGR:  German keyboard driver.
  XDMA32:   UltraDMA HD driver (GNU GPL 2).
  XCDROM32: UltraDMA DVD/CD-ROM driver (GNU GPL 2).
 
- The first 5 samples are Public Domain.
+ GENERIC, HELLO, HELLO2, IOTRAP, JCLOCK are Public Domain.
 
 
  2. Tools that may be used

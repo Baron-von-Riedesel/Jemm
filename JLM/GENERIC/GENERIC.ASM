@@ -64,6 +64,7 @@ getversion endp
 display_hello proc uses esi
 
 	@VMMCall Begin_Nest_Exec 	;start nested execution
+	int 3
 	mov esi, offset szHello
 @@:
 	lodsb
