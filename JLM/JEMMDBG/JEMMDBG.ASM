@@ -55,6 +55,12 @@ GetModuleHandle endp
 
 	include printf.inc
 
+;--- option stackbase:esp is used here so register EBP
+;--- ( holding the "client_reg_struct" pointer ) isn't modified.
+;--- however, this option is rather problematic for 32-bit code,
+;--- since any push will change the offset of stack variables
+;--- ( there's NO automatic adjustment ).
+
 	option stackbase:esp
 
 MEMADD equ 500h
@@ -184,12 +190,12 @@ local dwCS16:dword
 	push 0       ; flags
 	@VMMCall _Allocate_GDT_Selector
 	add esp, 3*4
+
 	pop edx
 	pop ecx
 	and eax, eax
 	jz errorcs
 	mov dwCS16, eax
-	invoke printf, CStr("GDT selector for code: %X",13,10), eax
 
 ;--- get GDT descriptor for 16-bit data
 
@@ -200,10 +206,17 @@ local dwCS16:dword
 	push 0       ; flags
 	@VMMCall _Allocate_GDT_Selector
 	add esp, 3*4
+
 	and eax, eax
 	jz errords
-	invoke printf, CStr("GDT selector for data: %X",13,10), eax
 	mov [dwDS16], eax
+
+;--- warning: invoke with 3 arguments - stackbase:esp requires that
+;--- all arguments except the last one are NO stack variables.
+
+	mov ecx, dwCS16
+	invoke printf, CStr("GDT selectors for code/data: %X/%X",13,10), ecx, eax
+
 	mov [dwFlat], ss
 	mov ebx, offset callint10	; int 10h vector
 	mov edx, offset callint16	; int 16h vector

@@ -134,6 +134,7 @@ VMM_Service MoveMemory              ;copy memory with ints enabled
 
 VMM_Service _Allocate_GDT_Selector
 VMM_Service _Free_GDT_Selector
+VMM_Service Get_DDB
 
 ;--- equates for the page memory functions
 

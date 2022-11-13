@@ -133,6 +133,14 @@ VMM_Service (_PageCommit)
 VMM_Service (_PageDecommit)
 VMM_Service (_PageCommitPhys)
 
+VMM_Service (Free_V86_Call_Back)
+VMM_Service (Yield)
+VMM_Service (MoveMemory)
+
+VMM_Service (_Allocate_GDT_Selector)
+VMM_Service (_Free_GDT_Selector)
+VMM_Service (Get_DDB)
+
 End_Service_Table(VMM, VMM)
 
 struct cb_s {

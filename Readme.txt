@@ -212,7 +212,7 @@
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
                need a value of <m>=32767.
- XMSHANDLES=n  set number of XMS handles (default=48, min=8, max=128).
+ XMSHANDLES=n  set number of XMS handles (default=48, min=10, max=128).
 
 
  4. EMS Implementation Notes
@@ -444,6 +444,12 @@
 
    then that region is not used by Jemm. If you are sure that the region
    is ok to be used, include it with 'I=XXXX-XXXX'.
+
+ þ JemmEx will display warning "E820 - too many ext memory blocks, block 
+   xxxxxxxx ignored!" if int 15h, ax=e820h returns more than 10 available
+   memory blocks. It's very well possible that super-extended memory isn't
+   available if this warning has occured. The only cure is to adjust constant
+   ?XMS_STATICHDLS in file jemm16.inc and recompile JemmEx.
 
  þ The I=XXXX commandline option may be used to include the VGA "graphics"
    segment A000h. It might be possible to increase DOS conventional memory

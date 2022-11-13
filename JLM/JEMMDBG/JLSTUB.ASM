@@ -1,11 +1,12 @@
 
 ;--- MZ stub to run jload.exe
 ;--- to be assembled with Masm or JWasm
+;--- it's a derivate of dpmildxx... 
 
 ?MINMEM	 = 600h		;min free paragraphs for JLOAD.EXE
 MAXDIR   = 64+4		;max length of a directory path (including 00h)
 MAXPATH  = MAXDIR+12
-?BESAFE  = 1
+?BESAFE  = 1		;1=check if JLoad.exe looks ok.
 ?DOSMEMCHK = 1		;0=check for sufficient DOS memory
 
 	.286
@@ -77,7 +78,6 @@ if ?BESAFE
 	jc formerror
 norelocs:
 	mov ax,[si].mzhdr.e_cparhdr	; size of header in paragraphs
-	int 3
 	push [si].mzhdr.e_ss
 	push [si].mzhdr.e_sp
 	mov si, [si].mzhdr.e_ip
@@ -89,7 +89,9 @@ norelocs:
 	xor dx,dx
 endif
 
-	MOV AH,3Fh		;read the true JLOAD.EXE
+;--- read JLoad.exe binary
+
+	MOV AH,3Fh
 	mov cx,?MINMEM shl 4
 	INT 21h
 	JC readerror	;---> error "read error"
@@ -118,6 +120,9 @@ if ?BESAFE
 	mov sp,di
 norelocs2:
 endif
+
+;--- fill JLoad's PSP
+
 	mov ah,51h
 	int 21h
 	push si
@@ -138,6 +143,8 @@ endif
 	mov es:[80h],al
 
 	pop si
+
+;--- setup SS:SP
 
 	mov ax, es
 	add ax, bp
@@ -188,7 +195,7 @@ endif
 
 endcopy label byte
 
-main proc
+start proc
 
 ;--- setup stack at end of memory block
 
@@ -254,7 +261,7 @@ endif
 	pop ds
 	retf
 
-main endp
+start endp
 
 ;--- search name of app in environment
 ;--- the name may be a full path or not
@@ -385,4 +392,4 @@ endif
 STACK segment stack 'STACK'
 STACK ends
 
-	end main
+	end start

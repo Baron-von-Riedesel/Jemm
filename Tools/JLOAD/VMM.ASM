@@ -120,6 +120,7 @@ Yield				dd 0
 MoveMemory  		dd 0        
 					dd _Allocate_GDT_Selector ; v5.83
 					dd _Free_GDT_Selector ; v5.83
+					dd Get_DDB ; v5.83
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 
@@ -515,6 +516,21 @@ _Free_GDT_Selector proc
 	mov byte ptr [eax+ecx+5],0
 	ret
 _Free_GDT_Selector endp
+
+;--- Get_DDB
+;--- find a device
+;--- eax=device ID, edi=device name (or NULL)
+;--- out: device DDB in ECX!
+;--- modifies ECX only.
+
+Get_DDB proc uses eax edx
+	call FindDevice
+	mov ecx, eax
+	jnc @F
+	xor ecx, ecx
+@@:
+	ret
+Get_DDB endp
 
 ;-------------------------
 ;--- the IO-port trapping is implemented very simple

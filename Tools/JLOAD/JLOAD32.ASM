@@ -39,6 +39,7 @@ DATA_	ends
 ;--- ecx->VMMS structure
 ;--- edi=phys page for protected-mode stack
 ;--- ebp=vcpi entry (if ?USEVCPIEXIT is 1)
+;--- out: EDX=returncode from JLM
 
 start proc stdcall public
 

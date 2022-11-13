@@ -1,28 +1,31 @@
 
-# create jemmdbg.exe and int3.exe
+# create JemmDbg.exe and JDbgBrk.exe
 #
 # jwasm's option -pe cannot be used, since the DDB cannot be exported then;
 # so jwlink is necessary.
 # jwasm -pe -nologo -Fl -Sg -I..\..\Include -Fo jemmdbg.dll jemmdbg.asm 
 # patchpe -x -y:1 jemmdbg.dll
 
-ALL: jemmdbg.exe int3.exe
+ALL: JemmDbg.exe JDbgBrk.exe
 
-jemmdbg.exe: jemmdbg.obj jlstub.bin
-	@jwlink format win pe hx dll ru native f jemmdbg.obj n jemmdbg.exe op q,m,stub=jlstub.bin export _ddb.1
+JemmDbg.exe: JemmDbg.obj jlstub.bin
+	@jwlink format win pe hx dll ru native f JemmDbg.obj n JEMMDBG.EXE op q,m,stub=jlstub.bin export _ddb.1
 
-jemmdbg.obj: jemmdbg.asm debugj.bin
-	@jwasm -coff -nologo -Fl -Sg -I..\..\Include jemmdbg.asm 
+JDbgBrk.exe: JDbgBrk.asm jlstub.bin
+#	@jwasm -nologo -coff -Fl -I..\..\Include JDbgBrk.asm 
+#	@jwlink format win pe hx ru native f JDbgBrk.obj n JDBGBRK.EXE op q,m,stub=jlstub.bin,stack=0x1000,heap=0x1000
+	@jwasm -nologo -pe -Fl -I..\..\Include JDbgBrk.asm 
+	@pestub -n -s JDbgBrk.exe jlstub.bin
+	@patchpe -x -y:1 -s:0x1000 -h:0x1000 JDbgBrk.exe
+
+JemmDbg.obj: JemmDbg.asm debugj.bin
+	@jwasm -coff -nologo -Fl -Sg -I..\..\Include JemmDbg.asm 
 
 jlstub.bin: jlstub.asm
-	@jwasm -nologo -mz -Fo=jlstub.bin jlstub.asm
+	@jwasm -nologo -mz -Fl -Fo=jlstub.bin jlstub.asm
 
 debugj.bin: \projects\debug\build\debugj.bin
 	@copy \projects\debug\build\debugj.bin
-
-int3.exe: int3.asm
-	@jwasm -nologo -coff -Fl -I..\..\Include int3.asm 
-	@jwlink format win pe hx dll ru native f int3.obj n int3.exe op q,m,stub=jlstub.bin
 
 clean:
 	@del *.obj

@@ -873,7 +873,10 @@ endif
 	int 67h
 	sti
 	@DbgOutS <"RunVMM: back in v86-mode",lf>,?RMDBG
-	push dx
+
+;--- returncode from JLM is stored in EDX
+	push edx
+
 	mov edx,[dwStack]
 	mov ax,0DE05h
 	int 67h
@@ -884,7 +887,7 @@ if ?CATCHEXC06
 	int 21h
 	pop ds
 endif
-	pop ax
+	pop eax
 	ret
 if ?CATCHEXC06
 int06:
@@ -1016,8 +1019,12 @@ LoadModule proc
 ;--- run the VMM
 
 	call RunVMM
+if ?CATCHEXC06
 error_occured:
+endif
 	mov [wRet],ax
+	bt eax, 31
+	jc @@nodispsuccess
 	and ax,ax
 	jz @F
 ;	test byte ptr [vmms.wFlags],JLF_DRIVER
