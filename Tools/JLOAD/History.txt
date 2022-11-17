@@ -6,6 +6,8 @@
    - fixed: import of Jemm's IO port trap ranges did additionally trap
      "holes" in the DMA16 page register port range D0-DF.
    - flags PC_CACHEDIS and PC_CACHEWT supported for _PageCommitPhys().
+   - added _Allocate_GDT_Selector(), _Free_GDT_Selector(), Get_DDB().
+   - added possibility to suppress JLoad result msgs.
  v5.82:
    - fixed: JLMs with API didn't work correctly.
    - int 2Fh, ax=1684h: when a JLM entry point is returned ( in ES:DI ),

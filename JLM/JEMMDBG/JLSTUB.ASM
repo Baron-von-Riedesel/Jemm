@@ -121,14 +121,31 @@ if ?BESAFE
 norelocs2:
 endif
 
-;--- fill JLoad's PSP
+;--- fill JLoad's PSP - don't overwrite possible cmdline arguments
 
 	mov ah,51h
 	int 21h
 	push si
 	mov si, sp
 	add si, 2
-	mov di, 81h
+	mov di, 80h
+	mov cl, es:[di]
+	mov ch, 0
+	inc di
+	jcxz nocmdl
+	sub sp, cx
+	mov bx, sp
+	push cx
+	push di
+@@:
+	mov al, es:[di]
+	mov ss:[bx], al
+	inc di
+	inc bx
+	loop @B
+	pop di
+	pop cx
+nocmdl:
 	mov al,' '
 	stosb
 @@:
@@ -137,10 +154,16 @@ endif
 	and al, al
 	jnz @B
 	dec di
+	jcxz @F
+	mov si, sp
+	rep movsb es:[di], ss:[si]
+	mov sp, si
+@@:
 	mov byte ptr es:[di],13
 	mov ax, di
-	sub ax, 80h
-	mov es:[80h],al
+	mov di, 80h
+	sub ax, di	; might actually be larger than 127 bytes ... ignore for now.
+	stosb
 
 	pop si
 

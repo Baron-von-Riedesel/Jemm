@@ -1,5 +1,5 @@
 
-;--- This program check is JemmDbg has been loaded.
+;--- This program checks if JemmDbg has been loaded.
 ;--- If yes, an "int 3" is executed to wake up the debugger.
 
 	.386

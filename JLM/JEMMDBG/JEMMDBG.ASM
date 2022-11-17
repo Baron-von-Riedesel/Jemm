@@ -1,5 +1,5 @@
 
-;--- load the 16-bit DebugJ blob resource
+;--- load the 16-bit DebugR blob resource
 ;--- and call its initialization routine.
 ;--- JWasm used ( Masm won't work )
 
@@ -33,14 +33,22 @@ ddb VxD_Desc_Block < 0, 0, DEVICE_ID, 1, 0, 0, "JEMMDBG", 0, 0, 0 >
 
 hModuleStat dd 0
 dwFlat dd 0
-dwBase dd 0
 dwDS16 dd 0
-
+dfDebugger label fword
+	dd 0
+dwCS16 dd 0
+dfGetR0Stk label fword
+	dd 3
+	dd 0
+dwEAX dd 0
+dwEDX dd 0
+dwScratch dd 0
+dfSsEsp df 0
 
 _DATA16 segment para FLAT public 'DATA'
 
 start16 label byte
-	incbin <DebugJ.bin>
+	incbin <DebugR.bin>
 SIZEBIN16 equ $ - offset start16
 	db MEMADD dup (?)
 
@@ -54,14 +62,6 @@ GetModuleHandle proc hhandle:dword
 GetModuleHandle endp
 
 	include printf.inc
-
-;--- option stackbase:esp is used here so register EBP
-;--- ( holding the "client_reg_struct" pointer ) isn't modified.
-;--- however, this option is rather problematic for 32-bit code,
-;--- since any push will change the offset of stack variables
-;--- ( there's NO automatic adjustment ).
-
-	option stackbase:esp
 
 MEMADD equ 500h
 
@@ -82,11 +82,21 @@ PUSHADS ends
 callint10 proc far
 	push ds
 	push es
-	movzx esp, sp
 	mov ds, cs:[dwFlat]
 	mov es, [dwFlat]
-	mov ss, [dwFlat]
-	add esp, [dwBase]
+
+;--- switch to Jemm's stack
+
+	mov dword ptr [dfSsEsp], esp
+	mov word ptr [dfSsEsp+4], ss
+	mov [dwEAX], eax
+	mov [dwEDX], edx
+	call [dfGetR0Stk]
+	mov ss, dx
+	mov esp, eax
+	mov eax, [dwEAX]
+	mov edx, [dwEDX]
+
 	pushad
 
 	push ebx
@@ -117,8 +127,10 @@ callint10 proc far
 	pop [ebp].Client_Reg_Struc.Client_EBX
 	pop [ebp].Client_Reg_Struc.Client_EAX
 	popad
-	mov ss, [dwDS16]
-	sub esp, [dwBase]
+
+;--- switch back to Debug's stack
+
+	lss esp, [dfSsEsp]
 	pop es
 	pop ds
 	ret
@@ -131,11 +143,18 @@ callint16 proc far
 
 	push ds
 	push es
-	movzx esp, sp
 	mov ds, cs:[dwFlat]
 	mov es, [dwFlat]
-	mov ss, [dwFlat]
-	add esp, [dwBase]
+	mov dword ptr [dfSsEsp], esp
+	mov word ptr [dfSsEsp+4], ss
+	mov [dwEAX], eax
+	mov [dwEDX], edx
+	call [dfGetR0Stk]
+	mov ss, dx
+	mov esp, eax
+	mov eax, [dwEAX]
+	mov edx, [dwEDX]
+
 	pushad
 
 	@VMMCall Get_Cur_VM_Handle
@@ -154,28 +173,34 @@ callint16 proc far
 
 	mov word ptr [esp].PUSHADS._eax, ax
 	popad
-	mov ss, [dwDS16]
-	sub esp, [dwBase]
+	lss esp, [dfSsEsp]
 	pop es
 	pop ds
 	ret
 callint16 endp
 
+;--- option stackbase:esp is used so register EBP
+;--- ( holding the "client_reg_struct" pointer ) isn't modified.
+;--- however, this option is rather problematic for 32-bit code,
+;--- since any push will change the offset of stack variables
+;--- ( there's NO automatic adjustment ).
+
+	option stackbase:esp
+
+;--- main. esi=cmdline
+
 main proc c
-
-local dwCS16:dword
-
-	mov ebx, offset start16
-	mov [dwBase], ebx
 
 ;--- get GDT descriptor for 16-bit code
 
+	mov ebx, offset start16
 	mov edx, cs
 	lar ecx, edx
 	and ecx, 0000ff00h
 	shrd eax, ebx, 16	; get lower 16 bits of base
-	mov ax, SIZEBIN16
-	add ax, MEMADD
+	mov ax, SIZEBIN16 + MEMADD
+	and al, 0F0h
+	dec ax
 	shld edx, ebx, 16	; get upper 16 bits of base
 	mov cl, dl
 	shr edx, 8
@@ -196,6 +221,7 @@ local dwCS16:dword
 	and eax, eax
 	jz errorcs
 	mov dwCS16, eax
+	mov dword ptr dfGetR0Stk+4, eax
 
 ;--- get GDT descriptor for 16-bit data
 
@@ -211,41 +237,57 @@ local dwCS16:dword
 	jz errords
 	mov [dwDS16], eax
 
-;--- warning: invoke with 3 arguments - stackbase:esp requires that
-;--- all arguments except the last one are NO stack variables.
+;--- get GDT descriptor as scratchselector for debugger
 
-	mov ecx, dwCS16
-	invoke printf, CStr("GDT selectors for code/data: %X/%X",13,10), ecx, eax
-
-	mov [dwFlat], ss
-	mov ebx, offset callint10	; int 10h vector
-	mov edx, offset callint16	; int 16h vector
-
-	mov ecx, dwCS16
-	push cs
-	push offset @F
+	mov cx, 9300h	; ensure attributes aren't 0
 	push ecx
 	push 0
-	retd
-@@:
+	push 0
+	@VMMCall _Allocate_GDT_Selector
+	add esp, 3*4
+	and eax, eax
+	jz errorsc
+	mov [dwScratch], eax
+
+	invoke printf, CStr("GDT selectors for code/data/scratch: %X/%X/%X",13,10), dwCS16, dwDS16, dwScratch
+
+	mov [dwFlat], ds
+
+	mov eax, [dwDS16]
+	push ebp
+	lsl bp, ax
+	inc bp
+	mov edi, [dwScratch]
+	mov ebx, offset callint10	; int 10h vector
+	mov edx, offset callint16	; int 16h vector
+	mov ecx, ds
+
+;--- registers setup:
+;--- ax=debugger's data segment
+;--- cx=flat data selector
+;--- di=scratch selector
+;--- ebx=linear address vio out
+;--- edx=linear address kbd in
+;--- esi=linear address cmdline
+
+	call [dfDebugger]
+	pop ebp
+
 	invoke printf, CStr("JemmDbg loaded and initialized",13,10)
-
-if 0
-;--- activate debugger
-	int 3
-endif
-
-	mov eax, 1
+	mov eax, 80000001h	; bit 31=1: suppress JLoad msg
 	ret
 errorcs:
 	invoke printf, CStr("Allocate_GDT_selector() [code] failed",13,10)
 	jmp @F
 errords:
 	invoke printf, CStr("Allocate_GDT_selector() [data] failed",13,10)
+	jmp @F
+errorsc:
+	invoke printf, CStr("Allocate_GDT_selector() [scratch] failed",13,10)
 @@:
 	xor eax, eax
 	ret
-main ENDP
+main endp
 
 DLL_PROCESS_DETACH equ 0
 DLL_PROCESS_ATTACH equ 1
@@ -257,6 +299,11 @@ DllMain proc stdcall uses esi edi hModule:dword, dwReason:dword, dwRes:dword
 	jnz @F
 	mov eax, hModule
 	mov hModuleStat, eax
+
+	mov esi, dwRes
+ifdef _DEBUG
+	invoke printf, CStr("Cmdline: %s",13,10), [esi].JLCOMM.lpCmdLine
+endif
 	call main
 	jmp done
 @@:

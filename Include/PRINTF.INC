@@ -4,7 +4,7 @@
 ;--- i64toa(long long n, char * s, int base);
 ;--- convert 64-bit long long to string
 
-i64toa PROC stdcall uses esi edi number:qword, outb:ptr, base:dword
+i64toa proc stdcall uses esi edi number:qword, outb:ptr, base:dword
 
 	mov ch,0
 	mov edi, base
@@ -47,7 +47,7 @@ i64toa PROC stdcall uses esi edi number:qword, outb:ptr, base:dword
 	mov eax,ebx
 	ret
 
-i64toa ENDP
+i64toa endp
 
 printf proc c fmt:ptr, args:vararg
 

@@ -18,14 +18,14 @@ JDbgBrk.exe: JDbgBrk.asm jlstub.bin
 	@pestub -n -s JDbgBrk.exe jlstub.bin
 	@patchpe -x -y:1 -s:0x1000 -h:0x1000 JDbgBrk.exe
 
-JemmDbg.obj: JemmDbg.asm debugj.bin
+JemmDbg.obj: JemmDbg.asm debugR.bin
 	@jwasm -coff -nologo -Fl -Sg -I..\..\Include JemmDbg.asm 
 
 jlstub.bin: jlstub.asm
 	@jwasm -nologo -mz -Fl -Fo=jlstub.bin jlstub.asm
 
-debugj.bin: \projects\debug\build\debugj.bin
-	@copy \projects\debug\build\debugj.bin
+debugR.bin: \projects\debug\build\debugR.bin
+	@copy \projects\debug\build\debugR.bin
 
 clean:
 	@del *.obj

@@ -1,16 +1,17 @@
 
  1. About JemmDbg
 
- JemmDbg is a ring 0 debugger for Jemm386/JemmEx. It's actually a variant of
- Debug/X. It can be used to debug JLMs or examine the state of the V86-monitor.
+ JemmDbg is a ring 0 debugger for Jemm386/JemmEx. It's actually using DebugR,
+ a variant of Debug/X. It can be used to debug JLMs or examine the state of
+ the V86-monitor.
 
 
  2. Usage
  
  JemmDbg is a JLM and uses JLoad to load itself in the v86-monitor address
  context. Once JemmDbg is loaded and initialized, it will become active when
- an exception in ring 0 is detected. There's a small tool supplied, JDbgBrk,
- that emits a breakpoint instruction in ring 0, thus activating the debugger.
+ an exception in ring 0 is detected. Alternately, one can run tool JDbgBrk,
+ which emits a breakpoint instruction in ring 0, thus activating the debugger.
 
 
  3. Features & Restrictions
@@ -18,12 +19,16 @@
  - JemmDbg will ignore any exception caused in V86-mode, so it cannot be used
    to debug normal DOS software.
 
+ - JemmDbg does not affect protected-mode software that runs as VCPI client
+   ( DOS extenders ). Those install their very own address context and IDT,
+   which JemmDbg doesn't try to access or modify.
+
  - The Jemm386/JemmEx address context consists mostly of "free" address space;
    if the debugger tries to access memory at such addresses, page faults will
    occur. They are reported, but shouldn't do any harm to system integrity.
  
  - JLoad installs a subset of the Win9X ring 0 API, which uses interrupt 20h
-   in protected-mode as a kind of dynamic link mechanism. JemmDbg is unaware
+   in protected-mode as a sort of dynamic link mechanism. JemmDbg is unaware
    of this API and handles Int 20h like any other software interrupt - that is,
    it might write a breakpoint instruction ( int 3 ) just behind the Int 20h.
    This should cause a GPF, since the Int 20h API expects two words as
