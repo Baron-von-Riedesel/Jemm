@@ -31,8 +31,8 @@
 I15MOVE struct
     dq ?
     dq ?
-src descriptor <?>
-dst descriptor <?>
+src DESCRIPTOR <?>
+dst DESCRIPTOR <?>
 I15MOVE ends
 
 .text$01 SEGMENT

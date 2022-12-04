@@ -17,7 +17,9 @@
  3. Features & Restrictions
 
  - JemmDbg will ignore any exception caused in V86-mode, so it cannot be used
-   to debug normal DOS software.
+   to debug normal DOS software. However, the v86-monitor ( JemmEx/Jemm386 )
+   will detect the presence of a kernel debugger and stop with a breakpoint
+   if an exception in v86-mode occurs.
 
  - JemmDbg does not affect protected-mode software that runs as VCPI client
    ( DOS extenders ). Those install their very own address context and IDT,

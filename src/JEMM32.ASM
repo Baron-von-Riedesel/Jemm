@@ -187,18 +187,18 @@ endif
 ;--- GDT - Global Descriptor Table
 ;--- as default, the GDT is no longer in the shared region
 
-V86GDT LABEL descriptor
+V86GDT LABEL DESCRIPTOR
     DQ 0                                ; +00 NULL-Entry
-    descriptor <-1,0,0,9AH,0CFh,0>      ; +08 flat 4 GB Code (32 Bit)
-    descriptor <-1,0,0,92H,0CFh,0>      ; +10 flat 4 GB Data (32 Bit)
-    descriptor <?TSSLEN-1,0,0,89H,0,0>  ; +18 TSS V86
-    descriptor <-1,0,0,9AH,0,0>         ; +20 std 64k Code Descriptor
-    descriptor <-1,0,0,92H,0,0>         ; +28 std 64k Data Descriptor
-    descriptor <?HLPSTKSIZE-1,0,?BASE shr 16,92H,040h,?BASE shr 24>; helper stack segment
+    DESCRIPTOR <-1,0,0,9AH,0CFh,0>      ; +08 flat 4 GB Code (32 Bit)
+    DESCRIPTOR <-1,0,0,92H,0CFh,0>      ; +10 flat 4 GB Data (32 Bit)
+    DESCRIPTOR <?TSSLEN-1,0,0,89H,0,0>  ; +18 TSS V86
+    DESCRIPTOR <-1,0,0,9AH,0,0>         ; +20 std 64k Code Descriptor
+    DESCRIPTOR <-1,0,0,92H,0,0>         ; +28 std 64k Data Descriptor
+    DESCRIPTOR <?HLPSTKSIZE-1,0,?BASE shr 16,92H,040h,?BASE shr 24>; helper stack segment
     DQ 0                                ; +38
-    descriptor <2FFh,400h,0,0F2H,0,0>   ; +40
+    DESCRIPTOR <2FFh,400h,0,0F2H,0,0>   ; +40
 
-    descriptor (GDT_SIZE - 9*8)/8 dup (<0,0,0,0,0,0>)
+    DESCRIPTOR (GDT_SIZE - 9*8)/8 dup (<0,0,0,0,0,0>)
 
 if ?SHAREDGDT
 .text$01x ends
@@ -625,15 +625,8 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @DbgOutS <"Int in v86-mode, #=">,1
-    @DbgOutW cx,1
-    @DbgOutS <", CS:EIP=">,1
-    @DbgOutW <word ptr [ebp].V86FRAME.fCS>,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].V86FRAME.fEIP,1
-    @DbgOutS <" EBP=">,1
-    @DbgOutD ebp,1
-    @DbgOutS <10>,1
+    @dprintf ?V86DBG, CStr("Int in v86-mode, #=%X, CS:EIP=%X:%X EBP=%X",10), cx, word ptr [ebp].V86FRAME.fCS,\
+        [ebp].V86FRAME.fEIP, ebp
 @@:
 endif
 
@@ -680,22 +673,8 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @DbgOutS <"V86 IRQ/EXC, #=">,1
-    @DbgOutW cx,1
-    @DbgOutS <" EBP=">,1
-    @DbgOutD ebp,1
-    @DbgOutS <", CS:EIP=">,1
-    @DbgOutW <word ptr [ebp].V86FRAME.fCS>,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].V86FRAME.fEIP,1
-    @DbgOutS <" EFL=">,1
-    @DbgOutD [ebp].V86FRAME.fEFL,1
-    @DbgOutS <", SS:ESP=">,1
-    @DbgOutW <word ptr [ebp].V86FRAME.fSS>,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].V86FRAME.fESP,1
-    @DbgOutS <10>,1
-;    @WaitKey 1,1
+    @dprintf ?V86DBG, CStr("V86 IRQ/EXC, #=%X EBP=%X, CS:EIP=%X:%X, EFL=%X, SS:ESP=%X:%X",10), cx,\
+        ebp, word ptr [ebp].V86FRAME.fCS, [ebp].V86FRAME.fEIP, [ebp].V86FRAME.fEFL, word ptr [ebp].V86FRAME.fSS, [ebp].V86FRAME.fESP
 @@:
 endif
 if ?NMI
@@ -751,31 +730,33 @@ HandleException proc
     lar eax, eax
     test eax,400000h
     jnz @@is32
-    movzx esp,sp                  ; make sure ESP is valid
+    movzx esp,sp                ; make sure ESP is valid
 @@is32:
     @v86popreg
 
     cmp dword ptr [esp],8       ; exc #8?
     jnc errorcode_pushed
-    push dword ptr [esp]         ; emulate error code for exc 0-7 
+    push dword ptr [esp]        ; emulate error code for exc 0-7 
 ;    mov dword ptr [esp+4],0
-errorcode_pushed::
+errorcode_pushed::              ; <--- entry exc 06 v86
     @v86pushreg
+
+if ?I41SUPP
+	mov ax, 4Fh
+	int 41h
+	cmp ax, 0F386h              ; kernel debugger present?
+	jnz @F
+	int 3
+@@:
+endif
 
     mov ax, FLAT_DATA_SEL
     mov ds, eax
     mov ES, eax
     cld
 
-if ?EXCDBG
-    @DbgOutS <"Exception dump, exception ">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_Int,1
-    @DbgOutS <" at cs:eip=">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_CS,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_EIP,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?EXCDBG, CStr("Exception dump, exception %X at cs:eip=%X:%X",10), [ebp].Client_Reg_Struc.Client_Int,\
+        [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
 
     test byte ptr [ebp].Client_Reg_Struc.Client_EFlags+2,2   ;V86 mode?
     jnz @@isv86
@@ -929,13 +910,8 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @DbgOutS <"exception in v86-mode, #=">,1
-    @DbgOutW cx,1
-    @DbgOutS <", CS:IP=">,1
-    @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_CS>,1
-    @DbgOutS <":">,1
-    @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EIP>,1
-    @DbgOutS <10>,1
+    @dprintf ?V86DBG, CStr("exception in v86-mode, #=%X, CS:IP=%X:%X",10), cx,\
+        word ptr [ebp].Client_Reg_Struc.Client_CS, word ptr [ebp].Client_Reg_Struc.Client_EIP
 @@:
 endif
     MOV EAX,SS
@@ -943,16 +919,7 @@ endif
 
     mov esp,[dwStackCurr]
 
-if 0
-    @DbgOutS <"V86_Exception, esp=">,1
-    @DbgOutD esp,1
-    @DbgOutS <" cs:eip=">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_CS,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_EIP,1
-    @DbgOutS <10>,1
-    @WaitKey 1,1
-endif
+;    @dprintf ?V86DBG, CStr("V86_Exception, esp=%X, cs:eip=%X:%X",10), esp,[ebp].Client_Reg_Struc.Client_CS,[ebp].Client_Reg_Struc.Client_EIP
 
     CMP ECX,0DH             ; general protection exception?
     JNZ @@V86_TEST_EXC      ; no, check further
@@ -1007,13 +974,7 @@ if ?BPOPC ne 0F4h
 endif
 @@Is_Hlt:
 
-if ?HLTDBG
-    @DbgOutS <"True HLT occured at CS:IP=">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_CS,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_EIP,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?HLTDBG, CStr("True HLT occured at CS:IP=%X:%X",10), [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
 
     INC [EBP].Client_Reg_Struc.Client_EIP   ; Jump over the HLT instruction
     @v86popregX
@@ -1038,8 +999,8 @@ endif
 @@NoBPOPC:
 
 if ?BPOPC ne 0F4h
-    CMP     AL,0F4H                 ; HLT-
-    JZ      @@Is_Hlt                ; command ?
+    CMP AL,0F4H                 ; HLT-
+    JZ @@Is_Hlt                 ; command ?
 endif
 
 if ?SB
@@ -1048,7 +1009,7 @@ if ?SB
     CMP [EBP].Client_Reg_Struc.Client_Error,1ah
     jne @@notsb
     test [bV86Flags],V86F_SB
-    je @@notsb                 ; SB option not turned on
+    je @@notsb                  ; SB option not turned on
     inc [EBP].Client_Reg_Struc.Client_EIP   ; skip INT 3 opcode
     @v86popregX
     add esp,4+4                 ; discard excess GPF error code
@@ -2022,6 +1983,13 @@ SetVME proc public
     align 4
 SetVME endp
 
+endif
+
+if ?I41SUPP
+Int41_Entry proc public
+    iretd           ; just don't route it to v86-mode
+    align 4
+Int41_Entry endp
 endif
 
 ;--- Int 15h handler

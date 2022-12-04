@@ -946,32 +946,17 @@ endif
     jbe @@nospaceabove
     mov eax, [DMABuffStartPhys]
     add eax, [DMABuffSize]
-if ?INITDBG
-    @DbgOutS <"heap region above DMA buffer ">,1
-    @DbgOutD eax,1
-    @DbgOutS <", size ">,1
-    @DbgOutD ecx,1
-    @DbgOutS <", pPTE=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("heap region above DMA buffer %X, size=%X, pPTE=%X",10), eax, ecx, edx
     call MapPhysPages
 @@nospaceabove:
     add edx,4           ;leave 1 page in address space reserved
     mov [PageMapHeap],edx
 
 if ?INITDBG
-    @DbgOutS <"heap created at ">
-    @DbgOutD edi,1
-    @DbgOutS <"-">,1
     lea ebx, [edx-4]
     @SYSPTE2LINEAR ebx, ebx
     dec ebx
-    @DbgOutD ebx,1
-    @DbgOutS <", free PTEs starting at ">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
+    @dprintf ?INITDBG, CStr("heap created at %X-%X, free PTEs starting at %X",10), edi, ebx, edx
 endif
 
 ;--- now create the TSS (will begin on a page boundary, since DMA buffer
@@ -1014,12 +999,7 @@ endif
     mov ecx,IOBM_COPY_LEN
     rep movsb
 
-if ?INITDBG
-    @DbgOutS <"TSS done, esp0=">,1
-    @DbgOutD [edx].TSSSEG.tsEsp0,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("TSS done, esp0=%X",10), [edx].TSSSEG.tsEsp0
 
 ;-- finally load TR
 
@@ -1045,6 +1025,14 @@ endif
     mov ecx, offset Int15_Entry
     bts [edx], eax
     call SetIDTEntry
+
+if ?I41SUPP
+    mov al, 41h
+    mov ecx, offset Int41_Entry
+    @dprintf ?INITDBG, CStr("int 41h vector set to %X",10), ecx
+;    bts [edx], eax         ; not needed, since it's a protected-mode API only
+    call SetIDTEntry
+endif
 
 if ?BPOPC ne 0F4h
     mov al,6
@@ -1094,12 +1082,7 @@ if ?A20PORTS
  endif
 endif
 
-if ?INITDBG
-    @DbgOutS <"Jemm initialised, edi=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("Jemm initialised, edi=%X",10), edi
 
 if ?FASTBOOT
     call SaveIVT
@@ -1150,10 +1133,8 @@ endif
     and edi, 0FFFh
 
 if ?INITDBG
-    @DbgOutS <"End of monitor: ">,1
     lea ecx, [eax+edi]
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
+    @dprintf ?INITDBG, CStr("End of monitor: %X",10), ecx
 endif
 
 ;--- now check if heap's last physical page is < DMA buffer
@@ -1164,13 +1145,7 @@ endif
     mov ecx, [DMABuffStartPhys]
     cmp eax, ecx
     jnc @@abovedma
-if ?INITDBG
-    @DbgOutS <"must waste space, phys end of monitor=">,1
-    @DbgOutD eax,1
-    @DbgOutS <" is below DMA buff=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("must waste space, phys end of monitor=%X is below DMA buff=%X",10), eax, ecx
     add ecx, [DMABuffSize]      ;get physical end of the DMA buff
     mov eax, ecx
     xor edi, edi
@@ -1185,26 +1160,14 @@ endif
 ; ran out of memory, shouldn't happen, avoid disaster by setting
 ; max VCPI/EMS memory to 0
 
-if ?INITDBG
-    @DbgOutS <"ERROR: out of memory condition on init, MonitorEnd=">,1
-    @DbgOutD [esi].JEMMINIT.MonitorEnd,1
-    @DbgOutS <" EDI=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("ERROR: out of memory condition on init, MonitorEnd=%X EDI=%X",10),[esi].JEMMINIT.MonitorEnd, edi
 
     mov [EMSPagesMax], 0
     mov [dwMaxMem4K], 0
     jmp @@initdone
 
 @@nomemproblem:
-if ?INITDBG
-    @DbgOutS <"end of monitor data, physical=">,1
-    @DbgOutD edi,1
-    @DbgOutS <", end of XMS memory block=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("end of monitor data, physical=%X, end of XMS memory block=%X",10), edi, eax
 
 ;--- force 4K alignment for EMS/VCPI fixed pages and UMB's
 
@@ -1225,11 +1188,7 @@ endif
     cmp [esi].JEMMINIT.NoRAM,0
     jnz @@noumbmapping
 
-    @DbgOutS <"UMB init start, mem to map=">,?INITDBG
-    @DbgOutD edi,?INITDBG
-    @DbgOutS <", remaining mem=">,?INITDBG
-    @DbgOutD eax,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("UMB init start, mem to map=%X, remaining mem=%X",10), edi, eax
 
     push ebp
     mov ebp, eax
@@ -1268,9 +1227,7 @@ endif
     mov eax,ebp
     pop ebp
 
-    @DbgOutS <"UMBs mapped, remaining mem=">,?INITDBG
-    @DbgOutD eax,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("UMBs mapped, remaining mem=%X",10), eax
 
 @@noumbmapping:
 
@@ -1316,13 +1273,7 @@ endif
     shr eax,12                  ; convert bytes to 4k pages
     call Pool_Init2
 
-if ?INITDBG
-    @DbgOutS <"EMS/VCPI memory handling initialised, MaxMem4K=">,1
-    @DbgOutD [dwMaxMem4K],1
-    @DbgOutS <10,"end of preallocated EMS, physical=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("EMS/VCPI memory handling initialised, MaxMem4K=%X",10,"end of preallocated EMS, physical=%X"), [dwMaxMem4K], edi
 
 if ?INTEGRATED
 

@@ -10,6 +10,7 @@
 
 MEMADD    equ 500h
 DEVICE_ID equ 4A50h
+INT41     equ 1
 
 CStr macro text:vararg
 local sym
@@ -62,6 +63,13 @@ GetModuleHandle proc hhandle:dword
 GetModuleHandle endp
 
 	include printf.inc
+ifdef _DEBUG
+	include dprintf.inc
+	include vioout.inc
+	include kbdinp.inc
+else
+@dprintf equ <;>
+endif
 
 MEMADD equ 500h
 
@@ -98,7 +106,6 @@ callint10 proc far
 	mov edx, [dwEDX]
 
 	pushad
-
 	push ebx
 	@VMMCall Get_Cur_VM_Handle
 	mov ebp, [ebx].cb_s.CB_Client_Pointer
@@ -156,7 +163,6 @@ callint16 proc far
 	mov edx, [dwEDX]
 
 	pushad
-
 	@VMMCall Get_Cur_VM_Handle
 	mov ebp, [ebx].cb_s.CB_Client_Pointer
 
@@ -173,11 +179,27 @@ callint16 proc far
 
 	mov word ptr [esp].PUSHADS._eax, ax
 	popad
+
 	lss esp, [dfSsEsp]
 	pop es
 	pop ds
 	ret
 callint16 endp
+
+if INT41
+
+;--- tell jemm that a kernel debugger is installed
+
+myint41 proc
+	cmp ax, 4Fh
+	jz @F
+	iretd
+@@:
+	mov ax, 0F386h
+	iretd
+myint41 endp
+
+endif
 
 ;--- option stackbase:esp is used so register EBP
 ;--- ( holding the "client_reg_struct" pointer ) isn't modified.
@@ -253,25 +275,43 @@ main proc c
 
 	mov [dwFlat], ds
 
-	mov eax, [dwDS16]
+	mov eax, [dwScratch]
+	shl eax, 16
+	mov ax, word ptr [dwDS16]
 	push ebp
 	lsl bp, ax
 	inc bp
-	mov edi, [dwScratch]
 	mov ebx, offset callint10	; int 10h vector
 	mov edx, offset callint16	; int 16h vector
 	mov ecx, ds
 
+	sub esp, 6
+	sidt [esp]
+	pop di
+	pop edi
+
 ;--- registers setup:
-;--- ax=debugger's data segment
+;--- ax=debugger's data segment, hiword ax: scratchsel
 ;--- cx=flat data selector
-;--- di=scratch selector
+;--- bp=max. size debugger segment
 ;--- ebx=linear address vio out
 ;--- edx=linear address kbd in
 ;--- esi=linear address cmdline
+;--- es:edi=address IDT
 
 	call [dfDebugger]
 	pop ebp
+
+if INT41
+	sub esp,8
+	sidt [esp]
+	mov ebx, [esp+2]
+	add esp,8
+	mov eax, offset myint41
+	mov [ebx+41h*8+0], ax
+	shr eax, 16
+	mov [ebx+41h*8+6], ax
+endif
 
 	invoke printf, CStr("JemmDbg loaded and initialized",13,10)
 	mov eax, 80000001h	; bit 31=1: suppress JLoad msg

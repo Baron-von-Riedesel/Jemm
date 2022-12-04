@@ -372,7 +372,7 @@ endif
     lgdt fword ptr [eax]
 if ?CLEARTB    
     mov eax,[eax+2]                 ; EAX == linear address of client's GDT
-    and BYTE PTR ds:[esp+eax+5],NOT 2   ; clear task busy bit in TSS descriptor
+    and ds:[esp+eax].DESCRIPTOR.bAttr,NOT 2; clear task busy bit in TSS descriptor
 endif
     ltr sp                          ; set up client's TSS
     lldt [esi].V862PM.swLDTR        ; set up client's LDT

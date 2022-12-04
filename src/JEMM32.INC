@@ -12,7 +12,7 @@
 ?FASTMON        equ 1       ; 1=faster monitor jmp for int 00-0F
 ?SHAREDGDT      equ 1       ; 1=place GDT in shared address space
 ?EXC10          equ 1       ; 1=detect exception 10h (floating point)
-
+?I41SUPP        equ 1       ; 1=support Int 41h in protected-mode
 
 ifndef ?SHAREDIDT
 ?SHAREDIDT      equ 0       ; std=?, 1=place IDT in shared address space
@@ -217,25 +217,25 @@ EDDSPT ends
 
 ;--- end VDS
 
-descriptor struct
+DESCRIPTOR struct
 wLimit  dw ?    ;+0
 wA0015  dw ?    ;+2
 bA1623  db ?    ;+4
 bAttr   db ?    ;+5
 bLimEx  db ?    ;+6
 bA2431  db ?    ;+7
-descriptor ends        
+DESCRIPTOR ends        
 
 ;--- selector definitions
 ;--- FLAT_CODE_SEL must be first descriptor in GDT
 
-FLAT_CODE_SEL   equ 1 * size descriptor
-FLAT_DATA_SEL   equ 2 * size descriptor
-V86_TSS_SEL     equ 3 * size descriptor
-REAL_CODE_SEL   equ 4 * size descriptor
-REAL_DATA_SEL   equ 5 * size descriptor
+FLAT_CODE_SEL   equ 1 * sizeof DESCRIPTOR
+FLAT_DATA_SEL   equ 2 * sizeof DESCRIPTOR
+V86_TSS_SEL     equ 3 * sizeof DESCRIPTOR
+REAL_CODE_SEL   equ 4 * sizeof DESCRIPTOR
+REAL_DATA_SEL   equ 5 * sizeof DESCRIPTOR
 if ?CLEARHIGHESP
-V86_STACK_SEL   equ 6 * size descriptor
+V86_STACK_SEL   equ 6 * sizeof DESCRIPTOR
 endif
 
 ;--- equates from JLM.INC

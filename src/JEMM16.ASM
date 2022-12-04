@@ -9,7 +9,7 @@
 
 	include jemm.inc
 	include jemm16.inc
-	include debug.inc
+	include debug16.inc
 
 ;--- interrupt hook list entry 
 

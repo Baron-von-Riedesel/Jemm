@@ -213,6 +213,10 @@ VPRINTSTR PROC public
 	RET
 VPRINTSTR endp
 
+ifdef _DEBUG
+	include dprintf.inc
+endif
+
 if 0
 
 ;--- support for 386SWAT: check if int 3 vector still points to

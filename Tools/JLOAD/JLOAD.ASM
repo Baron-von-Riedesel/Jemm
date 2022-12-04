@@ -1103,7 +1103,7 @@ endif
 	mov [wVersion],ax
 
 	mov [vmms.wLdrCS],cs
-							   ;detect if lfn is installed
+							;detect if lfn is installed
 	mov ax,7147h
 	mov si,offset szPgmName
 	mov dl,0
@@ -1162,7 +1162,7 @@ endif
 	mov dx,CStr(<"virtualized environment detected",13,10,'$'>)
 	call errorout
 @@:
-	mov ax,0DEF0h
+	mov ax,0DEF0h		; 386SWAT?
 	int 67h
 	and ah,ah
 	setz al

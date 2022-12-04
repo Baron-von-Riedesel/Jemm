@@ -5,11 +5,19 @@
 name_ SEGMENT align_ FLAT public 'CODE'
 endm
 
+;--- sections:
+;--- .text$01: shared page - accessible by VCPI clients (global vars, code )
+;--- .text$01w: exception strings
+;--- .text$01x: GDT/IDT if ?SHAREDGDT/?SHAREDIDT=1
+;--- .text$02: ???
+;--- .text$03: normal code/data
+;--- .text$04: init code, not copied to extended memory
+
 @seg .text$01,<DWORD>
 externdef GDT_PTR:fword
 externdef IDT_PTR:fword
 externdef V86CR3:dword
-externdef V86GDT:descriptor
+externdef V86GDT:DESCRIPTOR
 externdef dwStackCurr:dword
 if ?DYNTRAPP60
 externdef dwTSS:dword
@@ -101,6 +109,9 @@ externdef Int15_Entry:near
 externdef Int15_Entry_Ex:near
 externdef SetVME:near
 externdef V86_Exc0D:near
+if ?I41SUPP
+externdef Int41_Entry:near
+endif
 
 externdef VPRINTSTR:near
 externdef VPUTCHR:near

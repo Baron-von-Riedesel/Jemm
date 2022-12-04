@@ -24,7 +24,7 @@ NULL equ 0
 
 	include jemm.inc
 	include jemm16.inc
-	include debug.inc
+	include debug16.inc
 
 ?I15RESNOSCAN equ 0	;1=don't scan regions marked as reserved by Int 15h, ax=e820
 CPUID1_PSE36 equ 17

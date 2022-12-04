@@ -32,6 +32,14 @@ endm
 
 ?DBGOUT  equ ?V86DBG + ?DMADBG + ?VDSDBG + ?EMSDBG + ?UMBDBG + ?A20DBG + ?EMBDBG + ?EMUDBG + ?I15DBG + ?VCPIDBG + ?USEMONO + ?POOLDBG + ?INITDBG + ?HLTDBG + ?UNLDBG + ?RBTDBG + ?EXCDBG + ?PHYSDBG + ?MAPDBG
 
+CStr macro text:vararg
+local sym
+.text$03s segment byte flat 'CODE'
+sym db text,0
+.text$03s ends
+	exitm <offset sym>
+endm
+
 @WaitKey macro keycode, bCond
 local sm1
 if bCond
@@ -51,6 +59,24 @@ sm1:
         popfd
 endif
 endm
+
+;--- formatted output ( since v5.83 )
+ifdef _DEBUG
+
+dprintf proto c :ptr, :vararg
+
+@dprintf macro bCond, fmt, args:vararg
+ if bCond
+  ifnb <args>
+	invoke dprintf, fmt, args
+  else
+	invoke dprintf, fmt
+  endif
+ endif
+endm
+else
+@dprintf textequ <;>
+endif
 
 ;--- display string
 

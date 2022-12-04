@@ -1054,6 +1054,10 @@ Hook_V86_Fault proc
 Hook_V86_Fault endp
 Unhook_V86_Fault proc
 Unhook_V86_Fault endp
+
+;--- the "PM" functions are pretty useless, since Jemm has no support
+;--- for protected-mode apps.
+
 Hook_PM_Fault proc
 Hook_PM_Fault endp
 Unhook_PM_Fault proc
