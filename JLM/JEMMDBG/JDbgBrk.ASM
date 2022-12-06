@@ -8,7 +8,9 @@
 
 	include jlm.inc
 
+ifdef @pe_file_flags
 @pe_file_flags = @pe_file_flags and not 1
+endif
 
 	.CODE
 

@@ -19,7 +19,7 @@
  - JemmDbg will ignore any exception caused in V86-mode, so it cannot be used
    to debug normal DOS software. However, the v86-monitor ( JemmEx/Jemm386 )
    will detect the presence of a kernel debugger and stop with a breakpoint
-   if an exception in v86-mode occurs.
+   if a "true" exception 06/0Ch/0Dh/0Eh happens in v86-mode.
 
  - JemmDbg does not affect protected-mode software that runs as VCPI client
    ( DOS extenders ). Those install their very own address context and IDT,
@@ -38,8 +38,10 @@
    either avoid the T(race) cmd [using G(o)] or set TM 1.
 
  - JemmDbg uses the mode switching routines of the v86-monitor for its I/O.
-   So - unlike WDeb386, for example - it isn't a "standalone" binary and
-   the debugger will most likely crash if there's an error in those routines.
+   So - unlike WDeb386, for example - it isn't a "standalone" binary. It's
+   possible to create a variant that doesn't switch modes for I/O, but rather
+   uses a serial connection or direct access to video and keyboard ( see
+   Makefile for details ).
 
 
  4. License

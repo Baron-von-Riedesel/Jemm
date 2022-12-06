@@ -510,7 +510,8 @@ exc_isr db 4 dup (' ')
 endif
     db ' [CS:IP]='
 exc_csip db 8*3 dup (' ')
-    db CR,LF,'Press ESC to abort program ', 0
+    db CR,LF,0
+exc_str2a db'Press ESC to abort program ', 0
     db 0
 
 exc_str3 db 13, ?NAME, ': unable to continue. Please reboot '
@@ -741,15 +742,6 @@ HandleException proc
 errorcode_pushed::              ; <--- entry exc 06 v86
     @v86pushreg
 
-if ?I41SUPP
-	mov ax, 4Fh
-	int 41h
-	cmp ax, 0F386h              ; kernel debugger present?
-	jnz @F
-	int 3
-@@:
-endif
-
     mov ax, FLAT_DATA_SEL
     mov ds, eax
     mov ES, eax
@@ -861,10 +853,22 @@ endif
     call PrintString         ;this will call v86-mode
 
     cmp byte ptr [exc_ds],' '   ;segments rendered? (v86 mode exc?)
-    jz @@nov86
+    jz @F
     push offset exc_str2
     call PrintString
-@@nov86:
+@@:
+
+if ?I41SUPP
+	mov ax, 4Fh
+	int 41h
+	cmp ax, 0F386h           ; kernel debugger present?
+	jnz @F
+	int 3
+@@:
+endif
+    push offset exc_str2a    ; "press ESC ..."
+    call PrintString
+
     call Begin_Nest_Exec
 @@waitkey:
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, 00

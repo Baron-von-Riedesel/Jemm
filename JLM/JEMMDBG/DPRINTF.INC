@@ -14,10 +14,11 @@ else
 endif
 endm
 
+if 0
 ;--- i64toa(long long n, char * s, int base);
 ;--- convert 64-bit long long to string
 
-i64toa proc stdcall uses esi edi number:qword, outb:ptr, base:dword
+i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 
 	mov ch,0
 	mov edi, base
@@ -61,6 +62,8 @@ i64toa proc stdcall uses esi edi number:qword, outb:ptr, base:dword
 	ret
 
 i64toa endp
+
+endif
 
 dprintf proc c fmt:ptr, args:vararg
 
@@ -210,7 +213,11 @@ print_string:		;print string ESI, size EAX
 
 
 handle_char:
+if AUXIO
+	call AuxPutChar
+else
 	call VioPutChar
+endif
 	retn
 
 dprintf endp

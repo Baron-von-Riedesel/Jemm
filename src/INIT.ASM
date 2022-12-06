@@ -1027,6 +1027,8 @@ endif
     call SetIDTEntry
 
 if ?I41SUPP
+;--- set int 41h to an iretd
+;--- no need to route this int to v86-mode - it's not executable code.
     mov al, 41h
     mov ecx, offset Int41_Entry
     @dprintf ?INITDBG, CStr("int 41h vector set to %X",10), ecx

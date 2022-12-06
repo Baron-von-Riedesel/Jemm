@@ -7,6 +7,15 @@
 	.MODEL FLAT, stdcall
 	option casemap:none
 
+ifndef AUXIO
+AUXIO equ 0
+endif
+ifndef VIOOUT
+VIOOUT equ 0
+endif
+ifndef KBDIN
+KBDIN equ 0
+endif
 
 MEMADD    equ 500h
 DEVICE_ID equ 4A50h
@@ -65,10 +74,19 @@ GetModuleHandle endp
 	include printf.inc
 ifdef _DEBUG
 	include dprintf.inc
-	include vioout.inc
-	include kbdinp.inc
 else
 @dprintf equ <;>
+endif
+
+if AUXIO
+	include auxio.inc
+else
+ if VIOOUT
+	include vioout.inc
+ endif
+ if KBDIN
+	include kbdinp.inc
+ endif
 endif
 
 MEMADD equ 500h
@@ -105,6 +123,23 @@ callint10 proc far
 	mov eax, [dwEAX]
 	mov edx, [dwEDX]
 
+if VIOOUT
+	cmp ah, 3
+	jz @F
+	call VioPutChar
+	jmp done
+@@:
+	call VioGetCsrPos
+done:
+elseif AUXIO
+	cmp ah, 3
+	jz @F
+	call AuxPutChar
+	jmp done
+@@:
+	call AuxGetCsrPos
+done:
+else
 	pushad
 	push ebx
 	@VMMCall Get_Cur_VM_Handle
@@ -134,6 +169,7 @@ callint10 proc far
 	pop [ebp].Client_Reg_Struc.Client_EBX
 	pop [ebp].Client_Reg_Struc.Client_EAX
 	popad
+endif
 
 ;--- switch back to Debug's stack
 
@@ -163,6 +199,11 @@ callint16 proc far
 	mov edx, [dwEDX]
 
 	pushad
+if KBDIN
+	call KbdGetChar
+elseif AUXIO
+	call AuxGetChar
+else
 	@VMMCall Get_Cur_VM_Handle
 	mov ebp, [ebx].cb_s.CB_Client_Pointer
 
@@ -176,10 +217,9 @@ callint16 proc far
 
 	mov ax, word ptr [ebp].Client_Reg_Struc.Client_EAX
 	pop [ebp].Client_Reg_Struc.Client_EAX
-
+endif
 	mov word ptr [esp].PUSHADS._eax, ax
 	popad
-
 	lss esp, [dfSsEsp]
 	pop es
 	pop ds

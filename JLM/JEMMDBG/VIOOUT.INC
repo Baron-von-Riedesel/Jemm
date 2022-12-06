@@ -6,13 +6,13 @@ lf equ 10
 bs equ 8	; backspace
 
 @getcursorpos macro
-	movzx ebx, byte ptr ds:[462h];page
-	mov bx, ds:[EBX*2+450h]
+	movzx ebx, byte ptr cs:[462h];page
+	mov bx, cs:[EBX*2+450h]
 endm
 
 @setcursorpos macro
-	movzx ebx, byte ptr ds:[462h];page
-	mov ds:[EBX*2+450h], ax
+	movzx ebx, byte ptr cs:[462h];page
+	mov ss:[EBX*2+450h], ax
 endm
 
 ;--- print a char
@@ -27,8 +27,8 @@ local	bRows:byte
 	pushad
 
 	mov bChar, al
-	mov ch, ds:[0484h]			; rows-1
-	mov cl, ds:[044Ah]			; cols
+	mov ch, cs:[0484h]			; rows-1
+	mov cl, cs:[044Ah]			; cols
 	mov bRows, ch
 	@getcursorpos				; bh=row, bl=col
 	mov al, bh		;row pos
@@ -39,8 +39,8 @@ local	bRows:byte
 	mov bh, 00  ; bx=col pos
 	add bx, bx
 	add bx, ax
-	mov si, ds:[044Eh]			; page offset
-	cmp word ptr ds:[0463H],3B4h
+	mov si, cs:[044Eh]			; page offset
+	cmp word ptr cs:[0463H],3B4h
 	jz @F
 	add si, 8000h
 @@:
@@ -72,9 +72,9 @@ local	bRows:byte
 	jmp char_done
 @@:
 	movzx ebx, bx
-	mov ds:[ebx+esi], al
-	inc bx
-	inc bx
+	mov ss:[ebx+esi], al
+	inc ebx
+	inc ebx
 char_done:
 	mov al, bRows
 	inc al
@@ -83,16 +83,16 @@ char_done:
 	cmp bx, ax
 	jc @F
 	call scrollup
-	mov bx, ax
+	mov ebx, eax
 @@:
-	mov ax, bx
-	push ax
+	mov eax, ebx
+	push eax
 	mov cx, wCols
-	shr ax, 1
+	shr eax, 1
 	div cl
 	xchg al, ah
 	@setcursorpos
-	pop ax
+	pop eax
 	call cursorset
 ;	call slowdown
 	popad
@@ -107,13 +107,13 @@ slowdown:
 	cmp al, ah
 	mov ah, al
 	jz @B
-	loop @B
+	loopw @B
 	retn
 endif
 
 cursorset:
-	add ax, ds:[044EH]	;offset page
-	mov dx, ds:[0463H]
+	add ax, cs:[044EH]	;offset page
+	mov dx, cs:[0463H]
 	shr ax, 1			;the CRT offset is one plane only, no attribute bytes 
 	mov cl, al			;first high byte
 	mov al, 0eh
@@ -124,25 +124,35 @@ cursorset:
 	retn
 
 scrollup:			;scroll up one line
+	push es
+	push ss
+	pop es
 	mov edi, esi
-	push di
+	push edi
 	movzx esi, wCols
 	lea esi, [esi*2+edi]
 	mov cl, byte ptr wCols
 	mov al, bRows
 	mul cl
 	movzx ecx, ax
-	shr cx,1
+	shr ecx,1
 	rep movsd
-	push di
-	mov cx, wCols
+	push edi
+	movzx ecx, wCols
 	mov eax,07200720h
-	shr cx, 1
+	shr ecx, 1
 	rep stosd
-	pop ax
-	pop di
-	sub ax, di
+	pop eax
+	pop edi
+	sub eax, edi
+	pop es
 	retn
 
 VioPutChar endp
+
+VioGetCsrPos proc uses ebx
+	@getcursorpos
+	mov dx, bx
+	ret
+VioGetCsrPos endp
 

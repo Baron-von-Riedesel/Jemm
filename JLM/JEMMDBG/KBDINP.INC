@@ -1,6 +1,10 @@
 
 ;--- poll keyboard (US keys)
 
+ifndef KEYS
+KEYS textequ <KBD_US>
+endif
+
 ;*** keyboard BIOS variables
 
 KBDSTAT  equ   417h
@@ -13,43 +17,7 @@ EBUFEND  equ   482h
 
 lastk db 0
 
-normalk label byte
-	db 0,1Bh				;00-01 NULL, escape
-	db '1234567890-='		;02-0D
-	db 8,9					;0E-0F backspace + tab
-	db 'qwertyuiop[]'		;10-1B
-	db 0Dh,0				;1C-1D return, ctrl-l 
-	db "asdfghjkl;'`"		;1E-29
-	db 0					;2A    shift-l
-	db '\'					;2B
-	db "zxcvbnm,./"			;2C-35
-k56n db "\"        			;56
-
-shiftk label byte
-	db 0,1Bh				;00-01
-	db '!@#$%^&*()_+'		;02-0D
-	db 8,0Fh				;0E-0F backspace + tab
-	db 'QWERTYUIOP{}'		;10-1B
-	db 0Dh,0				;1C-1D return, ctrl-l 
-	db 'ASDFGHJKL:"~'		;1E-29
-	db 0					;2A    shift-l
-	db '|'					;2B
-	db 'ZXCVBNM<>?'			;2C-35
-k56s db "|"        			;56
-
-altgrk	db 36h+1 dup (0)		;00-35, 56
-        
-ctrlk label byte
-	db 0,1Bh											;00-01
-	db 0Ch dup (0)										;02-0D
-	db 7Fh,0											;0E-0F
-	db 11h,17h,05h,12h,14h,19h,15h,09h,0Fh,10h,1Bh,1Dh	;10-1B
-	db 0Ah,00											;1C-1D
-	db 01h,13h,04h,06h,07h,08h,0Ah,0Bh,0Ch				;1E-26
-	db 0,0,0,0,0										;27-2B
-	db 1Ah,18h,03h,16h,02h,0Eh,0Dh						;2C-32
-	db 0,0,0											;33-35
-	db 0												;56
+%	include KEYS.inc
 
 cntlkeystab label byte
 	db 36h		;R-SH		;codes ctrl keys
@@ -99,8 +67,8 @@ nokey:
 	ret
 nopoll:
 	push eax
-	mov ax,ds:[BUFSTA]	; char in buffer?
-	cmp ax,ds:[BUFEND]
+	mov ax,cs:[BUFSTA]	; char in buffer?
+	cmp ax,cs:[BUFEND]
 	pop eax
 	ret
 
@@ -123,8 +91,8 @@ setkbdbiosvars proc
 	mov bl,80h
 	shr bl,cl
 	mov ch,bh
-;	and byte ptr ds:[KBDSTAT+1],not 4 ;reset Sys-Req
-	mov ax, ds:[KBDSTAT]
+;	and byte ptr ss:[KBDSTAT+1],not 4 ;reset Sys-Req
+	mov ax, cs:[KBDSTAT]
 	and ah, not 4			; reset sys-req
 	test ch, 80h			; key released or pressed?
 	jz @F
@@ -138,20 +106,20 @@ setkbdbiosvars proc
 setflags:        
 	cmp cl,4				; RSHIFT,LSHIFT,CTRL,ALT?
 	jnb @F
-	mov ds:[KBDSTAT+1],ah
-	xor ds:[KBDSTAT],ah
+	mov ss:[KBDSTAT+1],ah
+	xor ss:[KBDSTAT],ah
 	jmp donestat
 @@:
-	mov ds:[KBDSTAT],al
+	mov ss:[KBDSTAT],al
 donestat:
 	and ch,7Fh
 	cmp ch,38h				;Alt key?
 	jnz @F
-	cmp [lastk],0E0h		;last key 0E0? 
+	cmp cs:[lastk],0E0h		;last key 0E0? 
 	jnz @F
-	and byte ptr ds:[496h],not 8	;AltGr
+	and byte ptr ss:[496h],not 8	;AltGr
 	and ah,08
-	or ds:[496h],ah
+	or ss:[496h],ah
 @@:  
 	cmp ch,52h				;INSERT IS a key!
 	jz nostd
@@ -169,7 +137,7 @@ setkbdbiosvars endp
 GetKbdChar proc
 	call GetKbdStatus
 	jz nokey
-	mov al,[lastk]
+	mov al,ss:[lastk]
 	test al,80h
 	jnz nokey			;key released, no further processing
 	cmp al,39h			;space?
@@ -182,7 +150,7 @@ GetKbdChar proc
 	cmp al,36h
 	ja getkbdxchar
 	mov ebx, offset normalk
-	mov ah, ds:[KBDSTAT]
+	mov ah, cs:[KBDSTAT]
 	test ah,3			;shift pressed
 	jz @F
 	mov ebx, offset shiftk
@@ -193,13 +161,13 @@ GetKbdChar proc
 @@:
 	test ah,8			;alt pressed?
 	jz @F
-	test byte ptr ds:[496h],8	;AltGr pressed?
+	test byte ptr cs:[496h],8	;AltGr pressed?
 	jz getkbdxchar2
 	mov ebx, offset altgrk
 @@:
 	movzx eax,al
 	add ebx, eax
-	mov bl,byte ptr [ebx]
+	mov bl,byte ptr cs:[ebx]
 	and bl,bl
 	jz getkbdxchar
 	mov al,bl

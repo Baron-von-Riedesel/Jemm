@@ -1,10 +1,10 @@
 
-;--- printf for debug displays
+;--- simple printf
 
 ;--- i64toa(long long n, char * s, int base);
 ;--- convert 64-bit long long to string
 
-i64toa proc stdcall uses esi edi number:qword, outb:ptr, base:dword
+i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 
 	mov ch,0
 	mov edi, base
