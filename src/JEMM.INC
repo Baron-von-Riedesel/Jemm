@@ -10,6 +10,9 @@ CR              EQU 0DH
 ifndef ?INTEGRATED
 ?INTEGRATED     EQU 0       ; 1=integrated version (XMS + EMM)
 endif
+ifndef ?KD
+?KD             EQU 0       ; 1=support for PL0 debugger
+endif
 ?DMA            EQU 1       ; 1=enable DMA port trapping support
 ?VDS            EQU 1       ; 1=enable VDS support
 ?VCPI           EQU 1       ; 1=enable VCPI support
@@ -39,7 +42,10 @@ endif
 ?STKSIZE        EQU 200H    ; Size monitor stack for non-reentrant execution
 ?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI
 
-?GDTOFS         equ ?HLPSTKSIZE
+;?GDTOFS         equ ?HLPSTKSIZE
+if ?KD
+GDT_SEL         equ 48h
+endif
 
 ?BPOPC          equ 0F4h            ; opcode used for breakpoints (HLT)
 ;?BPOPC         equ 063h            ; this should also work (ARPL)
@@ -233,6 +239,10 @@ X2Max             dw -1
 if ?XMS35
 xms_version       dw INTERFACE_VER
 endif
+endif
+if ?KD
+kdofs             dd 0
+kdseg             dw 0
 endif
 NoEMS             db 0
 NoFrame           db 0

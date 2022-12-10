@@ -83,11 +83,12 @@ MAXBLOCKSIZE equ 40000h ; std=256 kB
 
 _start:
     jmp InitMonitor
+    dw lowword offset V86GDT
 
 ;--- this is a 128 byte helper stack used for VCPI switches to
 ;--- protected-mode.
 
-    db ?HLPSTKSIZE-5 dup (55h)
+    db ?HLPSTKSIZE-(5+2) dup (55h)
 
 ;--- IDT - Interrupt Descriptor Table
 ;--- as default, the IDT is no longer in the shared region
@@ -185,7 +186,7 @@ else
 endif
 
 ;--- GDT - Global Descriptor Table
-;--- as default, the GDT is no longer in the shared region
+;--- usually ?SHAREDGDT==1, so the GDT is in the shared region
 
 V86GDT LABEL DESCRIPTOR
     DQ 0                                ; +00 NULL-Entry
@@ -197,8 +198,12 @@ V86GDT LABEL DESCRIPTOR
     DESCRIPTOR <?HLPSTKSIZE-1,0,?BASE shr 16,92H,040h,?BASE shr 24>; helper stack segment
     DQ 0                                ; +38
     DESCRIPTOR <2FFh,400h,0,0F2H,0,0>   ; +40
+if ?KD
+    DESCRIPTOR <GDT_SIZE-1,0,0,0F2H,0,0>; +48 (=?GDTSEL) GDT selector
+endif
 
-    DESCRIPTOR (GDT_SIZE - 9*8)/8 dup (<0,0,0,0,0,0>)
+;    DESCRIPTOR (GDT_SIZE - 9*8)/8 dup (<0,0,0,0,0,0>)
+	org V86GDT+GDT_SIZE
 
 if ?SHAREDGDT
 .text$01x ends

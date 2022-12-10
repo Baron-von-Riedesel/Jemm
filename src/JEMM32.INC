@@ -237,6 +237,9 @@ REAL_DATA_SEL   equ 5 * sizeof DESCRIPTOR
 if ?CLEARHIGHESP
 V86_STACK_SEL   equ 6 * sizeof DESCRIPTOR
 endif
+if ?KD
+GDT_SEL         equ 48h
+endif
 
 ;--- equates from JLM.INC
 

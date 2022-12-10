@@ -11,6 +11,9 @@
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
     include debug.inc
+if ?KD
+    include debugsys.inc
+endif
 
 ;--- assembly time constants
 
@@ -40,11 +43,8 @@ externdef dwHeapSize:dword
 .text$03 segment
 
 RestoreEDI proc
-if ?INITDBG
-    @DbgOutS <"small heap update ptr=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+
+    @dprintf ?INITDBG, CStr("small heap update ptr=%X",10), edi
     mov [pSmallHeap],edi
     pop edi
     ret
@@ -138,13 +138,7 @@ HeapMalloc proc public
     cmp [dwHeapSize],ecx
     jb @@nomem
     sub [dwHeapSize],ecx
-if ?INITDBG
-    @DbgOutS <"small heap used, size=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <", ptr=">,1
-    @DbgOutD pSmallHeap,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("small heap used, size=%X, ptr=%X",10), ecx, [pSmallHeap]
     xchg edi,[esp]
     push RestoreEDI
     push edi
@@ -206,13 +200,10 @@ if ?RBTDBG
     xor ebx,ebx
 nextitem: 
     lodsd
-    @DbgOutB bl,1
-    @DbgOutS <": ">,1
-    @DbgOutD eax, 1
-    @DbgOutS <"        ">,1
+    @dprintf ?RBTDBG, CStr("%X: %08X        "), bl, eax
     test cl,1
     jz @F
-    @DbgOutS <10>,1
+    @dprintf ?RBTDBG, CStr(10)
 @@:
     inc ebx
     loop nextitem
@@ -312,10 +303,8 @@ dwSizeV86   equ <[ebp-24]>
 ;--- no access to global variables possible until paging is enabled
 ;--- and memory block has been moved to extended memory!
 
-if ?INITDBG
-    @DbgOutS <"Welcome in PM",10>,1
-    @WaitKey 1,0
-endif
+;    @dprintf ?INITDBG, CStr("Welcome in PM",10)	; doesn't work yet
+    @DbgOutS <"Welcome in PM",10>, ?INITDBG
 
     push edi                ;== jemmini [ebp-4]
     push ebx                ;== rsofsinit [ebp-8]
@@ -493,10 +482,7 @@ endif
     MOV EAX,CR0
     OR EAX,80000000H       ; set PE bit
     MOV CR0,EAX
-if ?INITDBG
-    @DbgOutS <"Paging has been enabled",10>,1
-    @WaitKey 1,0
-endif
+    @DbgOutS  <"Paging has been enabled",10>, ?INITDBG
 
 ;--- paging enabled, now move monitor code+data in extended memory
 
@@ -517,18 +503,7 @@ nextpage:
     mov ecx, [esi+4]
     and ecx, ecx
     jz reloc_done
-if ?INITDBG
-    @DbgOutS <"rlcs at ">
-    @DbgOutD esi,1
-    @DbgOutS <" for page ">,1
-    @DbgOutD ebx,1
-    @DbgOutS <" size=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <" edx=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("rlcs at %X for page %X size=%X edx=%X",10), esi, ebx, ecx, edx
     add ecx, esi
     add esi, 8
     sub ebx, edx        ;subtract size of header from RVA
@@ -546,10 +521,7 @@ nextreloc:
     jmp nextpage
 reloc_done:
     popad
-if ?INITDBG
-    @DbgOutS <"base relocs done",10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("base relocs done",10)
 endif
 
 ;-- copy all to extended memory (linear address 110000h)
@@ -559,10 +531,7 @@ endif
     shr ecx, 2
     rep movsd
 
-if ?INITDBG
-    @DbgOutS <"monitor code+data moved to extended memory",10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("monitor code+data moved to extended memory",10)
 
 ;--- after code + data has been moved to extended memory
 ;--- access to global variables is possible
@@ -570,9 +539,85 @@ endif
 ;--- load final values for GDTR + IDTR
 
     LGDT FWORD PTR [GDT_PTR]
-if ?INITDBG
-    @DbgOutS <"GDTR set",10>,1
-    @WaitKey 1,0
+    @dprintf ?INITDBG, CStr("GDTR set, edi=%X",10), edi
+
+;-- create INT_TABLE + set IDT
+;-- some VCPI intruders won't work if IDT is not in page table 0 !!!
+
+    mov ebx, 0EE00h shl 16 + FLAT_CODE_SEL
+    mov ecx, 100h
+if ?SHAREDIDT
+    mov esi, offset V86IDT
+else
+    mov esi, edi
+    mov [dwV86IDT], esi
+    add edi, 100h*8
+endif
+if ?FASTMON
+    mov eax, offset int00
+@@:
+;   @dprintf ?INITDBG, CStr(".")
+    mov edx, eax
+    shr edx, 16
+    mov [esi+0],ax
+    mov [esi+2],ebx
+    mov [esi+6],dx
+    add eax, 4
+    add esi, 8
+    dec ecx
+    cmp cl,100h - ?FASTENTRIES
+    jnz @B
+;   @dprintf ?INITDBG, CStr(10)
+    mov edx, 0E9006Ah
+    mov dh,?FASTENTRIES
+else
+    mov edx, 0E9006Ah       ;push byte 00h, jmp xxxx
+endif
+@@nextidtentry:
+;   @dprintf ?INITDBG, CStr(".")
+    mov eax, edi
+    mov [esi+0],ax
+    mov [esi+2],ebx
+    shr eax, 16
+    mov [esi+6],ax
+    mov [edi+0],edx
+    mov eax, offset V86_Monitor
+    add edi,7       ;7 bytes for each entry in INT_TABLE!
+    sub eax, edi
+    mov [edi-4],eax
+    inc dh          ;next INT #
+    add esi,8
+    loop @@nextidtentry
+;   @dprintf ?INITDBG, CStr(10)
+
+    LIDT FWORD PTR [IDT_PTR]
+    @dprintf ?INITDBG, CStr("IDTR, IDT + int table initialized, IDT=%X edi=%X",10), dword ptr [IDT_PTR+2], edi
+
+if ?I41SUPP
+;--- set int 41h to an iretd
+;--- no need to route this int to v86-mode - it's not executable code.
+    mov al, 41h
+    movzx eax, al
+    mov ecx, offset Int41_Entry
+    @dprintf ?INITDBG, CStr("int 41h vector set to %X",10), ecx
+    call SetIDTEntry
+endif
+
+if ?KD
+    mov esi, jemmini
+    cmp [esi].JEMMINIT.kdseg,0
+    jz @F
+    push edi
+    mov al, PMINIT_INIT_IDT
+ if ?SHAREDIDT
+    mov edi, offset V86IDT
+ else
+    mov edi, [dwV86IDT]
+ endif
+    call fword ptr [esi].JEMMINIT.kdofs
+    pop edi
+    int 3
+@@:
 endif
 
 ;--- switch to the stack in extended memory
@@ -580,12 +625,7 @@ endif
 if 0
     mov ebp, ?TOS - size IRETDV86
     lea esp, [ebp-24]   ;take care of the local variables
-
-if ?INITDBG
-    @DbgOutS <"ESP reset",10>,1
-    @WaitKey 1,0
-endif
-
+    @dprintf ?INITDBG, CStr("ESP reset",10)
 endif
 
 ;--- edi para aligned again (increased by 700h/690h)
@@ -626,13 +666,13 @@ endif
 
     push ecx
 
-    call XMS_Init
+    call XMS_Init	; won't use edi/ebx
 
 if ?DBGOUT
     call Debug_Init
 endif
 
-    call EMS_Init1
+    call EMS_Init1	; may modify ebx!
 
     pop ecx
 
@@ -649,69 +689,7 @@ if ?HOOK13
     add eax,ecx
     mov [dwRFlags],eax
 endif
-if ?INITDBG
-    @DbgOutS <"variables copied",10>,1
-    @WaitKey 1,0
-endif
-
-;-- create INT_TABLE + set IDT
-;-- some VCPI intruders won't work if IDT is not in page table 0 !!!
-
-    mov ebx, 0EE00h shl 16 + FLAT_CODE_SEL
-    mov ecx, 100h
-if ?SHAREDIDT
-    mov esi, offset V86IDT
-else
-    mov esi, edi
-    mov [dwV86IDT], esi
-    add edi, 100h*8
-endif
-if ?FASTMON
-    mov eax, offset int00
-@@:
-;   @DbgOutS <".">,?INITDBG
-    mov edx, eax
-    shr edx, 16
-    mov [esi+0],ax
-    mov [esi+2],ebx
-    mov [esi+6],dx
-    add eax, 4
-    add esi, 8
-    dec ecx
-    cmp cl,100h - ?FASTENTRIES
-    jnz @B
-;   @DbgOutS <10>,?INITDBG
-    mov edx, 0E9006Ah
-    mov dh,?FASTENTRIES
-else
-    mov edx, 0E9006Ah       ;push byte 00h, jmp xxxx
-endif
-@@nextidtentry:
-;   @DbgOutS <".">,?INITDBG
-    mov eax, edi
-    mov [esi+0],ax
-    mov [esi+2],ebx
-    shr eax, 16
-    mov [esi+6],ax
-    mov [edi+0],edx
-    mov eax, offset V86_Monitor
-    add edi,7       ;7 bytes for each entry in INT_TABLE!
-    sub eax, edi
-    mov [edi-4],eax
-    inc dh          ;next INT #
-    add esi,8
-    loop @@nextidtentry
-;   @DbgOutS <10>,?INITDBG
-
-    LIDT FWORD PTR [IDT_PTR]
-if ?INITDBG
-    @DbgOutS <"IDTR, IDT + int table initialized, IDT=">,1
-    @DbgOutD <dword ptr [IDT_PTR+2]>,1
-    @DbgOutS <" EDI=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("variables copied, edi=%X",10), edi
 
 ;--- use any rest as "small heap"
 ;--- it can be used by EMS - if it is large enough
@@ -730,14 +708,7 @@ endif
 
     pop ebx ; get free phys mem ptr
 
-if ?INITDBG
-    @DbgOutS <"page table 0 initialised, EDI=">,1
-    @DbgOutD edi,1
-    @DbgOutS <" EBX=">,1
-    @DbgOutD ebx,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("page table 0 initialised, EDI=%X EBX=%X",10), edi, ebx
 
 if ?DMA
 
@@ -812,18 +783,7 @@ endif
 @@buffernull:
     MOV [DMABuffStartPhys], ecx
 
-if ?INITDBG
-    @DbgOutS <"DMA buffer linear=">,1
-    @DbgOutD [DMABuffStart],1
-    @DbgOutS <" physical=">,1
-    @DbgOutD [DMABuffStartPhys],1
-    @DbgOutS <" size=">,1
-    @DbgOutD [DMABuffSize],1
-    @DbgOutS <" phys rest=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("DMA buffer linear=%X physical=%X size=%X phys rest=%X",10), [DMABuffStart], [DMABuffStartPhys], [DMABuffSize], eax
 
 endif
 
@@ -837,10 +797,7 @@ endif
     mov ecx, 1000h/4
     rep stosd
 
-if ?INITDBG
-    @DbgOutS <"stack initialized">,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, CStr("stack initialized",10)
 
 ;-- now create a heap
 ;-- set rest of PTEs in system page table
@@ -877,10 +834,7 @@ endif
     shl eax, 6
     add ecx, eax
 @@isnopool:    
-if ?INITDBG
-    @DbgOutS <"for TSS+pool=">,1
-    @DbgOutD ecx,1
-endif
+    @dprintf ?INITDBG, CStr("for TSS+pool=%X"), ecx
 
 ;--- 2. the pages required for ems handling
 
@@ -893,17 +847,11 @@ endif
 
     add eax, EMS_MAX_HANDLES*size EMSHD + EMS_MAXSTATE*size EMSSTAT + EMS_MAX_HANDLES*8
 
-if ?INITDBG
-    @DbgOutS <", for EMS=">,1
-    @DbgOutD eax,1
-endif
+    @dprintf ?INITDBG, CStr(", for EMS=%X"), eax
 
     add ecx, eax
 
-if ?INITDBG
-    @DbgOutS <", total=">,1
-    @DbgOutD ecx,1
-endif
+    @dprintf ?INITDBG, CStr(", total=%X"), ecx
 
 ;--- 3. round up to 4k
 
@@ -916,12 +864,7 @@ endif
     pop ebx
     pop eax
 
-if ?INITDBG
-    @DbgOutS <", remaining bytes=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr(", remaining bytes=%X",10), eax
 
     @SYSPTE2LINEAR edi, [PageMapHeap]
 
@@ -1025,16 +968,6 @@ endif
     mov ecx, offset Int15_Entry
     bts [edx], eax
     call SetIDTEntry
-
-if ?I41SUPP
-;--- set int 41h to an iretd
-;--- no need to route this int to v86-mode - it's not executable code.
-    mov al, 41h
-    mov ecx, offset Int41_Entry
-    @dprintf ?INITDBG, CStr("int 41h vector set to %X",10), ecx
-;    bts [edx], eax         ; not needed, since it's a protected-mode API only
-    call SetIDTEntry
-endif
 
 if ?BPOPC ne 0F4h
     mov al,6
@@ -1218,8 +1151,7 @@ endif
     or edx,edi
     mov [eax],edx
 @@pageshadowed:
-;    @DbgOutB cl,?INITDBG
-;    @DbgOutC ' ',?INITDBG
+;    @dprintf ?INITDBG, CStr("%2X "), cl
     add edi,1000h
     sub ebp,1000h
 @@skippage:
@@ -1363,20 +1295,14 @@ if ?MOVEXBDA and ?MOVEXBDAPM
     mov cx, [ebx].UMBBLK.wSize
     shr cx, 6                       ;convert para to kB
     movzx dx,byte ptr [eax]         ;get size of XBDA in kB
-    @DbgOutS <"XBDA/UMB size=">,?INITDBG
-    @DbgOutW dx,?INITDBG
-    @DbgOutS <"/">,?INITDBG
-    @DbgOutW cx,?INITDBG
-    @DbgOutS <" kB",10>,?INITDBG
+    @dprintf ?INITDBG, CStr("XBDA/UMB size=%X/%X kB",10), dx, cx
     cmp cx,dx                       ;UMB large enough for XBDA?
     jb nomovexbda
     add ds:[@MEM_SIZE],dx
     push esi
     mov esi,eax
     movzx edi,[ebx].UMBBLK.wSegm
-    @DbgOutS <"moving XBDA to ">,?INITDBG
-    @DbgOutW di,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("moving XBDA to %X",10), di
     mov ds:[@XBDA],di
     shl edi,4
     shl dx,6    ;covert kb to para
@@ -1395,11 +1321,7 @@ endif
     mov ax, ds:[@MEM_SIZE]  ;size in KB (640 kB = 280h)
     shl ax, 6           ;280h -> A000h
 
-    @DbgOutS <"[40:13]=">,?INITDBG
-    @DbgOutW ax,?INITDBG
-    @DbgOutS <" UMB=">,?INITDBG
-    @DbgOutW [ebx].UMBBLK.wSegm,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("[40:13]=%X UMB=%X",10), ax, [ebx].UMBBLK.wSegm
 
     cmp ax, [ebx].UMBBLK.wSegm
     jnz noinc_convmem
@@ -1408,9 +1330,7 @@ endif
     mov cx, [ebx].UMBBLK.wSize
     shr cx, 6
     add ds:[@MEM_SIZE],cx
-    @DbgOutS <"new conv memsize [40:13]=">,?INITDBG
-    @DbgOutW ds:[@MEM_SIZE],?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("new conv memsize [40:13]=%X",10), word ptr ds:[@MEM_SIZE]
     or byte ptr [ebx].UMBBLK.wSize+1, UMB_ALLOCATED
     add ebx, sizeof UMBBLK
 noinc_convmem:
@@ -1462,31 +1382,16 @@ endif
   if ?INTEGRATED
     add [XMS_Handle_Table.xht_pArray],edi
   endif
-    @DbgOutS <"resident part moved high, seg=">,?INITDBG
-    @DbgOutW ax,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("resident part moved high, seg=%X",10), ax
 @@nomovehigh:
 endif
 
     mov eax, [tmpFeatures]
     mov esp, ebp
 
-if ?INITDBG
-    @DbgOutS <"activating V86 mode, esp=">,1
-    @DbgOutD ebp,1
-    @DbgOutS <" [esp]=">,1
-    @DbgOutD dword ptr [ebp+0],1
-    @DbgOutC ' ',1
-    @DbgOutD dword ptr [ebp+4],1
-    @DbgOutC ' ',1
-    @DbgOutD dword ptr [ebp+8],1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG, CStr("activating V86 mode, esp=%X [esp]=%X %X %X",10), ebp, dword ptr [ebp+0], dword ptr [ebp+4], dword ptr [ebp+8]
 
     CLTS       ; clear TS (Task Switch) flag
-               ; thus the next x87-command without INT 7 is being executed
-
     IRETD      ; switch to v86 mode
 
 InitMonitor ENDP
@@ -1518,12 +1423,9 @@ CopyROM proc
     mov eax,cr3         ;flush TLB
     mov cr3,eax
 
-    @DbgOutS <"PTE ">,?INITDBG
-    @DbgOutD edx,?INITDBG
-    @DbgOutS <" used to shadow page ">,?INITDBG
+    @dprintf ?INITDBG, CStr("PTE %X used to shadow page "), edx
     popad
-    @DbgOutD ecx,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, CStr("%X",10), ecx
     ret
 CopyROM endp
 

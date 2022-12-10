@@ -10,6 +10,11 @@
 	include jemm.inc
 	include jemm16.inc
 	include debug16.inc
+if ?KD
+	include debugsys.inc
+endif
+
+GDT_SIZE equ 200h	; is defined in jemm32.inc
 
 ;--- interrupt hook list entry 
 
@@ -57,10 +62,12 @@ BEGDATA ends
 
 _DATA segment word public 'DATA'
 
+if 0  ; v5.84: temporary GDT has been removed
 tmpgdt label dword
     dq 0
     dw -1,0,9A00h,00CFh	;flat code selector
     dw -1,0,9200h,00CFh	;flat data selector
+endif
 
 wLow    dw RSEG_END     ;resident low memory required by driver
 
@@ -985,6 +992,33 @@ endif
 	mov [pIntOfs],offset BPDRV
 	mov [pStratOfs],offset BPSTRAT
 
+if ?KD
+	mov si, word ptr [code32+5]	; DS:SI=GDT
+	mov eax, ds
+	shl eax, 4
+	movzx esi, si
+	add eax, esi
+	mov [si+GDT_SEL+2], ax
+	shr eax, 16
+	mov [si+GDT_SEL+4], al
+	mov [si+GDT_SEL+7], ah
+
+	mov ah, D386_Identify
+	int D386_RM_Int
+	cmp ax, D386_Id
+	jnz @F
+	mov ah, D386_Prepare_PMode
+	mov al, 0
+	mov cx, GDT_SEL+8
+	mov bx, FLAT_DATA_SEL
+	mov dx, GDT_SEL
+	mov di, -1 					; ES:DI=IDT ( there's no IDT yet in Jemm! )
+	int D386_RM_Int
+	mov jemmini.kdofs, edi
+	mov jemmini.kdseg, es
+@@:
+endif
+
 ;--- prepare running Jemm32.
 ;--- build an IRETDV86 struct on the stack.
 
@@ -1014,14 +1048,16 @@ endif
 	mov dx,ds
 	movzx edx,dx
 	shl edx,4
-	lea eax, [edx+offset DGROUP:tmpgdt]
+;	lea eax, [edx+offset DGROUP:tmpgdt]
+	movzx eax, word ptr [code32+5]	; get offset GDT from jemm32.bin
 ;--- set register parameters for 32-bit monitor init
 	lea edi, [edx+offset DGROUP:jemmini]
 	lea ebx, [edx+offset DGROUP:_brptab]
 	lea esi, [edx+offset DGROUP:code32]
+	add eax, esi
 
 	push eax
-	push 3*8-1
+	push GDT_SIZE-1
 	CLI
 	LGDT FWORD PTR [bp-6]
 
