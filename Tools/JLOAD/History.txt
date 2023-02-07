@@ -1,4 +1,10 @@
 
+ v5.84:
+   - trap handling changed: Jemm's IO trap table is no longer imported,
+     instead the old (=Jemm's) handler is called if the port isn't trapped
+     by VMM. This allows to trap ISA DMA ports that are already trapped
+     by Jemm.
+
  v5.83:
    - removed the option to link with MS COFF linker - current versions
      won't accept a base of 0xf8400000.

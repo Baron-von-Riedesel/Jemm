@@ -93,6 +93,7 @@ externdef Simulate_Iret:near
 externdef Resume_Exec:near
 externdef Yield:near
 externdef Simulate_IO:near
+externdef Simulate_IO_trap:near
 externdef MoveMemoryPhys:near
 if ?XMS35COMPAT
 externdef MoveMemoryPhysEx:near

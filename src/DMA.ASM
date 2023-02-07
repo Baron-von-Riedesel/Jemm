@@ -45,19 +45,19 @@ if ?DMA
 PageLookUp      DB      0,2,3,1,0,0,0,0,0,6,7,5,0,0,0,0
 PageXLat        DB      87H,83H,81H,82H,0,8BH,89H,8AH
 
-;
-; Access to a pageregister
-;
-; In: DX : Port-address (80h-8Fh)
-; AL : Value
-; CL : type of op (bit 1: in/out, bit 0: byte/word)
-;
+;--- Access to a DMA page register (80-8F)
+;--- v5.84: now Simulate_IO_trap is called if access isn't "byte"
+
+; DX : port
+; AL : value
+; CL : type
+
 Dma_HandlePagePorts PROC public
 
     test cl,OUTPUT
     jz Simulate_IO   ;is input
-;   test cl,STRING_IO or DWORD_IO or WORD_IO
-;   jnz Simulate_IO
+    test cl,STRING_IO or DWORD_IO or WORD_IO
+    jnz Simulate_IO_trap
 if ?DMADBG
     @DbgOutS <"DMA page reg OUT, dx=">
     @DbgOutW dx
@@ -74,17 +74,18 @@ endif
 
 Dma_HandlePagePorts ENDP
 
-;
+;--- handle 8-bit DMA ports 00-0F
+;--- v5.84: now Simulate_IO_trap is called if access isn't "byte"
 ; DX = port
 ; AL = value
 ; CL = type
-;
+
 Dma_HandleDmaPorts8 proc public
 
     test cl,OUTPUT
     jz Simulate_IO
-;   test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte output?
-;   jnz Simulate_IO
+    test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte access?
+    jnz Simulate_IO_trap
 if ?DMADBG
     @DbgOutS <"8 bit DMA OUT, dx=">,1
     @DbgOutW dx,1
@@ -151,6 +152,8 @@ endif
 
 Dma_HandleDmaPorts8 endp
 
+;--- handle 16-bit DMA ports C0-DF
+;--- v5.84: now Simulate_IO_trap is called if access isn't "byte"
 ; DX = port
 ; AL = value
 ; CL = type
@@ -159,8 +162,8 @@ Dma_HandleDmaPorts16 proc public
 
     test cl,OUTPUT
     jz Simulate_IO
-;   test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte output?
-;   jnz Simulate_IO
+    test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte access?
+    jnz Simulate_IO_trap
     CMP DL,0C0h+10h             ; dto. 2nd DMA-Controller ?
     JB @@BlockSet16
     CMP DL,0C0h+0AH*2           ; single mask?

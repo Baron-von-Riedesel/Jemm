@@ -385,6 +385,8 @@ fGS     dd ?    ;+48
 V86FRAME ends
 
 ;--- entry in IO trap table
+;--- this is for the default port trap handler;
+;--- it handles byte ports only.
 
 IOTRAPENTRY struct
 bStart  db ?

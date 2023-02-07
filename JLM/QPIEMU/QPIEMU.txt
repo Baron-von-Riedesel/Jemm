@@ -1,0 +1,36 @@
+
+ 1. About
+
+ QPIEMU is a JLM that partly emulates the Qemm API (QPI). Its
+ purpose is to provide the IO trapping part of QPI, for better support
+ of sound card emulation in DOS.
+
+
+ 2. Install/Uninstall QPIEMU
+
+ QPIEMU can be installed either as a device driver in CONFIG.SYS:
+
+   DEVICE=JLOAD.EXE QPIEMU.DLL
+
+ or as a TSR from the command line:
+
+   JLOAD QPIEMU.DLL
+
+ To uninstall, use JLOAD's -u option:
+
+   JLOAD -u QPIEMU.DLL
+
+
+ 3. Using QPIEMU
+
+ Once QPIEMU is installed, tools that use the QPI ( i.e. SBEMU )
+ and hence usually require Qemm to be installed, should run with
+ Jemm386/JemmEx.
+
+
+ 4. License
+
+ QPIEMU is Public Domain.
+
+ Japheth
+

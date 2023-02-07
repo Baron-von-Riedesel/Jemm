@@ -1,6 +1,11 @@
 
  History
 
+ __.__.2023: v5.84
+
+ - fixed: Simulate_IO() no longer calls trap handler.
+ - QPIEMU: new JLM that partly implements Qemm's API (QPI).
+
  06.12.2022: v5.83
  - AHCICD: new JLM for CD/DVD devices attached to a SATA controller running
    in AHCI mode (cooked mode only).

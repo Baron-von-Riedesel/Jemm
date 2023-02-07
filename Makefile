@@ -94,19 +94,19 @@ AOPTD=
 COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\dma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
 !if $(DEBUG)
-OUTD1=build\DEB386
-OUTD2=build\DEBEX
-OUTD3=build\DEBEXL
-COFFDEP1=$(COFFMODS:.\=build\DEB386\)
-COFFDEP2=$(COFFMODS:.\=build\DEBEX\)
-COFFDEP3=$(COFFMODS:.\=build\DEBEXL\)
+OUTD1=build\$(NAME1)D
+OUTD2=build\$(NAME2)D
+OUTD3=build\$(NAME3)D
+COFFDEP1=$(COFFMODS:.\=build\JEMM386D\)
+COFFDEP2=$(COFFMODS:.\=build\JEMMEXD\)
+COFFDEP3=$(COFFMODS:.\=build\JEMMEXLD\)
 !else
-OUTD1=build\REL386
-OUTD2=build\RELEX
-OUTD3=build\RELEXL
-COFFDEP1=$(COFFMODS:.\=build\REL386\)
-COFFDEP2=$(COFFMODS:.\=build\RELEX\)
-COFFDEP3=$(COFFMODS:.\=build\RELEXL\)
+OUTD1=build\$(NAME1)
+OUTD2=build\$(NAME2)
+OUTD3=build\$(NAME3)
+COFFDEP1=$(COFFMODS:.\=build\JEMM386\)
+COFFDEP2=$(COFFMODS:.\=build\JEMMEX\)
+COFFDEP3=$(COFFMODS:.\=build\JEMMEXL\)
 !endif
 
 

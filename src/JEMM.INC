@@ -5,7 +5,7 @@ LF              EQU 0AH
 CR              EQU 0DH
 
 ?VERSIONHIGH    equ 5
-?VERSIONLOW     equ 83
+?VERSIONLOW     equ 84
 
 ifndef ?INTEGRATED
 ?INTEGRATED     EQU 0       ; 1=integrated version (XMS + EMM)

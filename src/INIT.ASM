@@ -72,7 +72,7 @@ IOBM label byte
 ; I/O-control of the DMA-port
 ; * trap ports 0..7, A, B, C, (D, E, F)
 ; * trap ports 81,82,83,87, 89,8A,8B
-; * trap ports c0..cf
+; * trap ports c4..cf
 ; * trap port d4 d6 d8 (da, dc, de)
 
 if ?DMA or ?A20PORTS
@@ -114,7 +114,7 @@ if ?DMA or ?A20PORTS
     DW 0,0                  ; ports A0-BF
  if ?DMA
 ;----- FEDCBA9876543210
-    DW 1111111111111111b    ; DMA-Controller #2 (C0-CF)
+    DW 1111111111110000b    ; DMA-Controller #2 (C0-CF)
   if ?MMASK
 ;----- FEDCBA9876543210
     DW 0101010101010000b    ; DMA-Controller #2 (D8-DF)

@@ -1355,6 +1355,7 @@ endif
 
 if ?A20PORTS
 
+;--- port trap handlers
 ;--- eax=value (for out)
 ;--- dx=port
 ;--- cl=type

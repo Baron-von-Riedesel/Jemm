@@ -1,0 +1,37 @@
+
+# NMake/WMake Makefile to create QPIEMU.DLL & TESTQPI.EXE
+#
+#  tools                      alternatives
+#----------------------------------------------------------
+#  JWasm                      Masm v6.x
+#  JWLink                     MS Link, WLink, ALink
+#  (PatchPE) 
+# 
+# PatchPE: HX tool to patch a PE binary to PX ( not required for jwlink ).
+
+NAME = QPIEMU
+NAME2 = TESTQPI
+NAME3 = TESTDMA
+OUTDIR=Release
+AOPT=-c -coff -nologo -Fl$*.lst -Fo$*.obj -I..\..\Include
+ASM=jwasm.exe
+#LINK=link.exe /NOLOGO /SUBSYSTEM:NATIVE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /EXPORT:ddb /Entry:DllMain /OPT:NOWIN98
+LINK=jwlink format win nt hx dll ru native file $*.obj name $*.DLL op q,MAP=$*.MAP export _ddb.1
+
+ALL: $(OUTDIR) $(OUTDIR)\$(NAME).DLL $(OUTDIR)\$(NAME2).EXE $(OUTDIR)\$(NAME3).EXE
+
+$(OUTDIR):
+	@mkdir $(OUTDIR)
+
+$(OUTDIR)\$(NAME).DLL: $(OUTDIR)\$(NAME).obj Makefile
+	@$(LINK)
+#	@..\patchpe $*.DLL
+
+$(OUTDIR)\$(NAME).obj: $(NAME).asm
+	@$(ASM) $(AOPT) $(NAME).asm
+
+$(OUTDIR)\$(NAME2).EXE: $(NAME2).asm
+	@$(ASM) -nologo -mz -Fl$* -Sg -Fo=$*.EXE $(NAME2).asm
+
+$(OUTDIR)\$(NAME3).EXE: $(NAME3).asm
+	@$(ASM) -nologo -mz -Fl$* -Sg -Fo=$*.EXE $(NAME3).asm

@@ -548,7 +548,10 @@ New_IO_Handler proc
 	jz @F
 	jmp dword ptr [esi+edx*4]
 @@:
-	VMMJmp Simulate_IO
+;--- v5.84: jump to the old trap handler - it will handle
+;---        ISA DMA and A20
+;	VMMJmp Simulate_IO
+	jmp [oldiohandler]
 	align 4
 
 New_IO_Handler endp
@@ -557,10 +560,24 @@ New_IO_Handler endp
 ;--- the table defines ranges, but there may be "holes" ( untrapped ports )
 ;--- so first check if the port is actually really trapped.
 
+;--- v5.84: Jemm's table is no longer imported.
+;---        instead, if port isn't trapped, the old (=Jemm's) handler will be run.
+
+;--- structure of IO_Trap_Table:
+;---   dd ?  ; the default trap handler
+;---   dd ?  ; number of IOTRAPENTRIES in the following table
+;---   IOTRAPENTRIES[]
+
 ImportJemmIOTraps proc uses esi
 
 	@DbgOutS <"ImportJemmIOTraps",10>, ?IODBG
 	mov esi, [IO_Trap_Table]
+if 1
+	mov eax, offset New_IO_Handler
+	xchg eax, [esi]
+	mov [oldiohandler], eax
+	ret
+else
 	lodsd
 	mov [esi-4], offset New_IO_Handler
 	mov [oldiohandler],eax
@@ -602,6 +619,7 @@ ImportJemmIOTraps proc uses esi
 	loop @@nextrange
 @@done:
 	ret
+endif
 	align 4
 
 ImportJemmIOTraps endp
@@ -640,7 +658,7 @@ CommitTrapPage proc
 CommitTrapPage endp
 
 ;--- ESI=callback
-;--- EDX=port
+;--- DX=port
 
 Install_IO_Handler proc
 	cld
@@ -656,7 +674,7 @@ Install_IO_Handler proc
 	pop edx
 	cmp eax,-1
 	jz @@error
-	mov [IO_Handler_Region],eax
+	mov [IO_Handler_Region], eax
 	@DbgOutS <"Install_IO_Handler: region=">, ?IODBG
 	@DbgOutD eax, ?IODBG
 	@DbgOutS <10>, ?IODBG
@@ -669,7 +687,7 @@ Install_IO_Handler proc
 	@DbgOutS <10>, ?IODBG
 	call CommitTrapPage
 	jc @@error
-	mov eax, edx
+	movzx eax, dx
 	shl eax, 2
 	add eax, [IO_Handler_Region]
 	cmp dword ptr [eax], 0		; port already trapped?
@@ -699,11 +717,11 @@ Remove_IO_Handler proc
 	xor ecx, ecx
 	cmp [IO_Handler_Region],ecx
 	jz @@error
-	mov eax, edx
+	movzx eax, dx
 	shr eax, 10		;0-FFFF -> 0-3F
 	bt dword ptr [IO_Handler_Pages], eax
 	jnc @@error
-	mov eax, edx
+	movzx eax, dx
 	shl eax, 2
 	add eax, [IO_Handler_Region]
 	cmp [eax],ecx

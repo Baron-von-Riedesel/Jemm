@@ -244,7 +244,17 @@ endif
 
 NUMBP equ (size BPTABLE)/4
 
-;--- IO trapping table
+;--- IO trapping table.
+;--- IO_Trap_Table is exported (vmm_service_table)
+;--- and may be modified by JLOAD!
+;--- Default_IO_Trap_Handler() can handle byte ports only!
+
+;--- JLoad expects exactly this structure:
+;---  dd ?   ; trap handler
+;---  dd ?   ; no of IOTRAPENTRY in following array
+;---  IOTRAPENTRY[]
+;--- v5.84: don't trap ports 80h, 8Ch-8Fh, ( 8Fh = page reg of channel 4 )
+;---        C0h-C3h (channel 4)
 
 IO_Trap_Table label dword
 IO_Trap_Handler dd Default_IO_Trap_Handler
@@ -253,8 +263,8 @@ IO_Trap_Handler dd Default_IO_Trap_Handler
 portmap label byte
 if ?DMA
     IOTRAPENTRY <000h,00Fh,Dma_HandleDmaPorts8>
-    IOTRAPENTRY <080h,08Fh,Dma_HandlePagePorts>
-    IOTRAPENTRY <0C0h,0DFh,Dma_HandleDmaPorts16>
+    IOTRAPENTRY <081h,08Bh,Dma_HandlePagePorts>
+    IOTRAPENTRY <0C4h,0DFh,Dma_HandleDmaPorts16>
 endif
 if ?A20PORTS
     IOTRAPENTRY <060h,060h,A20_Handle60>
@@ -1198,11 +1208,18 @@ v86excrtn:
 
 V86_Exception endp
 
+;--- default IO trap handler;
+;--- can handle byte ports only
+;--- will scan portmap for internally trapped ports ( DMA, A20 )
+;--- in:
+;--- CL=flags
+;--- DL=port
+
 Default_IO_Trap_Handler proc
 
-if 1    ;all internal functions handle byte i/o only
+if 0    ;all internal functions handle byte i/o only
     test cl,STRING_IO or DWORD_IO or WORD_IO
-    jnz Simulate_IO
+    jnz Simulate_IO_trap
 endif
     mov esi, offset portmap
 @@nextport:
@@ -1221,7 +1238,8 @@ endif
 
 Default_IO_Trap_Handler endp
 
-;--- Simulate_IO, expects:
+;--- Simulate_IO: emulate IN/OUT
+;--- in:
 ;--- EBP -> client ptr
 ;--- CX = flags
 ;--- Hiword(ECX) = segment of src/dst for string IO
@@ -1234,13 +1252,30 @@ Default_IO_Trap_Handler endp
 ;--- STRING IO -> DWORD/WORD/BYTE IO
 ;--- REP STRING IO -> multiple DWORD/WORD/BYTE IO
 
+;--- v5.84: fixed: Simulate_IO did call [IO_Trap_Handler]
+;---        now it just splits I/O to byte accesses.
+;---        The new function Simulate_IO_trap() does what Simulate_IO()
+;---        did prior to v5.84.
+
+Simulate_IO_trap proc public
+	mov ebx, [IO_Trap_Handler]
+	jmp Simulate_IOex
+Simulate_IO_trap endp
+
 Simulate_IO proc public
+	mov ebx, offset Simulate_IOex
+Simulate_IO endp
+
+Simulate_IOex proc public
 
     test cl,STRING_IO
     jnz @@isstrio
-    movzx ebx,cl
-    and ebx,1Ch
-    jmp [ebx + offset iojmp]
+	push ecx
+    movzx ecx,cl
+    and ecx,1Ch
+    mov ecx,[ecx + offset iojmp]
+	xchg ecx, [esp]
+	ret
     align 4
 
 iojmp label dword
@@ -1261,12 +1296,12 @@ iojmp label dword
     and cl,not WORD_IO
     push edx
     push ecx
-    call [IO_Trap_Handler] 
+    call ebx
     pop ecx
     mov edx,[esp]
     inc edx
     push eax    
-    call [IO_Trap_Handler]
+    call ebx
     mov [esp+1],al
     pop eax
     pop edx
@@ -1275,12 +1310,12 @@ iojmp label dword
     and cl,not WORD_IO
     push edx
     push ecx
-    call [IO_Trap_Handler] 
+    call ebx
     pop ecx
     mov edx,[esp]
     inc edx
     mov al,ah
-    call [IO_Trap_Handler]
+    call ebx
     pop edx
     ret
 @@din:
@@ -1288,12 +1323,12 @@ iojmp label dword
     or cl,WORD_IO
     push edx
     push ecx
-    call [IO_Trap_Handler] 
+    call ebx
     pop ecx
     mov edx,[esp]
     add edx,2
     push eax
-    call [IO_Trap_Handler]
+    call ebx
     mov [esp+2],ax
     pop eax
     pop edx
@@ -1303,12 +1338,12 @@ iojmp label dword
     or cl,WORD_IO
     push edx
     push ecx
-    call [IO_Trap_Handler] 
+    call ebx
     pop ecx
     pop edx
     add edx,2
     shr eax,16
-    jmp [IO_Trap_Handler]
+    jmp ebx
 
 @@isstrio:
     test cl, REP_IO
@@ -1329,9 +1364,12 @@ iojmp label dword
 
 @@isnorepio:
     and cl,not STRING_IO
-    movzx ebx,cl
-    and ebx,1Ch
-    jmp [ebx + offset siojmp]
+	push ecx
+	movzx ecx, cl
+    and ecx,1Ch
+	mov ecx, [ecx + offset siojmp]
+	xchg ecx, [esp]
+	ret
     align 4
 
 siojmp label dword
@@ -1358,7 +1396,8 @@ siojmp label dword
     add word ptr [ebp].Client_Reg_Struc.Client_EDI,4
     ret
 @@sxin:
-    call [IO_Trap_Handler]
+;    call [IO_Trap_Handler]
+    call ebx
     rol ecx, 16
     movzx esi,cx
     rol ecx, 16
@@ -1371,17 +1410,20 @@ siojmp label dword
     call @@sxout
     lodsb
     add word ptr [ebp].Client_Reg_Struc.Client_ESI,1
-    jmp [IO_Trap_Handler]
+;    jmp [IO_Trap_Handler]
+	jmp ebx
 @@swout:
     call @@sxout
     lodsw
     add word ptr [ebp].Client_Reg_Struc.Client_ESI,2
-    jmp [IO_Trap_Handler]
+;    jmp [IO_Trap_Handler]
+	jmp ebx
 @@sdout:
     call @@sxout
     lodsd
     add word ptr [ebp].Client_Reg_Struc.Client_ESI,4
-    jmp [IO_Trap_Handler]
+;    jmp [IO_Trap_Handler]
+	jmp ebx
 @@sxout:
     rol ecx, 16
     movzx eax,cx
@@ -1393,7 +1435,7 @@ siojmp label dword
 
     align 4
 
-Simulate_IO endp
+Simulate_IOex endp
 
 if ?EXC10
 
