@@ -85,7 +85,7 @@ JWLINK=1
 !endif
 
 !if $(DEBUG)
-AOPTD=-D_DEBUG $(DBGOPT)
+AOPTD=-D_DEBUG $(DBGOPT) -Sg
 !else
 AOPTD=
 !endif

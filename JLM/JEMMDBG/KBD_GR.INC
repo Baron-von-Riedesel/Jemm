@@ -26,8 +26,10 @@ shiftk label byte
 	db ">"        			;36 ( key 56h )
 
 altgrk label byte
-	org altgrk + 0Ch
-	db '\'					;0C
+;   org altgrk + 0Ch
+;   db '\'					;0C
+	org altgrk + 08h
+	db '{[]}\'
 	org altgrk + 10h
 	db '@'					;10
 	org altgrk + 1Bh

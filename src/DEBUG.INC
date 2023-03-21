@@ -68,9 +68,9 @@ dprintf proto c :ptr, :vararg
 @dprintf macro bCond, fmt, args:vararg
  if bCond
   ifnb <args>
-	invoke dprintf, fmt, args
+	invoke dprintf, CStr(fmt), args
   else
-	invoke dprintf, fmt
+	invoke dprintf, CStr(fmt)
   endif
  endif
 endm

@@ -310,11 +310,11 @@ endif
     CMP CL,EMS_MAX
     JAE @@emm_inv_call
 
-    @dprintf ?EMSDBG, CStr("EMS in: ax=%X bx=%X dx=%X"), word ptr [ebp].Client_Reg_Struc.Client_EAX,\
+    @dprintf ?EMSDBG, <"EMS in: ax=%X bx=%X dx=%X">, word ptr [ebp].Client_Reg_Struc.Client_EAX,\
         word ptr [ebp].Client_Reg_Struc.Client_EBX, word ptr [ebp].Client_Reg_Struc.Client_EDX
 
     CALL [EMS_Call_Table+ECX*4]
-    @dprintf ?EMSDBG, CStr(", out: ax=%X bx=%X dx=%X",10), ax, bx, dx
+    @dprintf ?EMSDBG, <", out: ax=%X bx=%X dx=%X",10>, ax, bx, dx
     mov word ptr [ebp].Client_Reg_Struc.Client_EBX,bx
     mov word ptr [ebp].Client_Reg_Struc.Client_EDX,dx
 @@byeems:
@@ -323,14 +323,14 @@ endif
     IRETD
 
 @@vcpi_inv_call:
-    @dprintf ?VCPIDBG, CStr("VCPI invalid function, ax=%X",10), ax
+    @dprintf ?VCPIDBG, <"VCPI invalid function, ax=%X",10>, ax
 if ?VCPIDBG
     MOV ah,EMSS_INVALID_FUNCTION
     JMP @@byeems
 endif
 
 @@emm_inv_call:
-    @dprintf ?EMSDBG, CStr("EMS invalid function, ax=%X",10), ax
+    @dprintf ?EMSDBG, <"EMS invalid function, ax=%X",10>, ax
     MOV ah,EMSS_INVALID_FUNCTION
     JMP @@byeems
         

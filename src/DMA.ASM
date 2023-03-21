@@ -6,6 +6,12 @@
 
 ;--- to be assembled with JWasm or Masm v6.1+
 
+;--- IN, although trapped, returns the true value of the port.
+;--- OUT stores the values to be written, and also does an OUT with unmodified ax/al reg.
+;--- only if the DMA op is fully initialized, Dma_CheckChannel()
+;--- is called and will do a translation, if required.
+
+
     .486P
     .model FLAT
     option proc:private
@@ -30,7 +36,7 @@ DmaTargetLen    DD  0   ; Utilized part of the Buffer
 
 DMAF_ENABLED    equ 1   ;1=channel is enabled/unmasked
 
-DmaChn          DMAREQ 8 dup (<0,0,0,0,0,0>)
+DmaChn          DMAREQ 8 dup (<0,0,0,0,0,0>)	; also accessed by VDS code
 DmaGblFlags     DW 0    ; global flags
                 align 4
 
@@ -42,43 +48,56 @@ endif
 
 if ?DMA
 
-PageLookUp      DB      0,2,3,1,0,0,0,0,0,6,7,5,0,0,0,0
-PageXLat        DB      87H,83H,81H,82H,0,8BH,89H,8AH
+;--- table to translate page ports (80-8F) to channel no
+PageLookUp DB 0,2,3,1,0,0,0,0, 0,6,7,5,0,0,0,0
+
+;--- page translation table
+;--- channels   0,  1,  2,  3, -, 5,  6,  7
+PageXLat DB    87H,83H,81H,82H,0,8BH,89H,8AH
 
 ;--- Access to a DMA page register (80-8F)
 ;--- v5.84: now Simulate_IO_trap is called if access isn't "byte"
-
 ; DX : port
 ; AL : value
 ; CL : type
+;--- modifies EDI, BX
 
 Dma_HandlePagePorts PROC public
 
     test cl,OUTPUT
-    jz Simulate_IO   ;is input
+    jz Simulate_IO   ;is input, just translate to byte accesses
     test cl,STRING_IO or DWORD_IO or WORD_IO
-    jnz Simulate_IO_trap
-if ?DMADBG
-    @DbgOutS <"DMA page reg OUT, dx=">
-    @DbgOutW dx
-    @DbgOutS <" AL=">
-    @DbgOutB al
-    @DbgOutS <10>
-endif
+    jnz Simulate_IO_trap	; split access to bytes
+
+    @dprintf ?DMADBG, <"Dma_HandlePagePorts: OUT, dx=%X al=%X",10>, dx, al
+
     OUT DX,AL
     MOVZX EBX,DL                  ; store page value in cache
     MOVZX EDI,BYTE PTR PageLookUp[EBX-80H]
-    MOV [DmaChn+EDI*8].PageReg,AL
+    MOV [DmaChn+EDI*sizeof DMAREQ].PageReg,AL
     jmp Dma_IsReady
     align 4
 
 Dma_HandlePagePorts ENDP
 
 ;--- handle 8-bit DMA ports 00-0F
+;--- ports 00-07: addr/count for channels 0-3
+;--- port 08: R=status 0-3, W=cmd register 0-3
+;--- port 09: W=write req 0-3
+;--- port 0A: RW=channel mask register 0-3
+;--- port 0B: W=mode 0-3
+;--- port 0C: W=clear flipflop 0-3 for addr/count
+;--- port 0D: R=temp reg, W=reset DMA
+;--- port 0E: W=clear mask reg 0-3
+;--- port 0F: W=write mask register
+;--- channel 2 is used by floppy controller
+
 ;--- v5.84: now Simulate_IO_trap is called if access isn't "byte"
+
 ; DX = port
 ; AL = value
 ; CL = type
+;--- modifies EDI, BX
 
 Dma_HandleDmaPorts8 proc public
 
@@ -86,18 +105,13 @@ Dma_HandleDmaPorts8 proc public
     jz Simulate_IO
     test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte access?
     jnz Simulate_IO_trap
+
 if ?DMADBG
-    @DbgOutS <"8 bit DMA OUT, dx=">,1
-    @DbgOutW dx,1
-    @DbgOutS <" AL=">,1
-    @DbgOutB al,1
-    @DbgOutS <" 08=">,1
-    mov ah,al
-    in al,8
-    @DbgOutB al,1
-    mov al,ah    
-    @DbgOutS <10>,1
-    @WaitKey 1, 0;?DMADBG
+    push eax
+    @dprintf ?DMADBG, <"Dma_HandleDmaPorts8: OUT, dx=%X al=%X ">, dx, al
+    in al, 8
+    @dprintf ?DMADBG, <"08=%X",10>, al
+    pop eax
 endif
 
     CMP DL,8                    ; Program addresses and/or length of the blocks
@@ -116,7 +130,7 @@ if ?MMASK
     CMP DL,0FH
     JZ @@MMask8                ; master mask?
 endif
-    @DbgOutS <"port was unhandled!?",10>, ?DMADBG
+    @dprintf ?DMADBG, <"Dma_HandleDmaPorts8: unhandled OUT to port %X",10>, dx
     out dx, al
     ret
 @@Clear8:
@@ -157,6 +171,7 @@ Dma_HandleDmaPorts8 endp
 ; DX = port
 ; AL = value
 ; CL = type
+;--- modifies EDI, BX
 
 Dma_HandleDmaPorts16 proc public
 
@@ -164,6 +179,15 @@ Dma_HandleDmaPorts16 proc public
     jz Simulate_IO
     test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte access?
     jnz Simulate_IO_trap
+
+if ?DMADBG
+    push eax
+    @dprintf ?DMADBG, <"Dma_HandleDmaPorts16: OUT, dx=%X ax=%X ">, dx, ax
+    in al, 0D0h
+    @dprintf ?DMADBG, <"D0=%X",10>, al
+    pop eax
+endif
+
     CMP DL,0C0h+10h             ; dto. 2nd DMA-Controller ?
     JB @@BlockSet16
     CMP DL,0C0h+0AH*2           ; single mask?
@@ -180,7 +204,7 @@ if ?MMASK
     CMP DL,0C0h+0Fh*2           ; master mask?
     JZ @@MMask16
 endif
-    @DbgOutS <"port was unhandled!?",10>, ?DMADBG
+    @dprintf ?DMADBG, <"Dma_HandleDmaPorts16: unhandled OUT to port %X",10>, dx
     out dx, al
     ret
 @@Clear16:
@@ -232,7 +256,7 @@ Dma_SetLenOrAdr:
     OUT DX,AL
     BTC [DmaGblFlags],BX        ; toggle the Hi/Lo-Flag
     adc ecx,0
-    MOV BYTE PTR [ECX+EDI*8],AL
+    MOV BYTE PTR [ECX+EDI*sizeof DMAREQ],AL
     test cl,1
     jnz Dma_IsReady
     ret
@@ -241,7 +265,7 @@ Dma_SetLenOrAdr:
 ;
 Dma_SetMode:
     out dx, al
-    mov [DmaChn+EDI*8].ChanMode,al
+    mov [DmaChn+EDI*sizeof DMAREQ].ChanMode,al
 
 Dma_IsReady proc
 if 0
@@ -249,10 +273,10 @@ if 0
     test byte ptr [ecx],2    ;new Int 13h/40h DMA op?
     jz @@nonewreq
     and byte ptr [ecx],not 2
-    and [DmaChn+EDI*8].bFlags,not DMAF_ENABLED  ;wait until channel is enabled
+    and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED  ;wait until channel is enabled
 @@nonewreq:
 endif
-    test [DmaChn+EDI*8].bFlags,DMAF_ENABLED
+    test [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
     jz @@Bye
     CALL Dma_CheckChannel    ; Then check value
 @@Bye:
@@ -264,10 +288,10 @@ Dma_IsReady endp
 ;--- bit 2=1 -> enable channel mask (=channel inactive)
 
 Dma_SetSMask proc
-    and [DmaChn+EDI*8].bFlags,not DMAF_ENABLED
+    and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
     test al,4
     jnz @@isdisable
-    or [DmaChn+EDI*8].bFlags,DMAF_ENABLED
+    or [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
 if 0
     mov ecx,[dwRFlags]
     and byte ptr [ecx],not 2
@@ -293,12 +317,12 @@ Dma_SetMMask proc
     mov cl,4
     xchg al,ah   ;value to write to port now in AH, in AL transformed mask
 @@nextcnl:
-;   test [DmaChn+EDI*8].bFlags,DMAF_ENABLED
+;   test [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
 ;   jnz @@skipchannel       ;channel is already active
-    and [DmaChn+EDI*8].bFlags,not DMAF_ENABLED
+    and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
     bt eax, edi
     jc @@skipchannel       ;channel will become/stay inactive
-    or [DmaChn+EDI*8].bFlags,DMAF_ENABLED
+    or [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
     push eax
     push ecx
     call Dma_CheckChannel
@@ -317,40 +341,38 @@ Dma_SetMMask ENDP
 endif
 
 ;
-; A DMA-Channel is completely with data about beginning and length
-; supplied, so that a check can (and has to) take place.
+; A DMA-Channel is completely supplied with data about beginning and length,
+; so a check can (and has to) take place.
 ;
 ; In: EDI: Channelnumber 0..7
 ; modifies ECX, ESI, EBX
 ;
 Dma_CheckChannel PROC
 
-    @DbgOutS <"Dma_CheckChannel enter",10>, ?DMADBG
-    @WaitKey 1, 0;?DMADBG
-;    int 3
+    @dprintf ?DMADBG, <"Dma_CheckChannel enter, edi=%u",10>, edi
 
-    cmp [DmaChn+EDI*8].cDisable,0   ;translation disabled by VDS?
+    cmp [DmaChn+EDI*sizeof DMAREQ].cDisable,0   ;translation disabled by VDS?
     jnz @@Bye
-    test [DmaChn+EDI*8].ChanMode,1100B  ; If a verify is wanted
+    test [DmaChn+EDI*sizeof DMAREQ].ChanMode,1100B  ; If a verify is wanted
     JZ @@Bye                          ; nothing is to be done
 
 if 1
-    and [DmaChn+EDI*8].bFlags,not DMAF_ENABLED
+    and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
 endif
 
-    MOVZX ECX,[DmaChn+EDI*8].BlockLen ; get block length into ECX
-    MOVZX ESI,[DmaChn+EDI*8].PageReg  ; and base address into ESI
+    MOVZX ECX,[DmaChn+EDI*sizeof DMAREQ].BlockLen ; get block length into ECX
+    MOVZX ESI,[DmaChn+EDI*sizeof DMAREQ].PageReg  ; and base address into ESI
     INC ECX
     CMP EDI,4                       ; for 16bit DMA channels,
     JB @@Only8
     ADD ECX,ECX                     ; words are transferred
     SHL ESI,15                      ; and Bit 0 of the page register
-    MOV SI,[DmaChn+EDI*8].BaseAdr   ; will be ignored
+    MOV SI,[DmaChn+EDI*sizeof DMAREQ].BaseAdr   ; will be ignored
     SHL ESI,1
     JMP @@Chk
 @@Only8:
     SHL ESI,16                      ; for 8bit DMA, address calculation
-    MOV SI,[DmaChn+EDI*8].BaseAdr   ; is simple
+    MOV SI,[DmaChn+EDI*sizeof DMAREQ].BaseAdr   ; is simple
 @@Chk:
 
 ;--- now ESI holds the start address (linear!)
@@ -366,11 +388,10 @@ endif
     pop ebx
     JNC @@Set   ;NC if buffer *is* contiguous               
 
-;   test [DmaChn+EDI*8].ChanMode,10h ;auto-init? Then a buffer is useless
+;   test [DmaChn+EDI*sizeof DMAREQ].ChanMode,10h ;auto-init? Then a buffer is useless
 ;   jnz @@Set
 
-    @DbgOutS <"block not contiguous or crosses 64k border, DMA buffer needed!",10>, ?DMADBG
-    @WaitKey 1, 0;?DMADBG
+    @dprintf ?DMADBG, <"block not contiguous or crosses 64k border, DMA buffer needed!",10>
 
     MOV ESI,[DMABuffStartPhys]      ; get DMA Buffer physical address
     BTS [DmaGblFlags], NeedBuffer
@@ -379,12 +400,12 @@ endif
     mov ecx, [DMABuffSize]          ; error: DMA buffer overflow    
 @@blocksizeok:
     call @@SetX
-    MOV AL,[DmaChn+EDI*8].ChanMode  ; copy data into buffer required?
+    MOV AL,[DmaChn+EDI*sizeof DMAREQ].ChanMode  ; copy data into buffer required?
     and al,1100b
     cmp al,1000b
     JNZ @@IsRead
 
-    @DbgOutS <"Dma_CheckChannel: copy into DMA buffer",10>, ?DMADBG
+    @dprintf ?DMADBG, <"Dma_CheckChannel: copy into DMA buffer",10>
 
     push edi
     MOV ESI,EBX
@@ -508,13 +529,7 @@ endif
     @GETPTEPTR ESI, ESI*4+?PAGETAB0 ; ESI -> PTE
     MOV EAX,[ESI]               ; get PTE
 
-if ?DMADBG
-    @DbgOutS <"Dma_IsContiguous: PTE=">
-    @DbgOutD eax
-    @DbgOutS <" ecx=">
-    @DbgOutD ecx
-    @DbgOutS <10>
-endif
+    @dprintf ?DMADBG, <"Dma_IsContiguous: PTE=%X ecx=%X",10>, eax, ecx
 
     shr eax, 12                 ; ignore bits 0-11 of PTE
 
@@ -580,15 +595,7 @@ endif
     MOV EDI,[DmaTargetAdr]
     mov ECX,[DmaTargetLen]
 
-if ?DMADBG                                
-    @DbgOutS <"Dma_CopyBuffer: dst=">,1
-    @DbgOutD edi,1
-    @DbgOutS <" src=">,1
-    @DbgOutD esi,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?DMADBG, <"Dma_CopyBuffer: dst=%X src=%X siz=%X",10>, edi, esi, ecx
 
     CLD
     call MoveMemory

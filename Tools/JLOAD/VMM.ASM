@@ -708,6 +708,38 @@ Install_IO_Handler proc
 	align 4
 Install_IO_Handler endp
 
+;--- when untrapping a port, check if it's a port trapped by Jemm
+;--- if yes, it must not be reset in the IOPB.
+;--- in: edx=port
+;--- out: C if port is trapped by Jemm
+;--- register edx must be preserved
+
+DefaultTrappedPort proc uses esi ebx
+	mov esi, [IO_Trap_Table]
+	add esi, 4
+	lodsd
+	mov ecx, eax
+	jecxz done
+nextrange:
+	lodsb			; get bStart field
+	movzx ebx, al
+	lodsb			; get bEnd field
+	movzx eax, al
+	add esi, 4		; skip proc field
+	cmp edx, ebx
+	jb @F
+	cmp edx, eax
+	jbe found
+@@:
+	loop nextrange
+done:
+	clc
+	ret
+found:
+	stc
+	ret
+DefaultTrappedPort endp
+
 ;--- untrap port, dx=port
 
 Remove_IO_Handler proc
@@ -727,10 +759,13 @@ Remove_IO_Handler proc
 	cmp [eax],ecx
 	jz @@error
 	mov [eax], ecx
+	call DefaultTrappedPort
+	jc @F
 	mov eax, [dwTSSbase]
 	movzx ecx, [eax].TSSSEG.tsOfs
 	add eax, ecx
 	btc [eax],edx
+@@:
 	clc
 	ret
 @@error:

@@ -7,6 +7,7 @@
 ?MMASK          EQU 1       ; 1=trap DMA master mask port (0F, DE)
 ?INVLPG         EQU 1       ; 1=use INVLPG opcode on 80486+
 ?CLEARHIGHESP   EQU 1       ; 1=clear hiword(esp) for buggy VCPI clients
+?AUXOUT         EQU 0       ; 1=use COM1 for output, 0=use int 10h/29h
 ?USEINT10       EQU 1       ; 1=use int 10h for output, 0=use int 29h
 ?SERVTABLE      equ 1       ; 1=expose service table (for JLoad)
 ?FASTMON        equ 1       ; 1=faster monitor jmp for int 00-0F
@@ -242,6 +243,8 @@ GDT_SEL         equ 48h
 endif
 
 ;--- equates from JLM.INC
+;--- OUTPUT, WORD_IO and DWORD_IO are used as offset in tables
+;--- and hence cannot be changed; see DMA.ASM!
 
 OUTPUT      equ 04h
 WORD_IO     equ 08h
@@ -251,7 +254,7 @@ REP_IO      EQU 40h
 
 DMAREQ struct
 ChanMode    db ?    ;saved "mode" value (register 0Bh or D6h)
-bFlags      db ?    ;flags, see below
+bFlags      db ?    ;flags (DMAF_ENABLED) 
 BlockLen    dw ?    ;saved "block length" value
 BaseAdr     dw ?    ;saved "block address" value
 PageReg     db ?    ;saved "page register" value

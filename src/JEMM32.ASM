@@ -348,7 +348,10 @@ PageFaultFF endp
 
 endif
 
-;--- print string at [ESP+4] with nested execution.
+;--- print string at [ESP+4];
+;--- usually with nested execution, using int 10h, ah=0Eh.
+;--- By setting ?AUXOUT one may change this to write to COM1;
+;--- this can be handled in protected-mode.
 
 PrintString proc
     push esi
@@ -357,37 +360,149 @@ if 0
     @DbgOutS <"PrintString",10>,1
     @WaitKey 1,0
 endif
+ife ?AUXOUT
     sub esp,size Client_Reg_Struc
     mov edi, esp
     call Save_Client_State
     call Begin_Nest_Exec
     mov esi, [esp+size Client_Reg_Struc + 8 + 4]
+else
+    mov esi, [esp+8+4]
+endif
 @@nextchar:
     lodsb
     and al,al
     jz @@done
- if ?USEINT10
+ if ?AUXOUT
+    call AuxPutChar
+ elseif ?USEINT10
     mov ah,0Eh
     mov word ptr [EBP].Client_Reg_Struc.Client_EAX,ax
     mov word ptr [EBP].Client_Reg_Struc.Client_EBX,0007
     mov eax,10h
+    call Exec_Int
  else
     mov byte ptr [EBP].Client_Reg_Struc.Client_EAX,al
     mov eax,29h
- endif
     call Exec_Int
+ endif
     jmp @@nextchar
 @@done:
+ife ?AUXOUT
     call End_Nest_Exec
     mov esi, esp
     call Restore_Client_State
     add esp,size Client_Reg_Struc
+endif
     pop edi
     pop esi
     ret 4
     align 4
 
 PrintString endp
+
+if ?AUXOUT
+
+.text$01w segment dword flat public 'CODE'
+wCsrPos dw 0,0
+.text$01w ends
+
+COMNO       equ 1
+_XONXOFF_   equ 1
+XON         equ 11h
+XOFF        equ 13h
+
+;--- display a char in AL
+
+AuxPutChar proc
+
+	pushad
+	movzx ebx, word ptr ds:[400h + (COMNO-1)*2]
+	lea edx, [ebx+5]	;LSR - Line Status Register
+	mov cx, -1
+	movzx ecx, cx
+	xchg al, ah
+@@:
+	in al, dx
+	test al, 40h		;TEMT - transmitter empty?
+	loopz @B
+if _XONXOFF_
+	test al, 1			;char received
+	jz noxoff
+	mov edx, ebx
+	in al, dx
+	cmp al, XOFF
+	jnz noxoff
+waitxon:
+	add edx, 5
+@@: 					;wait till new char arrived
+	in al, dx
+	test al, 1
+	jz @B
+	mov edx, ebx
+	in al, dx
+	cmp al, XON			;wait till XON received
+	jnz waitxon
+noxoff:
+endif
+	xchg al, ah
+	mov edx, ebx
+	out dx, al
+	call setcsrpos
+	popad
+	ret
+
+setcsrpos:
+	cmp al, 13
+	jz col00
+	cmp al, 10
+	jz nochg
+	cmp al, 8
+	jz back
+	inc byte ptr [wCsrPos]
+	retn
+back:
+	dec byte ptr [wCsrPos]
+	retn
+col00:
+	mov byte ptr [wCsrPos], 0
+nochg:
+	retn
+
+AuxPutChar endp
+
+;--- get a char in AL
+
+AuxGetChar proc
+
+	push ebx
+	push ecx
+	push edx
+
+	movzx ebx, word ptr ds:[400h + (COMNO-1)*2]
+	lea edx, [ebx+6]	;MSR - modem status register
+	in al, dx			;DSR - modem(=DCE) ready?
+	and al, 20h
+	jz error
+	dec edx				;LSR - Line Status Register
+@@:
+	in al, dx
+	test al, 01h		;DR - Data ready?
+	jz @B
+	mov edx, ebx
+	in al, dx
+	mov ah, 00
+	jmp exit
+error:
+	xor eax, eax
+exit:
+	pop edx
+	pop ecx
+	pop ebx
+	ret
+AuxGetChar endp
+
+endif
 
 ;--- helper routines
 
@@ -641,7 +756,7 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @dprintf ?V86DBG, CStr("Int in v86-mode, #=%X, CS:EIP=%X:%X EBP=%X",10), cx, word ptr [ebp].V86FRAME.fCS,\
+    @dprintf ?V86DBG, <"Int in v86-mode, #=%X, CS:EIP=%X:%X EBP=%X",10>, cx, word ptr [ebp].V86FRAME.fCS,\
         [ebp].V86FRAME.fEIP, ebp
 @@:
 endif
@@ -689,7 +804,7 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @dprintf ?V86DBG, CStr("V86 IRQ/EXC, #=%X EBP=%X, CS:EIP=%X:%X, EFL=%X, SS:ESP=%X:%X",10), cx,\
+    @dprintf ?V86DBG, <"V86 IRQ/EXC, #=%X EBP=%X, CS:EIP=%X:%X, EFL=%X, SS:ESP=%X:%X",10>, cx,\
         ebp, word ptr [ebp].V86FRAME.fCS, [ebp].V86FRAME.fEIP, [ebp].V86FRAME.fEFL, word ptr [ebp].V86FRAME.fSS, [ebp].V86FRAME.fESP
 @@:
 endif
@@ -762,7 +877,7 @@ errorcode_pushed::              ; <--- entry exc 06 v86
     mov ES, eax
     cld
 
-    @dprintf ?EXCDBG, CStr("Exception dump, exception %X at cs:eip=%X:%X",10), [ebp].Client_Reg_Struc.Client_Int,\
+    @dprintf ?EXCDBG, <"Exception dump, exception %X at cs:eip=%X:%X",10>, [ebp].Client_Reg_Struc.Client_Int,\
         [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
 
     test byte ptr [ebp].Client_Reg_Struc.Client_EFlags+2,2   ;V86 mode?
@@ -929,7 +1044,7 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @dprintf ?V86DBG, CStr("exception in v86-mode, #=%X, CS:IP=%X:%X",10), cx,\
+    @dprintf ?V86DBG, <"exception in v86-mode, #=%X, CS:IP=%X:%X",10>, cx,\
         word ptr [ebp].Client_Reg_Struc.Client_CS, word ptr [ebp].Client_Reg_Struc.Client_EIP
 @@:
 endif
@@ -938,7 +1053,7 @@ endif
 
     mov esp,[dwStackCurr]
 
-;    @dprintf ?V86DBG, CStr("V86_Exception, esp=%X, cs:eip=%X:%X",10), esp,[ebp].Client_Reg_Struc.Client_CS,[ebp].Client_Reg_Struc.Client_EIP
+;    @dprintf ?V86DBG, <"V86_Exception, esp=%X, cs:eip=%X:%X",10>, esp,[ebp].Client_Reg_Struc.Client_CS,[ebp].Client_Reg_Struc.Client_EIP
 
     CMP ECX,0DH             ; general protection exception?
     JNZ @@V86_TEST_EXC      ; no, check further
@@ -993,7 +1108,7 @@ if ?BPOPC ne 0F4h
 endif
 @@Is_Hlt:
 
-    @dprintf ?HLTDBG, CStr("True HLT occured at CS:IP=%X:%X",10), [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
+    @dprintf ?HLTDBG, <"True HLT occured at CS:IP=%X:%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
 
     INC [EBP].Client_Reg_Struc.Client_EIP   ; Jump over the HLT instruction
     @v86popregX
@@ -1266,25 +1381,33 @@ Simulate_IO proc public
 	mov ebx, offset Simulate_IOex
 Simulate_IO endp
 
-Simulate_IOex proc public
+;IOPROC textequ <[IO_TrapHandler]>
+;IOPROC textequ <ebx>
+IOPROC  textequ <[ebp].Client_Reg_Struc.Client_res0>
 
+Simulate_IOex proc
+
+    mov IOPROC, ebx ;EBX is a volatile register in DMA, cannot be used
     test cl,STRING_IO
     jnz @@isstrio
-	push ecx
+    push ecx
     movzx ecx,cl
-    and ecx,1Ch
+;    and ecx,1Ch
+    and ecx,DWORD_IO or WORD_IO or OUTPUT
     mov ecx,[ecx + offset iojmp]
-	xchg ecx, [esp]
-	ret
+    xchg ecx, [esp]
+    ret
     align 4
 
 iojmp label dword
-    dd @@bin
-    dd @@bout
-    dd @@win
-    dd @@wout
-    dd @@din
-    dd @@dout
+    dd @@bin    ;+00
+    dd @@bout   ;+04 (OUTPUT is 4)   
+    dd @@win    ;+08 (WORD_IO is 8)
+    dd @@wout   ;+0C
+    dd @@din    ;+10 (DWORD_IO is 10h
+    dd @@dout   ;+14
+;   dd ??       ;+18 either WORD_IO or DWORD_IO are set, never both
+;   dd ??       ;+1C
 
 @@bin:
     in al,dx
@@ -1296,12 +1419,12 @@ iojmp label dword
     and cl,not WORD_IO
     push edx
     push ecx
-    call ebx
+    call IOPROC
     pop ecx
     mov edx,[esp]
     inc edx
     push eax    
-    call ebx
+    call IOPROC
     mov [esp+1],al
     pop eax
     pop edx
@@ -1310,12 +1433,12 @@ iojmp label dword
     and cl,not WORD_IO
     push edx
     push ecx
-    call ebx
+    call IOPROC
     pop ecx
     mov edx,[esp]
     inc edx
     mov al,ah
-    call ebx
+    call IOPROC
     pop edx
     ret
 @@din:
@@ -1323,12 +1446,12 @@ iojmp label dword
     or cl,WORD_IO
     push edx
     push ecx
-    call ebx
+    call IOPROC
     pop ecx
     mov edx,[esp]
     add edx,2
     push eax
-    call ebx
+    call IOPROC
     mov [esp+2],ax
     pop eax
     pop edx
@@ -1338,12 +1461,12 @@ iojmp label dword
     or cl,WORD_IO
     push edx
     push ecx
-    call ebx
+    call IOPROC
     pop ecx
     pop edx
     add edx,2
     shr eax,16
-    jmp ebx
+    jmp IOPROC
 
 @@isstrio:
     test cl, REP_IO
@@ -1364,12 +1487,13 @@ iojmp label dword
 
 @@isnorepio:
     and cl,not STRING_IO
-	push ecx
-	movzx ecx, cl
-    and ecx,1Ch
-	mov ecx, [ecx + offset siojmp]
-	xchg ecx, [esp]
-	ret
+    push ecx
+    movzx ecx, cl
+;    and ecx,1Ch
+    and ecx,DWORD_IO or WORD_IO or OUTPUT
+    mov ecx, [ecx + offset siojmp]
+    xchg ecx, [esp]
+    ret
     align 4
 
 siojmp label dword
@@ -1379,6 +1503,8 @@ siojmp label dword
     dd @@swout
     dd @@sdin
     dd @@sdout
+;   dd ??       ; either WORD_IO or DWORD_IO are set, never both
+;   dd ??
 
 @@sbin:
     call @@sxin
@@ -1396,8 +1522,7 @@ siojmp label dword
     add word ptr [ebp].Client_Reg_Struc.Client_EDI,4
     ret
 @@sxin:
-;    call [IO_Trap_Handler]
-    call ebx
+    call IOPROC
     rol ecx, 16
     movzx esi,cx
     rol ecx, 16
@@ -1410,20 +1535,17 @@ siojmp label dword
     call @@sxout
     lodsb
     add word ptr [ebp].Client_Reg_Struc.Client_ESI,1
-;    jmp [IO_Trap_Handler]
-	jmp ebx
+	jmp IOPROC
 @@swout:
     call @@sxout
     lodsw
     add word ptr [ebp].Client_Reg_Struc.Client_ESI,2
-;    jmp [IO_Trap_Handler]
-	jmp ebx
+	jmp IOPROC
 @@sdout:
     call @@sxout
     lodsd
     add word ptr [ebp].Client_Reg_Struc.Client_ESI,4
-;    jmp [IO_Trap_Handler]
-	jmp ebx
+	jmp IOPROC
 @@sxout:
     rol ecx, 16
     movzx eax,cx
@@ -2384,6 +2506,9 @@ endif
 ;--- execution will reach fastboot_1 at last.
 
     @DbgOutS <"launching Int 19h",10>,?RBTDBG
+
+;--- it's bptable.pInt06 that has to be modified -
+;--- because that's the FIRST breakpoint ( see restorevecs ).
     mov ds:[bptable.pInt06], offset fastboot_1
     mov eax,19h
     call Exec_Int
