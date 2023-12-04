@@ -13,6 +13,8 @@
     include jemm32.inc      ;declarations for Jemm32
     include debug.inc
 
+EMUCLTS equ 0	; 1=emulate CLTS ( resets TS bit in CR0 )
+
 ;--- publics/externals
 
     include external.inc
@@ -41,6 +43,10 @@ EmuInstr DB 90h,90h  ; run self-modifying code here
 
 ExtendedOp proc public
     mov al,[esi+1]
+if EMUCLTS
+    cmp al,6
+    je @@clts
+endif
     cmp al,9
     je @@wbinvd
     cmp al,8
@@ -65,7 +71,11 @@ ExtendedOp proc public
     call RunEmuInstr
     add esp,4+4                 ; eat return address and error code
     iretd
-
+if EMUCLTS
+@@clts:
+	clts                ; 0f 06 is clts opcode
+    jmp @@invdshare
+endif
 @@invd:
     invd                ; 0f 08 is invd opcode
     jmp @@invdshare

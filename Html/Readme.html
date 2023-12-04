@@ -403,10 +403,10 @@
 
  þ Some DOS programs will crash if too much VCPI memory is offered. Jemm's
    default is 128MB, it can be changed with option MAX=xxx. Popular
-   programs that may cause troubles are programs that use Borland's 16-bit
-   DPMI host DPMI16BI.OVL (usually coupled with RTM.EXE). Setting Jemm option
-   MAX=32752K ( that's 32MB minus 16kB) should help. As for DPMI16BI.OVL, it
-   may also help to enter "set DPMIMEM=MAXMEM 16383" at the cmdline.
+   programs that may cause troubles are programs that use Borland's DPMI hosts
+   DPMI16BI.OVL/DPMI32VM.OVL (coupled with RTM.EXE/32RTM.EXE). Setting Jemm
+   option MAX=32752K ( that's 32MB minus 16kB) should help; alternately, try
+   setting environment variable "DPMIMEM=MAXMEM 16383".
 
  þ The JEMM ;-) DOS Extender (used for "Strike Commander" and "Privateer")
    isn't compatible with the VME option. This requirement is a strong sign

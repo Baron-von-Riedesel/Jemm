@@ -465,7 +465,7 @@ EMS_GET_SET_PAGE_MAP PROC
     SHL     ECX, 4                  ; usual REAL-Mode-Format
     MOVZX   EDI, DI
     ADD     EDI, ECX
-save_page_map_int::                 ; <--- internal, EDI=save area, AL=0
+save_page_map_int::                 ; <--- internal, EDI=save area, AL=0 ( ax=5B00h )
     PUSH    EAX                     ; save Subfunctioncode
     PUSH    edi
     add     edi,4
@@ -487,7 +487,7 @@ save_page_map_int::                 ; <--- internal, EDI=save area, AL=0
     SHL     ECX,4                   ; usual REAL-Mode-Format
     MOVZX   ESI,SI
     ADD     ESI,ECX
-restore_page_map_int::              ; <--- internal: ESI=save area   
+restore_page_map_int::              ; <--- internal: ESI=save area ( ax=5B01h )
     @CHKSUM ESI                     ; Calculate checksum and check it
     CMP     [ESI],EAX
     JNZ     @@CHKERR
@@ -497,7 +497,8 @@ restore_page_map_int::              ; <--- internal: ESI=save area
 
 ; Checksum is incorrect !
 @@CHKERR:
-    MOV     AH,0A3H                 ; data is destroyed !
+;    MOV     AH,0A3H                 ; data is destroyed !
+    MOV     AH, EMSS_SRC_ARRAY_INVALID
     RET
 
 ; Subf. 3: return size of the field in AL

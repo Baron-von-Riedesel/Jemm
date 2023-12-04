@@ -2309,7 +2309,6 @@ else
 	mov al,-1
 endif
 	mov buff.e15_bPGE,al
-
 	mov cx,sizeof CMD15
 	lea dx,[buff]
 	mov ax,4403h	;write ioctl

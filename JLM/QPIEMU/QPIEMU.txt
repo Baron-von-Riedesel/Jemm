@@ -28,7 +28,29 @@
  Jemm386/JemmEx.
 
 
- 4. License
+ 4. Technical Details
+
+ QPI is a "real-mode" API, hence if addresses are used, they are in
+ segment:offset format.
+
+ The part of the supported QPI is:
+ 
+ AH=03h, QPI_GetVersion
+ AX=1A00h, QPI_UntrappedIORead
+ AX=1A01h, QPI_UntrappedIOWrite
+ AX=1A04h, QPI_UntrappedIO
+ AX=1A06h, QPI_GetIOCallback
+ AX=1A07h, QPI_SetIOCallback
+ AX=1A08h, QPI_GetPortTrap
+ AX=1A09h, QPI_SetPortTrap
+ AX=1A0Ah, QPI_ClearPortTrap
+
+ However, the way to get the address of QPI itself differs in QPIEMU:
+ an INT 2Fh, with AX=1684h, BX=4354h has to be called. If successful,
+ It will return with AL==0 and the QPI entry point in ES:DI.
+ 
+
+ 5. License
 
  QPIEMU is Public Domain.
 

@@ -322,7 +322,7 @@ if ?PGE
     and al,1
     xor al,1
     mov [bPageMask],al
-if 0
+ if 0
     @GETPTEPTR edi, ?PAGETAB0, 1;start of pagetab 0
     mov ecx,110h+1          ;00000000-00110FFF
 @@FILL_PAGETAB0:
@@ -332,7 +332,7 @@ if 0
     MOV [EDI],EDX
     ADD EDI,4
     loop @@FILL_PAGETAB0
-endif
+ endif
     @mov_ecx_cr4
     shl al,7
     and cl,not 80h

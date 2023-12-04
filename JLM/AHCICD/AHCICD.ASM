@@ -638,7 +638,14 @@ endif
 @@:
 	mov eax, [ebx].PORT.dwCMD
 	test ax, PCMD_CR	; command list running?
+if 0 ; changed 04/2023
 	jz @B
+else
+	jnz @F
+	@VMMCall Yield
+	jmp @B
+@@:
+endif
 	ret
 Setup endp
 

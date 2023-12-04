@@ -5,6 +5,7 @@
 
  - fixed: Simulate_IO() no longer calls trap handler.
  - QPIEMU: new JLM that partly implements Qemm's API (QPI).
+ - fixed: int 67h, ax=5B01h will return error code A3h if checksum invalid.
 
  06.12.2022: v5.83
  - AHCICD: new JLM for CD/DVD devices attached to a SATA controller running

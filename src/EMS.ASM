@@ -132,7 +132,7 @@ EMSPageAllocationEnd   DD   0
 
 emm59_ EMM59 <1024,0,0,0,0>
 if ?SUPP5B
-mapptr          DD 0    ; pointer supplied by "OS"
+mapptr          DD 0    ; alternate map save area (get/set by ax=5B00h/5B01h)
 endif
 
 bEmsPhysPages   DB  0   ; current physical pages
@@ -1425,13 +1425,27 @@ ems4_allocate_pages PROC
 
 ems4_allocate_pages ENDP
 
-; 675B: alternate map register sets
-; AL=0/1/2/3/4/5/6/7/8
+; 675B: alternate map (AM) and DMA register sets.
+; AL=subfunction
+;  0=get AM register set
+;   out: BL=current active AM register set or 00;
+;        if BL=0, ES:DI= ^ save area, set by subfunction 1
+;  1=set AM register set
+;   in: BL=new AM register set or 00;
+;       if BL=0, ES:DI= ^ save area
+;  2=get AM save array size
+;  3=allocate AM register set
+;   out: BL=AM register set # or 00 (00 means: no hardware AM register sets)
+;  4=deallocate AM register set
+;   in: BL=AM register set ( 00 is allowed and nothing done )
+;  5=allocate DMA register set
+;  6=enable DMA on AM register set
+;  7=disable DMA on AM register set
+;  8=deallocate DMA register set
 
 ems4_alt_map_reg_set PROC
 
 if ?SUPP5B
-    mov ah,EMSS_ALT_MAPS_UNSUPP ;alternate map register sets not supported
     cmp al,1
     jb @@is00
     jz @@is01
@@ -1447,8 +1461,8 @@ if ?SUPP5B
     cmp al,8
     jz @@is08
     jmp bad_subfunc
-@@is00:
-    mov bl,0
+@@is00:               ; get AM register set
+    mov bl,0          ; always return BL=0, since no hardware AM register sets are supported
     mov eax,[mapptr]
     and eax, eax
     jz  @@noptr
@@ -1465,32 +1479,40 @@ if ?SUPP5B
     shr eax,16
     mov word ptr [ebp].Client_Reg_Struc.Client_ES,ax
     jmp @@done
-@@is01:
+
+@@is01:               ; set AM register set
+    mov ah,EMSS_ALT_MAPS_UNSUPP ;AM register sets not supported (bl must be 00)
     cmp bl,0
-    jnz @@exit
-    mov ax,word ptr [ebp].Client_Reg_Struc.Client_ES
-    shl eax,16
-    mov ax,word ptr [ebp].Client_Reg_Struc.Client_EDI
-    mov [mapptr],eax
+    jnz @@exit        ; no hardware AM register sets supported!
+
+;--- v5.84:
+;--- if the source array pointer ES:DI is invalid ( checksum invalid),
+;--- error A3 (EMSS_SRCARRAY_INVALID) is returned!
+
+    mov ax, word ptr [ebp].Client_Reg_Struc.Client_ES
+    shl eax, 16
+    mov ax, word ptr [ebp].Client_Reg_Struc.Client_EDI
+    mov [mapptr], eax
     and eax, eax
     jz  @@done
-    movzx esi,ax
-    shr eax,16
-    shl eax,4
+    movzx esi, ax
+    shr eax, 16
+    shl eax, 4
     add esi, eax
-    call restore_page_map_int
-    jmp @@done
-@@is02:
+    call restore_page_map_int ; will set AH ( either 00 or error A3h! )
+    jmp @@exit
+@@is02:               ; get AM save area size
     mov dx,emm59_.e59_sizcont
     jmp @@done
-@@is03:
-@@is05:
-    mov bl,0
+@@is03:               ; allocate AM register set
+@@is05:               ; allocate DMA register set
+    mov bl,0          ; 00 is returned, indicating that hardware AM/DMA register sets aren't supported
     jmp @@done
-@@is04:
-@@is06:
-@@is07:
-@@is08:
+@@is04:               ; deallocate AM register set
+@@is06:               ; enable DMA on AM register set
+@@is07:               ; disable DMA on AM register set
+@@is08:               ; deallocate DMA register set
+    mov ah,EMSS_ALT_MAPS_UNSUPP ;AM/DMA register sets not supported (bl must be 00)
     cmp bl,0
     jnz @@exit
 @@done:

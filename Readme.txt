@@ -118,8 +118,8 @@
             Usually it's better to let Jemm find a page frame on its own, 
             because choosing an address which is not free might cause troubles.
  I=mmmm-nnnn force Jemm to use a memory range for UMBs (or page frame).
-            <mmmm> must be >= A000. Specifying a range which is not really
-            free may give "unexpected" results.
+            <mmmm> must be >= A000. Specifying a range which is not
+            really free may give "unexpected" results.
  I=TEST     scan ROMs for unused address space. This option will regard any
             4 kB page containing identical byte values in read-only memory as
             "unused".
@@ -132,9 +132,10 @@
  MIN=nnn    preallocates <nnn> kB of XMS memory thus making sure this
             memory is truly available for EMS/VCPI. If MIN is higher than
             MAX, MAX will be adjusted accordingly. Default for <nnn> is 0.
- MOVEXBDA   move XBDA into UMB, thus increasing low DOS memory. If this option
-            causes a system "lock", use either MOVEXBDA.EXE or UMBPCI+UMBM
-            instead.
+ MOVEXBDA   move XBDA into UMB, thus increasing low DOS memory. This option
+            may cause a system "lock" because the XBDA might contain buffers
+            used for DMA operations. In such cases either use MOVEXBDA.EXE or
+            UMBPCI+UMBM instead.
  NOCHECK    disallows access via Int 15h, AH=87h to address regions which
             aren't backuped by RAM. As for Jemm386: be aware that some old 
             XMMs return wrong values for highest physical RAM - then this 
