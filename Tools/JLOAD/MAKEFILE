@@ -6,12 +6,13 @@
 # Assembler:    jwasm         MS masm
 # OMF linker:   jwlink        MS link16
 # COFF linker:  jwlink        -
-# helper        bin2inc       editpe
+# helper                      bin2inc
 
 # the 32-bit part of jwlink must be linked with base 0xF8400000;
 # this isn't possible with (all?) MS link versions!
 
-# bin2inc  translates binary files to assembly include files
+# bin2inc translates binary files to assembly include files.
+# It's source is supplied with JWasm.
 
 !ifndef DEBUG
 DEBUG = 0
@@ -56,12 +57,24 @@ $(OUTDIR)\$(NAME).EXE: $(OUTDIR)\$(NAME).obj MAKEFILE
 #	@link16.exe /MAP:FULL/NOE/NON/ONERROR:NOEXE $*.OBJ, $*.EXE, $*.MAP, $(LIBS);
 	@jwlink.exe format dos file $*.OBJ name $*.EXE op q,m=$*.MAP
 
+!if $(MASM)
+
 $(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).inc $(INC16)
 	@$(ASM) $(NAME).asm
 
 $(OUTDIR)\$(NAME32).INC: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
 	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start='_start@0'
-	@..\bin2inc.exe $*.bin $*.inc
+	@bin2inc.exe -q $*.bin $*.inc
+
+!else
+
+$(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).bin $(INC16)
+	@$(ASM) $(NAME).asm
+
+$(OUTDIR)\$(NAME32).bin: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
+	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start='_start@0'
+
+!endif
 
 $(OUTDIR)\$(NAME32).obj: $(NAME32).asm $(INC32) MAKEFILE
 	@$(ASM32) -Fl$(OUTDIR)\$(NAME32).LST -Fo$(OUTDIR)\$(NAME32).OBJ $(NAME32).asm
@@ -74,7 +87,8 @@ $(OUTDIR)\$(VXD4).obj: $(VXD4).asm $(INC32) MAKEFILE
 
 clean:
 	@del $(OUTDIR)\*.exe
+	@del $(OUTDIR)\*.inc
+	@del $(OUTDIR)\*.bin
 	@del $(OUTDIR)\*.obj
-	@del $(OUTDIR)\*.lib
 	@del $(OUTDIR)\*.lst
 	@del $(OUTDIR)\*.map

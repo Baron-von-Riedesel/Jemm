@@ -3,6 +3,9 @@
 
  IOTRAP is a JLM sample which demonstrates how to trap IO port access.
 
+ Note: This is somewhat obsolete now; trapping I/O port access in V86-mode
+ is now better done with the help of JLM QPIEMU.
+
 
  2. How to install and uninstall IOTRAP
 

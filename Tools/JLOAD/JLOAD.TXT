@@ -1,7 +1,7 @@
 
  1. About JLoad and JLMs
 
- JLoad is an extension for Jemm (both Jemm386 and JemmEx) which allows to
+  JLoad is an extension for Jemm (both Jemm386 and JemmEx) which allows to
  load 32bit flat protected-mode modules ( called "Jemm Loadable Module",
  JLM ) into Jemm's address space.
  
@@ -14,7 +14,7 @@
    be unloaded automatically after it has its job done.
  - emulate hardware by trapping I/O port access.
 
- A JLM is supposed to be loaded by JLoad, either as a device driver in
+  A JLM is supposed to be loaded by JLoad, either as a device driver in
  CONFIG.SYS, or from the command line. The syntax is:
 
  [DEVICE=]JLOAD.EXE [ options ] name_of_JLM [arguments for JLM]
@@ -24,20 +24,20 @@
    -q:  quiet mode.
    -u:  unload a JLM.
 
- To be able to unload a JLM, several conditions must be true. First, the
+  To be able to unload a JLM, several conditions must be true. First, the
  JLM must export a so-called DDB. Second, the DDB must contain a valid
  "Device Id". And third, the JLM must not refuse to be unloaded.
 
- Note: currently  the versions of Jemm and JLoad always must match, else
+  Note: currently  the versions of Jemm and JLoad always must match, else
  JLoad will refuse to do anything.
 
- A few JLMs (XDMA32, XCDROM32 and AHCICD) are included in the Jemm binary
+  A few JLMs (XDMA32, XCDROM32 and AHCICD) are included in the Jemm binary
  package. For more details see XDMA32.TXT, XCDROM32.TXT and AHCICD.TXT.
 
 
  2. Technical Details about JLMs
 
- JLMs must be non-segmented and linked as Win32 PE binaries. But despite the
+  JLMs must be non-segmented and linked as Win32 PE binaries. But despite the
  similiarities, JLMs should not be confused with such binaries. Some of the
  differences are:
 
@@ -45,10 +45,10 @@
  - there is no Win32 API (and also no DOS/DPMI API) available.
  - JLMs cannot be linked with Win32 import libraries.
 
- Because of the fundamental differences, JLMs should be linked with subsystem
+  Because of the fundamental differences, JLMs should be linked with subsystem
  "native". Thus they aren't recognised anymore as Win32 binaries.
 
- The only API JLMs can use directly is the one installed by JLoad, which more
+  The only API JLMs can use directly is the one installed by JLoad, which more
  or less is a small subset of the Windows 3x/9x VMM API. This API usually is
  invoked by an INT 20h opcode, followed by two words which determine the
  module and function to be called. The API also allows "nested execution",
@@ -56,7 +56,7 @@
  of the client's context. For details about what functions are implemented
  see files JLM.INC or JLM.H.
 
- There is a strong similiarity between JLMs and Windows 3x/9x VxDs, but there
+  There is a strong similiarity between JLMs and Windows 3x/9x VxDs, but there
  are also some major differences:
 
  - Jemm does not support Virtual Machines (VMs) currently.
@@ -66,7 +66,7 @@
  - JLMs run with interrupts disabled. If they do a lengthy operation or have
    to wait, they must "yield" to allow interrupts to be serviced.
 
- Note that the first invokation of JLoad will actually make JLoad resident
+  Note that the first invokation of JLoad will actually make JLoad resident
  in Jemm's address space. Further invokations will call the resident part.
  This is relevant if multiple versions of JLoad are used, for example both
  a release and a debug version.
@@ -74,7 +74,7 @@
 
  3. Documentation about JLoad's API
 
- A detailed documentation about the functions implemented by JLoad can be
+  A detailed documentation about the functions implemented by JLoad can be
  found in:
 
  - Win95 DDK, file VMM.HLP
@@ -82,9 +82,18 @@
  - Win2k DDK, file OTHER.CHM
 
 
- 4. Using 386SWAT
+ 4. Creating the Binaries
 
- Jemm is compatible with the 386SWAT ring 0 debugger. This debugger may also
+  JLoad.exe is a 16-bit binary. It contains a flat, zero-based 32-bit part
+ that is included as a binary object during assembly time. This complicates
+ the build process a bit. While the 32-bit part (JLoad32.bin) is generated,
+ the linker may emit warning "stack segment not found", which can safely be
+ ignored.
+
+
+ 5. Using 386SWAT
+
+  Jemm is compatible with the 386SWAT ring 0 debugger. This debugger may also
  be used to find bugs in JLMs. However, to catch the most common type of errors
  in protected-mode - GPFs - with 386SWAT, one has to tell 386SWAT which GPFs
  are "expected" and which are not. The following line in 386SWAT.PRO should do

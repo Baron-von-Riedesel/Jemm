@@ -221,7 +221,11 @@ _TEXT segment
 	align 4
 
 vmmcode label byte
+ifdef __JWASM__
+%	incbin <OUTD\JLoad32.bin>  
+else
 %	include OUTD\JLoad32.inc
+endif
 	align 4
         
 SIZEVMM equ $ - offset vmmcode
