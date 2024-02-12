@@ -1,7 +1,7 @@
 
  History
 
- __.__.2023: v5.84
+ __.__.2024: v5.84
 
  - fixed: Simulate_IO() no longer calls trap handler.
  - QPIEMU: new JLM that partly implements Qemm's API (QPI).

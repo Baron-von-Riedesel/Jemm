@@ -2,11 +2,10 @@
 # nmake makefile that creates JLOAD.EXE
 # tools used:
 #               default      alternate
-#----------------------------------------
-# Assembler:    jwasm         MS masm
-# OMF linker:   jwlink        MS link16
-# COFF linker:  jwlink        -
-# helper                      bin2inc
+#----------------------------------------------
+# Assembler:    jwasm        MS masm (+Bin2Inc)
+# OMF linker:   jwlink       MS link16
+# COFF linker:  jwlink       -
 
 # the 32-bit part of jwlink must be linked with base 0xF8400000;
 # this isn't possible with (all?) MS link versions!
@@ -87,7 +86,7 @@ $(OUTDIR)\$(VXD4).obj: $(VXD4).asm $(INC32) MAKEFILE
 
 clean:
 	@del $(OUTDIR)\*.exe
-	@del $(OUTDIR)\*.inc
+	@if exist $(OUTDIR)\*.inc del $(OUTDIR)\*.inc
 	@del $(OUTDIR)\*.bin
 	@del $(OUTDIR)\*.obj
 	@del $(OUTDIR)\*.lst

@@ -22,8 +22,9 @@
 #
 #  1. assemble the 32-bit assembly sources
 #  2. link 32-bit modules to Jemm32.bin (format is "raw").
-#  3. assemble the 16-bit assembly sources (Jemm32.bin will be included,
-#     either directly ( JWasm ) or indirectly via tool Bin2Inc ( Masm ).
+#  3. assemble the 16-bit assembly sources; Jemm32.bin will be included,
+#     either directly ( JWasm ) or indirectly via tool Bin2Inc ( Masm );
+#     Bin2Inc can be found in the JWasm package.
 #  4. link 16-bit modules (Jemm16.obj, Init16.obj) to Jemm386/JemmEx
 #
 # To enable (selective) debug displays, enter:

@@ -35,7 +35,16 @@
  package. For more details see XDMA32.TXT, XCDROM32.TXT and AHCICD.TXT.
 
 
- 2. Technical Details about JLMs
+ 2. Creating the Binaries
+
+  JLoad.exe is a 16-bit binary. It contains a flat, zero-based 32-bit part
+ that is included as a binary object during assembly time. While the 32-bit
+ part (JLoad32.bin) is generated, the linker may emit warning "stack segment
+ not found", which can safely be ignored. For details about the tools needed
+ for creating the binaries see file Makefile.
+
+
+ 3. Technical Details about JLMs
 
   JLMs must be non-segmented and linked as Win32 PE binaries. But despite the
  similiarities, JLMs should not be confused with such binaries. Some of the
@@ -71,27 +80,23 @@
  This is relevant if multiple versions of JLoad are used, for example both
  a release and a debug version.
 
-
- 3. Documentation about JLoad's API
-
-  A detailed documentation about the functions implemented by JLoad can be
- found in:
+  A detailed documentation about the Win3x/9x APIs that are partly implemented
+ by JLoad can be found in:
 
  - Win95 DDK, file VMM.HLP
  - Win98 DDK, file OTHER.CHM
  - Win2k DDK, file OTHER.CHM
 
 
- 4. Creating the Binaries
+ 4. Debugging JLMs
+ 
+ a) JemmDbg
 
-  JLoad.exe is a 16-bit binary. It contains a flat, zero-based 32-bit part
- that is included as a binary object during assembly time. This complicates
- the build process a bit. While the 32-bit part (JLoad32.bin) is generated,
- the linker may emit warning "stack segment not found", which can safely be
- ignored.
+  This is the easiest method to debug JLMs. This debugger has a simple line-
+ oriented interface. Once loaded, a breakpoint in protected-mode will activate
+ the debugger. It cannot debug applications running in v86-mode, though.
 
-
- 5. Using 386SWAT
+ b) 386SWAT
 
   Jemm is compatible with the 386SWAT ring 0 debugger. This debugger may also
  be used to find bugs in JLMs. However, to catch the most common type of errors
