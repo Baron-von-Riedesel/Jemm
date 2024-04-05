@@ -19,12 +19,44 @@ _DATA ends
 	option proc:private
 
 	include jemm.inc
-	include jemm32.inc
+	include jemm32.inc	; because of ?SYSLINEAR
 	include jlm.inc
 	include jload.inc
 	include debug.inc
-	include macros.inc
 	include winnt.inc
+
+;--- DStr() define a DOS string in CCONST
+
+DStr macro text:vararg
+local sym
+CCONST segment
+ ifidni <text>,<"">
+sym db '$'
+ else
+sym db text,'$'
+ endif
+CCONST ends
+	exitm <offset sym>
+endm
+
+CStr macro text:vararg
+local sym
+CCONST segment
+ ifidni <text>,<"">
+sym db 0
+ else
+sym db text,0
+ endif
+CCONST ends
+	exitm <offset sym>
+endm
+
+
+@tracejmp macro target
+if ?RMDBG
+	jmp target
+endif
+	endm
 
 ENVIRON 		equ 2Ch
 
@@ -232,7 +264,7 @@ SIZEVMM equ $ - offset vmmcode
 
 _IsJemmInstalled proc
 
-	@DbgOutS <"IsJemmInstalled enter",lf>,?RMDBG
+	@dprintf ?RMDBG,<"IsJemmInstalled enter",lf>
 	mov bx, -1
 	mov dx, offset sig1
 	mov ax, 3D00h
@@ -278,7 +310,7 @@ _IsJemmInstalled endp
 
 GetPgmParms proc
 
-	@DbgOutS <"GetPgmParms enter",lf>,?RMDBG
+	@dprintf ?RMDBG,<"GetPgmParms enter",lf>
 	lds si,[dwCmdLine]
 	sub cx,cx
 	mov ah,0
@@ -368,7 +400,7 @@ GetPgmParms endp
 
 GetLdrPath proc uses es si di
 
-	@DbgOutS <"GetLdrPath enter",lf>,?RMDBG
+	@dprintf ?RMDBG,<"GetLdrPath enter",lf>
 	cld
 	mov ah,51h
 	int 21h
@@ -403,7 +435,7 @@ GetLdrPath endp
 
 openfile proc uses si
 
-	@DbgOutS <"openfile enter",lf>,?RMDBG
+	@dprintf ?RMDBG,<"openfile enter",lf>
 
 	test [fMode], FMODE_LFN
 	jz nolfn
@@ -433,7 +465,7 @@ openfile endp
 
 ReadHdrs proc
 
-	@DbgOutS <"ReadHdrs enter",lf>,?RMDBG
+	@dprintf ?RMDBG,<"ReadHdrs enter",lf>
 
 	mov cx,0040h
 	mov dx,offset MZ_Hdr
@@ -464,35 +496,35 @@ ReadHdrs proc
 	jnz error6
 	cmp PE_Hdr.FileHeader.Machine, IMAGE_FILE_MACHINE_I386 
 	jnz error8
-	@DbgOutS <"ReadHdrs ok",lf>,?RMDBG
+	@dprintf ?RMDBG, <"ReadHdrs ok",lf>
 	clc
 	ret
 error4:
-	@DbgOutS <"offset to new header is zero",lf>,?RMDBG
+	@dprintf ?RMDBG, <"offset to new header is zero",lf>
 	@tracejmp @F
 error2:
-	@DbgOutS <"filesize less than 0x0040 Bytes",lf>,?RMDBG
+	@dprintf ?RMDBG, <"filesize less than 0x0040 Bytes",lf>
 	@tracejmp @F
 error5:
-	@DbgOutS <"lseek error",lf>,?RMDBG
+	@dprintf ?RMDBG, <"lseek error",lf>
 	@tracejmp @F
 error7:
-	@DbgOutS <"PE-Header size too small",lf>,?RMDBG
+	@dprintf ?RMDBG, <"PE-Header size too small",lf>
 	@tracejmp @F
 error8:
-	@DbgOutS <"not a 80386 binary",lf>,?RMDBG
+	@dprintf ?RMDBG, <"not a 80386 binary",lf>
 	@tracejmp @F
 error3:
-	@DbgOutS <"cannot find 'MZ' Header",lf>,?RMDBG
+	@dprintf ?RMDBG, <"cannot find 'MZ' Header",lf>
 	@tracejmp @F
 error6:
-	@DbgOutS <"PX not found",lf>,?RMDBG
+	@dprintf ?RMDBG, <"PX not found",lf>
 	@tracejmp @F
 error1:
-	@DbgOutS <"read error (MZ)",lf>,?RMDBG
+	@dprintf ?RMDBG, <"read error (MZ)",lf>
 	@tracejmp @F
 @@:
-	mov cx,CStr(<"' isn't a PX binary",cr,lf,'$'>)
+	mov cx,DStr("' isn't a PX binary",cr,lf)
 	stc
 	ret
 
@@ -614,15 +646,11 @@ errexp:
 
 ReadDDB endp
 
-;--- copy memory to/from extended memory
+;--- copy memory to/from extended memory using int 15h, ah=87h
 
 CopyExtMem proc stdcall uses si dwDst:DWORD, dwSrc:DWORD, wSize:WORD
 
-	@DbgOutS <"CopyExtMem dst=">,?RMDBG
-	@DbgOutD dwDst,?RMDBG
-	@DbgOutS <", src=">,?RMDBG
-	@DbgOutD dwSrc,?RMDBG
-	@DbgOutS <10>,?RMDBG
+	@dprintf ?RMDBG, <"CopyExtMem dst=%lX, src=%lX",10>, dwDst, dwSrc
 
 	mov si,offset i15tab
 	mov ax, word ptr [dwSrc+0]
@@ -639,7 +667,7 @@ CopyExtMem proc stdcall uses si dwDst:DWORD, dwSrc:DWORD, wSize:WORD
 	shr cx,1
 	mov ah,87h
 	int 15h
-	@DbgOutS <"CopyExtMem exit",lf>,?RMDBG
+	@dprintf ?RMDBG, <"CopyExtMem exit",lf>
 	ret
 CopyExtMem endp
 
@@ -664,7 +692,7 @@ GetLinear endp
 
 InitVMM proc uses di esi
 
-	@DbgOutS <"InitVMM enter",lf>,?RMDBG
+	@dprintf ?RMDBG, <"InitVMM enter",lf>
 
 	invoke  GetLinear, offset buffer
 	mov dwBuffer, eax
@@ -674,7 +702,7 @@ endif
 	mov ecx,cr3
 	invoke CopyExtMem, eax, ecx, 1000h	;copy page dir to buffer
 	jnc @F
-	mov dx,CStr(<"unable to read page directory",13,10,'$'>)
+	mov dx,DStr("unable to read page directory",13,10)
 	jmp error
 @@:
 	mov edx,dword ptr [buffer+(?SYSTEMADDR shr 20)]
@@ -682,7 +710,7 @@ endif
 	mov [dwPageTab],edx
 	cmp edx,0						;VMM installed already?
 	jnz exit
-	mov dx,CStr(<"no JLMs loaded",13,10,'$'>)
+	mov dx,DStr("no JLMs loaded",13,10)
 
 	test [vmms.wFlags],JLF_UNLOAD	;error if NO and "unload" mode
 	jnz error
@@ -691,7 +719,7 @@ endif
 	int 67h
 	and ah,ah
 	jz @F
-	mov dx,CStr(<"cannot allocate 4k page for page table",13,10,'$'>)
+	mov dx,DStr("cannot allocate 4k page for page table",13,10)
 	jmp error
 @@:
 	mov [dwPageTab],edx
@@ -701,7 +729,7 @@ endif
 	and ah,ah
 	jz @F
 scmemerr:
-	mov dx,CStr(<"cannot allocate 4k page for system code",13,10,'$'>)
+	mov dx,DStr("cannot allocate 4k page for system code",13,10)
 	jmp error
 @@:
 	mov [dwVmmPage],edx
@@ -718,7 +746,7 @@ endif
 
 	mov ecx,cr3 					;"write" updated page dir
 	invoke CopyExtMem, ecx, [dwBuffer], 1000h
-	mov dx,CStr(<"error setting content of page dir",13,10,'$'>)
+	mov dx,DStr("error setting content of page dir",13,10)
 	jc error
 
 ;--- clear (last) VMM page content
@@ -748,7 +776,7 @@ endif
 ;--- copy content of VMM page table to extended memory
 
 	invoke CopyExtMem, [dwPageTab], [dwBuffer], 1000h
-	mov dx,CStr(<"error setting content of system page table",13,10,'$'>)
+	mov dx,DStr("error setting content of system page table",13,10)
 	jc error
 
 ;--- copy VMM code to extended memory
@@ -763,7 +791,7 @@ else
 	invoke CopyExtMem, esi, eax, SIZEVMM-1000h
 endif
 exit:
-	@DbgOutS <"InitVMM ok",lf>,?RMDBG
+	@dprintf ?RMDBG, <"InitVMM ok",lf>
 	mov ax,1
 	ret
 error:
@@ -798,7 +826,7 @@ InitVMM endp
 
 RunVMM proc public
 
-	@DbgOutS <"RunVMM enter",lf>,?RMDBG
+	@dprintf ?RMDBG, <"RunVMM enter",lf>
 
 ;--- set (common) linear addresses in JLCOMM
 
@@ -814,7 +842,7 @@ RunVMM proc public
 	int 67h
 	and ah,ah
 	jz @F
-	mov dx,CStr(<"no memory for protected-mode stack",13,10,'$'>)
+	mov dx,DStr("no memory for protected-mode stack",13,10)
 	call errorout
 	xor ax,ax
 	ret
@@ -836,7 +864,7 @@ if ?CATCHEXC06
 	int 21h
 endif
 
-	@DbgOutS <"RunVMM: preparing switch to protected-mode",lf>,?RMDBG
+	@dprintf ?RMDBG, <"RunVMM: preparing switch to protected-mode",lf>
 if ?USEVCPIEXIT
 	mov di,offset buffer
 	mov si,offset vcpigdt
@@ -872,11 +900,11 @@ endif
 if ?CATCHEXC06
 	mov [spsaved],sp
 endif
-	@DbgOutS <"RunVMM: switch to protected-mode ...",lf>,?RMDBG
+	@dprintf ?RMDBG, <"RunVMM: switch to protected-mode ...",lf>
 	mov ax,0DE0Ch
 	int 67h
 	sti
-	@DbgOutS <"RunVMM: back in v86-mode",lf>,?RMDBG
+	@dprintf ?RMDBG, <"RunVMM: back in v86-mode",lf>
 
 ;--- returncode from JLM is stored in EDX
 	push edx
@@ -900,7 +928,7 @@ int06:
 	push cs
 	pop es
 	mov sp,[spsaved]
-	mov dx,CStr(<"exception occured in protected-mode",13,10,'$'>)
+	mov dx,DStr("exception occured in protected-mode",13,10)
 	call errorout
 	xor ax,ax
 	jmp error_occured
@@ -912,7 +940,7 @@ RunVMM endp
 
 errorout proc
 	push dx
-	mov dx, CStr(<"JLoad: ",'$'>)
+	mov dx,DStr("JLoad: ")
 	mov ah,9
 	int 21h
 	pop dx
@@ -938,7 +966,7 @@ done:
 dispstr endp
 
 errorXout2:
-	mov dx,CStr(<"'$">)
+	mov dx,DStr("'")
 
 ;--- display an error msg of format:
 ;--- JLoad: <dx><filename><cx>
@@ -958,12 +986,12 @@ errorXout endp
 
 LoadModule proc
 
-	@DbgOutS <"LoadModule enter",lf>,?RMDBG
+	@dprintf ?RMDBG, <"LoadModule enter",lf>
 
 	mov dx,offset szPgmName
 	call openfile
 	jnc @F
-	mov cx,CStr(<"' cannot be opened",13,10,'$'>)
+	mov cx,DStr("' cannot be opened",13,10)
 	call errorXout2
 	jmp exit
 @@:
@@ -976,13 +1004,13 @@ LoadModule proc
 @@:
 	test PE_Hdr.FileHeader.Characteristics, IMAGE_FILE_RELOCS_STRIPPED
 	jz @F
-	mov cx,CStr(<"' isn't relocatable",13,10,'$'>)
+	mov cx,DStr("' isn't relocatable",13,10)
 	call errorXout2
 	jmp exit
 @@:
 	cmp PE_Hdr.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT*sizeof IMAGE_DATA_DIRECTORY].VirtualAddress,0
 	jz @F
-	mov cx,CStr(<"' has references to external modules",13,10,'$'>)
+	mov cx,DStr("' has references to external modules",13,10)
 	call errorXout2
 	jmp exit
 @@:
@@ -1038,22 +1066,22 @@ endif
 @@:
 	.if ([vmms.wFlags] & JLF_UNLOAD)
 		.if (ax)
-			mov cx,CStr(<"' unloaded successfully.",13,10,'$'>)
+			mov cx,DStr("' unloaded successfully.",13,10)
 		.else
 			.if (cl == 2)
-				mov cx,CStr(<"' isn't loaded.",13,10,'$'>)
+				mov cx,DStr("' isn't loaded.",13,10)
 			.else
-				mov cx,CStr(<"' failed to unload.",13,10,'$'>)
+				mov cx,DStr("' failed to unload.",13,10)
 			.endif
 		.endif
 	.else
 		.if (ax)
-			mov cx,CStr(<"' loaded successfully.",13,10,'$'>)
+			mov cx,DStr("' loaded successfully.",13,10)
 		.else
 			.if (cl == 0B7h)
-				mov cx,CStr(<"' already loaded.",13,10,'$'>)
+				mov cx,DStr("' already loaded.",13,10)
 			.else
-				mov cx,CStr(<"' failed to load.",13,10,'$'>)
+				mov cx,DStr("' failed to load.",13,10)
 			.endif
 		.endif
 	.endif
@@ -1091,14 +1119,14 @@ main proc
 	xor ax,ax
 	cld
 	rep stosw
-	@DbgOutS <"JLoad main enter",lf>,?RMDBG
+	@dprintf ?RMDBG, <"JLoad main enter",lf>
 if 0
-	mov dx,CStr("JLoad full path: '$")
+	mov dx,DStr("JLoad full path: '")
 	mov ah,9
 	int 21h
 	push offset szLdrPath
 	call dispstr
-	mov dx,CStr(<"'",13,10,'$'>)
+	mov dx,DStr("'",13,10)
 	mov ah,9
 	int 21h
 endif
@@ -1131,7 +1159,7 @@ endif
 @@:
 	call _IsJemmInstalled
 	jnc @F
-	mov dx,CStr(<"Jemm not installed",13,10,'$'>)
+	mov dx,DStr("Jemm not installed",13,10)
 	call errorout
 	jmp exit
 @@:
@@ -1145,7 +1173,7 @@ endif
 	pop ax
 	cmp ax,?VERSIONHIGH + 256 * ?VERSIONLOW
 	jz @F
-	mov dx,CStr(<"versions of Jemm and JLoad don't match",13,10,'$'>)
+	mov dx,DStr("versions of Jemm and JLoad don't match",13,10)
 	call errorout
 	jmp exit
 @@:
@@ -1155,7 +1183,7 @@ endif
 	mov ax,4402h	;read ioctl
 	int 21h
 	jnc @F
-	mov dx,CStr(<"no support for protected mode API",13,10,'$'>)
+	mov dx,DStr("no support for protected mode API",13,10)
 	call errorout
 	jmp exit
 @@:
@@ -1163,7 +1191,7 @@ endif
 	mov eax,dword ptr [dfIDT+2]
 	cmp eax,dword ptr vmms.emx08.e08_IDTR+2
 	jz @F
-	mov dx,CStr(<"virtualized environment detected",13,10,'$'>)
+	mov dx,DStr("virtualized environment detected",13,10)
 	call errorout
 @@:
 	mov ax,0DEF0h		; 386SWAT?
@@ -1184,7 +1212,7 @@ exit:
 	cmp [wRet],0
 	setz al
 	mov ah,0
-	@DbgOutS <"JLoad main exit",lf>,?RMDBG
+	@dprintf ?RMDBG, <"JLoad main exit",lf>
 	pop cx
 	pop ss
 	mov sp,cx
@@ -1220,82 +1248,6 @@ NIBOUT:
 @@:
 	stosb
 	ret
-endif
-
-if ?RMDBG
-
-VPRINTSTR PROC
-	push bp
-	mov bp,sp
-	XCHG BX,[bp+2]
-	PUSHF
-	PUSH AX
-@@NEXTCHAR:
-	MOV AL,CS:[BX]
-	INC BX
-	CMP AL,0
-	JZ @@DONE
-	push bx
-	mov bx,0007h
-	cmp al,LF
-	jnz @@isnotlf
-	mov ax,0E0Dh
-	int 10h
-	mov al,LF
-@@isnotlf:
-	mov ah,0Eh
-	int 10h
-	pop bx
-	JMP @@NEXTCHAR
-@@DONE:
-	POP AX
-	POPF
-	XCHG BX,[bp+2]
-	pop bp
-	RET
-VPRINTSTR ENDP
-
-;--- display (d)word in (e)AX
-;--- preserves registers and flags
-
-VDWORDOUT proc near
-	push eax
-	shr eax,16
-	call VWORDOUT
-	pop eax
-VDWORDOUT endp
-VWORDOUT proc near
-	push ax
-	mov al,ah
-	call VBYTEOUT
-	pop ax
-VWORDOUT endp
-VBYTEOUT proc near
-	pushf
-	push ax
-	mov ah,al
-	shr al,4
-	call vnibout
-	mov al,ah
-	call vnibout
-	pop ax
-	popf
-	ret
-vnibout:
-	and al,0Fh
-	cmp al,10
-	sbb al,69H
-	das
-	push bx
-	push ax
-	mov bx,0007
-	mov ah,0Eh
-	int 10h
-	pop ax
-	pop bx
-	ret
-VBYTEOUT endp
-
 endif
 
 ;--- entry for driver
@@ -1355,6 +1307,10 @@ start:
 	mov ah,31h
 @@:
 	int 21h
+
+ifdef _DEBUG
+	include dprntf16.inc
+endif
 
 _TEXT ends
 

@@ -120,7 +120,7 @@ isapp:
 @@error:
 	xor eax,eax
 @@exit:
-	@DbgOutS <"start exit (returns to v86)",10>,?INITDBG
+	@dprintf ?INITDBG, <"start exit (returns to v86)",10>
 	mov edx, eax	;save returncode in edx
 	pop eax
 
@@ -147,7 +147,7 @@ SetDDB proc
 	movzx esi, [ecx].VMMS.pDDB
 	and esi, esi
 	jz exit
-	@DbgOutS <"SetDDB: calling VMM_Add_DDB",10>,?PEDBG
+	@dprintf ?PEDBG, <"SetDDB: calling VMM_Add_DDB",10>
 	mov eax, [ebx+3Ch]
 	add eax, ebx
 	mov eax,[eax].IMAGE_NT_HEADERS.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT*sizeof IMAGE_DATA_DIRECTORY].VirtualAddress
@@ -184,12 +184,12 @@ SearchJLM proc
 	call FindDevice
 	pop ecx
 	jc error2
-	@DbgOutS <"SearchJLM: device found",10>,?PEDBG
+	@dprintf ?PEDBG, <"SearchJLM: device found",10>
 	ret
 error2:
-	@DbgOutS <"SearchJLM: device not found",10>,?PEDBG
+	@dprintf ?PEDBG, <"SearchJLM: device not found",10>
 error:
-	@DbgOutS <"SearchJLM: no DDB",10>,?PEDBG
+	@dprintf ?PEDBG, <"SearchJLM: no DDB",10>
 	mov cx,2      ;not found
 	stc
 	ret
@@ -208,7 +208,7 @@ SearchJLM endp
 ;---    ESI=DDB
 
 LoadJLM proc
-	@DbgOutS <"LoadJLM enter",10>,?PEDBG
+	@dprintf ?PEDBG, <"LoadJLM enter",10>
 	pushad
 	call SearchJLM	;already loaded?
 	jnc error3
@@ -300,11 +300,11 @@ LoadJLM endp
 
 UnloadJLM proc
 	pushad
-	@DbgOutS <"UnloadJLM enter",10>,?PEDBG
+	@dprintf ?PEDBG, <"UnloadJLM enter",10>
 	mov edi,[edi+38h]
 	and edi,edi
 	jz @F
-	@DbgOutS <"UnloadJLM: calling VMM_Remove_DDB",10>,?PEDBG
+	@dprintf ?PEDBG, <"UnloadJLM: calling VMM_Remove_DDB",10>
 	call VMM_Remove_DDB
 @@:
 	mov edi,[esp].PUSHADS.rEDI
@@ -368,7 +368,7 @@ ReadFile endp
 
 DoFixups proc 
 
-	@DbgOutS <"DoFixups enter",10>,?INITDBG
+	@dprintf ?INITDBG, <"DoFixups enter",10>
 	pushad
 	mov edx,ebx
 	mov ebx,[esi].IMAGE_NT_HEADERS.OptionalHeader.ImageBase
@@ -414,7 +414,7 @@ nextblock:
 	ja nextblock
 done:
 	popad
-	@DbgOutS <"DoFixups exit",10>,?INITDBG
+	@dprintf ?INITDBG, <"DoFixups exit",10>
 	clc
 	ret
 	align 4
@@ -426,7 +426,7 @@ DoFixups endp
 
 FreeDiscardableSections proc 
 
-	@DbgOutS <"FreeDiscardableSections enter",10>,?INITDBG
+	@dprintf ?INITDBG, <"FreeDiscardableSections enter",10>
 	pushad
 	movzx ecx,[esi].IMAGE_NT_HEADERS.FileHeader.NumberOfSections
 	lea edi,[esi+size IMAGE_NT_HEADERS]
@@ -457,58 +457,13 @@ FreeDiscardableSections proc
 	loop @@nextitem
 @@done:
 	popad
-	@DbgOutS <"FreeDiscardableSections exit",10>,?INITDBG
+	@dprintf ?INITDBG, <"FreeDiscardableSections exit",10>
 	clc
 	ret
 	align 4
 FreeDiscardableSections endp
 
 if ?TRACE
-
-;--- display WORD
-
-VWORDOUT proc public
-	push eax
-	jmp VDW_2
-VWORDOUT endp
-
-;--- display DWORD
-
-VDWORDOUT proc public
-	push eax
-	mov ax,[esp+8+2]
-	call _wordout
-VDW_2::
-	mov ax,[esp+8+0]
-	call _wordout
-	pop eax
-	ret 4
-VDWORDOUT endp
-
-_wordout:
-	xchg al,ah
-	call VBYTEOUT
-	xchg al,ah
-VBYTEOUT proc
-	pushfd
-	push eax
-	mov ah,al
-	shr al,4
-	call VNIBOUT
-	mov al,ah
-	call VNIBOUT
-	pop eax
-	popfd
-	ret
-VBYTEOUT endp
-VNIBOUT proc
-	and al,0Fh
-	cmp al,10
-	sbb al,69H
-	das
-	jmp VPUTCHR
-	align 4
-VNIBOUT endp
 
 VPUTCHR PROC
 	push ds
@@ -603,23 +558,7 @@ endif
 
 VPUTCHR ENDP
 
-
-VPRINTSTR PROC public
-	XCHG EBX,[ESP]
-	PUSH EAX
-@@NEXTCHAR:
-	MOV AL,CS:[EBX]		; using CS prefix should always work here
-	INC EBX
-	CMP AL,0
-	JZ @@DONE
-	call VPUTCHR
-	JMP @@NEXTCHAR
-@@DONE:
-	POP EAX
-	XCHG EBX,[ESP]
-	RET
-	align 4
-VPRINTSTR endp
+	include dprintf.inc 
 
 endif
 

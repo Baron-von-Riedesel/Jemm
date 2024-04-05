@@ -279,7 +279,7 @@ if ?ROMRO
 
 PageFaultFF proc
 
-    @DbgOutS <"Write access to FF000",10>, ?V86DBG
+    @dprintf ?V86DBG, <"Write access to FF000",10>
     @GETPTEPTR ebx, ?PAGETAB0+0FFh*4, 1
     mov ecx, [ebx]  ;get PTE for FF000
     mov dword ptr [ebx], 0FF000h + 111B ;set the "original" PTE
@@ -312,7 +312,7 @@ endif
     pushad
     push ss
     pop ds
-    @DbgOutS <"After write access to FF000",10>, ?V86DBG
+    @dprintf ?V86DBG, <"After write access to FF000",10>
     mov ecx, [dwSavedRomPTE]
     @GETPTEPTR eax, ?PAGETAB0+0FFh*4, 1
     mov [eax],ecx
@@ -356,10 +356,7 @@ endif
 PrintString proc
     push esi
     push edi
-if 0
-    @DbgOutS <"PrintString",10>,1
-    @WaitKey 1,0
-endif
+;    @dprintf 1, <"PrintString",10>
 ife ?AUXOUT
     sub esp,size Client_Reg_Struc
     mov edi, esp
@@ -729,7 +726,7 @@ V86_Monitor PROC public
     @v86pushreg
 
 ;if ?V86DBG and ?V86XDBG
-;    @DbgOutS <".">,?V86DBG
+;    @dprintf ?V86DBG, <".">
 ;endif
 
 ;-- we don't know for sure what size the stack is.
@@ -1153,17 +1150,9 @@ if ?SB
 endif
 
 if ?EMUDBG
-    @DbgOutS <"Opcode ">,1
-    @DbgOutB AL,1
-    mov ah, [esi+1]
-    @DbgOutS <" ">,1
-    @DbgOutB AH,1
-    mov ah, [esi+2]
-    @DbgOutS <" ">,1
-    @DbgOutB AH,1
-    @DbgOutS <" caused GPF at ">,1
-    @DbgOutD esi,1
-    @DbgOutS <10>,1
+    push eax
+    @dprintf ?EMUDBG, <"Opcode %X %X %X caused GPF at %X",10>, byte ptr [esi], byte ptr [esi+1], byte ptr [esi+2], esi
+    pop eax
 endif
 
     cmp al,0Fh                  ; check if potentially mov <reg>,cr#
@@ -1652,13 +1641,13 @@ MoveMemoryPhys proc public
     mov eax, esi
     and esi, 0FFFh
     call MapPhysPages
+
 if ?PHYSDBG
-    @DbgOutS <"MoveMemoryPhys: ">, 1
-    @DbgOutB ch, 1
-    @DbgOutS <" pages (src) mapped at ">, 1
-    @DbgOutD eax, 1
-    @DbgOutS <10>, 1
+    push eax
+    @dprintf ?PHYSDBG, <"MoveMemoryPhys: %X pages (src) mapped at %X",10>, ch, eax
+    pop eax
 endif
+
     add esi, eax
     mov cl, ch
 @@src_is_shared:
@@ -1668,11 +1657,9 @@ endif
     and edi, 0FFFh
     call MapPhysPages
 if ?PHYSDBG
-    @DbgOutS <"MoveMemoryPhys: ">, 1
-    @DbgOutB ch, 1
-    @DbgOutS <" pages (dst) mapped at ">, 1
-    @DbgOutD eax, 1
-    @DbgOutS <10>, 1
+    push eax
+    @dprintf ?PHYSDBG, <"MoveMemoryPhys: %X pages (dst) mapped at %X",10>, ch, eax
+    pop eax
 endif
     add edi, eax
 @@dst_is_shared:
@@ -1771,17 +1758,7 @@ if ?XMS35COMPAT
 
 MapPhysPagesPSE proc uses ecx
 
-if ?I15DBG or ?MAPDBG
-    @DbgOutS <"MapPhysPagesPSE, ax::esi=">,1
-    @DbgOutW ax,1
-    @DbgOutD esi,1
-    @DbgOutS <", dx::edi=">,1
-    @DbgOutW dx,1
-    @DbgOutD edi,1
-    @DbgOutS <", ecx=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?I15DBG or ?MAPDBG, <"MapPhysPagesPSE, ax::esi=%X%08X, dx::edi=%X:%08X, ecx=%X",10>,ax,esi,dx,edi,ecx
 	mov ecx, esi
 	cmp ax,0
 	jnz @F
@@ -1838,13 +1815,7 @@ donesrc:
 	.386p
 	lea ebx,[ebx+2*4]
 donedst:
-if ?I15DBG or ?MAPDBG
-    @DbgOutS <"MapPhysPagesPSE, esi=">,1
-    @DbgOutD esi,1
-    @DbgOutS <", edi=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>, 1
-endif
+    @dprintf ?I15DBG or ?MAPDBG,<"MapPhysPagesPSE, esi=%X, edi=%X",10>, esi, edi
 	ret
 	align 4
 MapPhysPagesPSE endp
@@ -1856,17 +1827,7 @@ MapPhysPagesPSE endp
 ;--- the dst region is mapped at C00000h+x
 
 MoveMemoryPhysEx proc public
-if ?I15DBG or ?MAPDBG
-    @DbgOutS <"MoveMemoryPhysEx, ax::esi=">,1
-    @DbgOutW ax,1
-    @DbgOutD esi,1
-    @DbgOutS <", dx::edi=">,1
-    @DbgOutW dx,1
-    @DbgOutD edi,1
-    @DbgOutS <", ecx=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>, 1
-endif
+    @dprintf ?I15DBG or ?MAPDBG, <"MoveMemoryPhysEx, ax::esi=%X%08X, dx::edi=%X%08X, ecx=%X",10>,ax,esi,dx,edi,ecx
 	.586p
 	mov ebx,cr4
 	bts ebx,4
@@ -2192,9 +2153,7 @@ if ?A20PORTS
 @@isa20:
     cmp al,2
     jnb @@v86mon
-    @DbgOutS <"Int 15h, ax=">,?A20DBG
-    @DbgOutW ax,?A20DBG
-    @DbgOutS <" called",10>,?A20DBG
+    @dprintf ?A20DBG, <"Int 15h, ax=%X called",10>, ax
  if 0
     call A20_Set ;al=0|1
     mov ah,0
@@ -2286,21 +2245,9 @@ if ?FREEXMS
     call Pool_FreeAllBlocks
 endif
 
-if ?UNLDBG
-    @DbgOutS <"Reset, v86CS:EIP=">,1
-    mov eax, [ebp].Client_Reg_Struc.Client_CS
-    @DbgOutW ax,1
-    @DbgOutS <":">,1
-    mov eax, [ebp].Client_Reg_Struc.Client_EIP
-    @DbgOutD eax,1
-    @DbgOutS <", v86SS:ESP=">,1
-    mov eax, [ebp].Client_Reg_Struc.Client_SS
-    @DbgOutW ax,1
-    @DbgOutS <":">,1
-    mov eax, [ebp].Client_Reg_Struc.Client_ESP
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?UNLDBG, <"Reset, v86CS:EIP=%X:%X, v86SS:ESP=%X:%X",10>,\
+        [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP,\
+        [ebp].Client_Reg_Struc.Client_SS, [ebp].Client_Reg_Struc.Client_ESP
 
 ;--- set base of REAL_CODE_SEL and REAL_DATA_SEL
 ;--- to the current v86 CS/SS
@@ -2391,9 +2338,7 @@ restorevecs proc
     mov esi, [pSavedVecs]
     push ds
     pop es
-if ?RBTDBG
-    @DbgOutS <"restoring vectors 00-1F, 40-5F, 68-77",10>,1
-endif
+    @dprintf ?RBTDBG, <"restoring vectors 00-1F, 40-5F, 68-77",10>
     mov ecx, 20h
     rep movsd           ;set 00-1F
     add edi, 20h*4
@@ -2419,13 +2364,7 @@ endif
     mov edx, [dwRSeg]
     shl edx, 16
     mov dl, [bBpTab]    ;use the first BP for returning to the monitor
-if ?RBTDBG    
-    @DbgOutS <"vector 19h saved by DOS=">,1
-    @DbgOutD eax,1
-    @DbgOutS <", temp vector=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?RBTDBG,<"vector 19h saved by DOS=%X, temp vector=%X",10>, eax, edx
     mov [OldInt19],eax  ;save the vector stored by DOS
     mov [esi-4],edx
 
@@ -2440,9 +2379,7 @@ if 0;?MOVEXBDA ;restoring the XBDA should be done by DOS (MS-DOS does)
     shl edi, 6
     mov ds:[@XBDA],di
     shl edi, 4
-    @DbgOutS <"restore XBDA to ">,?RBTDBG
-    @DbgOutW di,?RBTDBG
-    @DbgOutS <10>,?RBTDBG
+    @dprintf ?RBTDBG, <"restore XBDA to %X",10>, di
     mov ecx, eax
     shl ecx,8
     rep movsd
@@ -2466,7 +2403,7 @@ restorevecs endp
 
 fastboot proc
 
-    @DbgOutS <"fastboot reached",10>,?RBTDBG    
+    @dprintf ?RBTDBG,<"fastboot reached",10>
 
     mov al,0Bh
     out 20h,al
@@ -2481,12 +2418,12 @@ fastboot proc
 
     call Begin_Nest_Exec
 if 1
-    @DbgOutS <"resetting PS/2 mouse",10>,?RBTDBG
+    @dprintf ?RBTDBG, <"resetting PS/2 mouse",10>
     mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 0C201h  ;reset PS/2 mouse
     mov eax,15h
     call Exec_Int
 endif
-    @DbgOutS <"calling restorevecs",10>,?RBTDBG
+    @dprintf ?RBTDBG, <"calling restorevecs",10>
     call restorevecs
     jc Reboot_2
 
@@ -2505,7 +2442,7 @@ endif
 ;--- since the int 19h value saved by DOS has been modified by Jemm,
 ;--- execution will reach fastboot_1 at last.
 
-    @DbgOutS <"launching Int 19h",10>,?RBTDBG
+    @dprintf ?RBTDBG, <"launching Int 19h",10>
 
 ;--- it's bptable.pInt06 that has to be modified -
 ;--- because that's the FIRST breakpoint ( see restorevecs ).
@@ -2517,7 +2454,7 @@ fastboot_1:
 ;--- now DOS has restored its vectors
 ;--- restore the previously modified int 19h vector
 
-    @DbgOutS <"reached fastboot_1",10>,?RBTDBG
+    @dprintf ?RBTDBG, <"reached fastboot_1",10>
     mov eax,[OldInt19]
     mov ds:[19h*4],eax
 if 0
@@ -2555,13 +2492,10 @@ if ?RBTDBG
     xor ebx,ebx
 nextitem:
     lodsd
-    @DbgOutB bl,1
-    @DbgOutS <": ">,1
-    @DbgOutD eax, 1
-    @DbgOutS <"        ">,1
+    @dprintf ?RBTDBG,<"%X: %X        ">, bl, eax
     test cl,1
     jz @F
-    @DbgOutS <10>,1
+    @dprintf ?RBTDBG,<10>
 @@:
     inc ebx
     loop nextitem
@@ -2581,7 +2515,7 @@ Int19_V86Entry:
 
 Reboot proc
 
-    @DbgOutS <"Reboot enter",10>,?RBTDBG    
+    @dprintf ?RBTDBG,<"Reboot enter",10>
 
 if ?FASTBOOT
     test [bV86Flags], V86F_FASTBOOT
@@ -2596,11 +2530,7 @@ endif
     out 64h,al	;should reboot
 
 Reboot_1::
-    @DbgOutS <"Reboot_1 reached, int 19=">,?RBTDBG    
-    @DbgOutD ds:[19h*4],?RBTDBG
-    @DbgOutS <" XBDA segment=">,?RBTDBG
-    @DbgOutW ds:[@XBDA],?RBTDBG
-    @DbgOutS <10>,?RBTDBG    
+    @dprintf ?RBTDBG, <"Reboot_1 reached, int 19=%X, XBDA segment=%X",10>, dword ptr ds:[19h*4], word ptr ds:[@XBDA]
 
     MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
 

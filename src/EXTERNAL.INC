@@ -114,11 +114,7 @@ if ?I41SUPP
 externdef Int41_Entry:near
 endif
 
-externdef VPRINTSTR:near
 externdef VPUTCHR:near
-externdef VDWORDOUT:near
-externdef VWORDOUT:near
-externdef VBYTEOUT:near
 
 ;--- EMS/VCPI publics
 

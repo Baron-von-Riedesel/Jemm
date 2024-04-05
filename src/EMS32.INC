@@ -101,11 +101,7 @@ allocate_pages_plus_zero::  ;this entry allows to alloc zero pages!
     MOV     AH,EMSS_OK
     RET
 @@nofind:
-if ?POOLDBG
-    @DbgOutS <"EMS_ALLOCATE_PAGES: @@nofind reached, BX=">,1
-    @DbgOutW bx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"EMS_ALLOCATE_PAGES: @@nofind reached, BX=%X",10>, bx
     call EMS_DEALLOCATE_PAGES       ;free the handle in DX  
     MOV AH,EMSS_OUT_OF_FREE_PAGES   ; "Not enough pages available anymore"
     ret

@@ -998,31 +998,13 @@ xmscall proc stdcall uses si function:BYTE
 	mov ebx,[si].REGS._ebx
 	mov edx,[si].REGS._edx
 	mov ah, function
-if ?XMSRMDBG
-	@DbgOutS <"xms call: ax=">,1
-	@DbgOutW ax,1
-	@DbgOutS <" ebx=">,1
-	@DbgOutD ebx,1
-	@DbgOutS <" edx=">,1
-	@DbgOutD edx,1
-	@DbgOutS <10>,1
-endif
+	@dprintf ?XMSRMDBG, <"xms call: ax=%X ebx=%lX edx=%lX",10>, ax, ebx, edx
 	call [XMSdriverAddress]
 	mov [si].REGS._eax,eax
 	mov [si].REGS._ebx,ebx
 	mov [si].REGS._ecx,ecx
 	mov [si].REGS._edx,edx
-if ?XMSRMDBG
-	@DbgOutS <"xms ret : ax=">,1
-	@DbgOutW ax,1
-	@DbgOutS <" ebx=">,1
-	@DbgOutD ebx,1
-	@DbgOutS <" ecx=">,1
-	@DbgOutD ecx,1
-	@DbgOutS <" edx=">,1
-	@DbgOutD edx,1
-	@DbgOutS <10>,1
-endif
+	@dprintf ?XMSRMDBG, <"xms ret : ax=%X ebx=%lX ecx=%lX edx=%lX",10>, ax, edx, ecx, edx
 	ret
 xmscall endp
 
@@ -1075,9 +1057,7 @@ local xmshandle:word
 	.if ax
 		mov ax, dx
 	.endif
-	@DbgOutS <"XMSAllocMemory: exit, ax=">,?INITRMDBG
-	@DbgOutW ax,?INITRMDBG
-	@DbgOutS <13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"XMSAllocMemory: exit, ax=%X",10>, ax
 	ret
 
 XMSAllocMemory ENDP
@@ -1086,7 +1066,7 @@ endif
 
 I15CheckRsvdRegion proc uses si di
 local mmap:E820MAP
-	@DbgOutS <"I15CheckRsvdRegion: enter",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG,<"I15CheckRsvdRegion: enter",10>
 	xor ebx,ebx
 	lea di,mmap
 nextitem:
@@ -1153,7 +1133,7 @@ ife ?XMS35
 	jne @@e801_check
 endif
 
-	@DbgOutS <"I15GetMemoryStatus: get extended memory with int 15, E820",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG,<"I15GetMemoryStatus: get extended memory with int 15, E820",10>
 
 ;--- try 0e820h first
 
@@ -1201,10 +1181,7 @@ if ?XMS35
 	test eax, xms_maxhigh	;block start beyond 4GB/1TB?
 	jnz e820_itemdone
 endif
-	@DbgOutS <"I15GetMemoryStatus: available memory found at ">,?INITRMDBG
-	@DbgOutD eax,?INITRMDBG
-	@DbgOutD edx,?INITRMDBG
-	@DbgOutS <13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: available memory found at %lX%08lX",10>, eax, edx
 	mov ecx, mmap.lenlow
 if ?XMS35
 	shrd edx, eax, 10
@@ -1247,7 +1224,7 @@ e820_done:
 	cmp [bNoE801],0 ;NOE801 option set?
 	jne @@try_88h
 
-	@DbgOutS <"I15GetMemoryStatus: get extended memory with int 15, E801",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG,<"I15GetMemoryStatus: get extended memory with int 15, E801",10>
 
 	xor ax,ax
 	mov bx,ax
@@ -1279,7 +1256,7 @@ e820_done:
 @@try_88h:
 ;--- e801h didn't do the trick, fall back to old 88h with 64M max
 
-	@DbgOutS <"I15GetMemoryStatus: get extended memory with int 15, 88",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: get extended memory with int 15, 88",10>
 
 	clc
 	mov ah,88h
@@ -1292,9 +1269,7 @@ e820_done:
 	mov edx, 1024
 	call I15SetHandle		; set xms block, sizeK in ECX, baseK in EDX
 _ret:
-	@DbgOutS <"I15GetMemoryStatus: exit, xms_mem_free=">,?INITRMDBG
-	@DbgOutD xms_mem_free,?INITRMDBG
-	@DbgOutS <13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: exit, xms_mem_free=%lX",10>, xms_mem_free
 	ret
 I15GetMemoryStatus endp
 
@@ -1624,7 +1599,7 @@ local ulcalc:dword
 local PotentialEmsVcpiMemory:dword
 local dwMinOriginal:dword
 
-	@DbgOutS <"AllocAndInitMem: enter",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"AllocAndInitMem: enter",10>
 	mov eax, jemmini.MinMem16k
 	mov dwMinOriginal, eax
 
@@ -1902,11 +1877,7 @@ else
 endif
 
 	mov ax,1
-	@DbgOutS <"AllocAndInitMem: exit, MonitorStart=">,?INITRMDBG
-	@DbgOutD jemmini.MonitorStart,?INITRMDBG
-	@DbgOutS <", MaxPhysMem=">,?INITRMDBG
-	@DbgOutD jemmini.MaxPhysMem,?INITRMDBG
-	@DbgOutS <13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"AllocAndInitMem: exit, MonitorStart=%lX, MaxPhysMem=%lX",10>, jemmini.MonitorStart,?INITRMDBG, jemmini.MaxPhysMem
 	ret
 
 AllocAndInitMem ENDP
@@ -1937,7 +1908,7 @@ NotInstalled endp
 ;--- check if there's an installed Jemm386/JemmEx monitor program
 
 IsJemmInstalled proc c
-	@DbgOutS <"IsJemmInstalled enter",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"IsJemmInstalled enter",10>
 	mov dx, offset sig1
 	mov ax, 3D00h
 	int 21h
@@ -1947,7 +1918,7 @@ IsJemmInstalled proc c
 	int 21h
 	jc @@nojemm1
 @@:
-	@DbgOutS <"EMM device found",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EMM device found",10>
 	mov bx,ax
 	xor ax,ax
 	push ax
@@ -1964,11 +1935,11 @@ IsJemmInstalled proc c
 	cmp ax,0028h	;this is JEMM!
 	jnz @@nojemm2
 	mov ax,bx		;return the file handle
-	@DbgOutS <"Jemm found",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"Jemm found",10>
 	clc
 	ret
 @@nojemm2:
-	@DbgOutS <"Jemm not found",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"Jemm not found",10>
 	mov ah,3Eh
 	int 21h
 @@nojemm1:
@@ -1994,7 +1965,7 @@ endif
 	jc @@nojemm
 	mov bx, ax		;EMMXXXX0 handle
 	mov handle,ax
-	@DbgOutS <"TryUnload, Jemm installed",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, Jemm installed",10>
 	mov byte ptr resparm,EMMDEV_GETRES	;get resident segment
 	lea dx,resparm
 	mov cx,sizeof resparm	;returns 2 words
@@ -2009,7 +1980,7 @@ endif
 	invoke CheckIntHooks, resparm[0]
 	jc @@nouninst
 
-	@DbgOutS <"TryUnload, no stolen ints detected",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, no stolen ints detected",10>
 
 ;--- check if any UMB is allocated
 
@@ -2020,7 +1991,7 @@ endif
 	mov ax,4402h	;read ioctl
 	int 21h
 	jc @@nouninst
-	@DbgOutS <"TryUnload, got UMBs from Jemm",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, got UMBs from Jemm",10>
 	xor dx,dx
 	mov cx,UMB_MAX_BLOCKS
 	mov si,sp
@@ -2032,7 +2003,7 @@ endif
 	mov sp,si
 	test dh,80h 	;any umb allocated?
 	jnz @@nouninst
-	@DbgOutS <"TryUnload, no allocated UMBs",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, no allocated UMBs",10>
 
 ;-- close EMMXXXX0 handle
 
@@ -2047,7 +2018,7 @@ if ?INTEGRATED
 	les si, XMSdriverAddress
 	cmp byte ptr es:[si],0EBh	;anyone hooked into XMS?
 	jnz @@nouninst
-	@DbgOutS <"TryUnload, no XMS hookers detected",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, no XMS hookers detected",10>
 
 ;-- check if any XMS memory is in use
 
@@ -2068,7 +2039,7 @@ nextitem:
 @@xmsused:
 	pop ds
 	jz @@nouninst
-	@DbgOutS <"TryUnload, no EMBs are used",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, no EMBs are used",10>
 endif
 
 ;-- check if any EMS/VCPI memory is in use
@@ -2077,7 +2048,7 @@ endif
 	int 67h
 	cmp bx,01h		;any handle > 0000 allocated?
 	ja @@nouninst
-	@DbgOutS <"TryUnload, no EMS handles are used",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, no EMS handles are used",10>
 
 ;-- todo: check VCPI
 
@@ -2086,6 +2057,7 @@ endif
 	mov ax,resparm[0]		;get current Emm386 segment 
 	call UnloadJemm			;this will destroy contents of si and di
 	jc @@nouninst
+
 ife ?INTEGRATED
 	mov dx,ax
 	mov ah, XMS_UNLOCKEMB	;unlock block
@@ -2150,7 +2122,7 @@ endif
 	mov ax,4402h	;read ioctl
 	int 21h
 	jc done
-	@DbgOutS <"EmmStatus: read ioctl(6) ok",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EmmStatus: read ioctl(6) ok",10>
 
 	mov di, ax
 	lea si, [buff]
@@ -2229,7 +2201,7 @@ endif
 	mov ax,4402h	;read ioctl
 	int 21h
 	jc done
-	@DbgOutS <"EmmStatus: read ioctl(7) ok",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EmmStatus: read ioctl(7) ok",10>
 
 	lea si,[buff]
 	mov cx, UMB_MAX_BLOCKS
@@ -2260,7 +2232,7 @@ done:
 @@:
 	ret
 jemm_not_found:
-	@DbgOutS <"EmmStatus: Jemm not found",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EmmStatus: Jemm not found",10>
 	call NotInstalled
 	jmp done
 EmmStatus endp
@@ -2276,7 +2248,7 @@ EmmUpdate proc c uses di
 
 local buff:CMD15
 
-	@DbgOutS <"EmmUpdate enter",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EmmUpdate enter",10>
 	xor di,di
 	invoke IsJemmInstalled
 	jnc @F
@@ -2314,13 +2286,13 @@ endif
 	mov ax,4403h	;write ioctl
 	int 21h
 	jc @F
-	@DbgOutS <"EmmUpdate: write ioctl(15) ok",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EmmUpdate: write ioctl(15) ok",10>
 	inc di
 @@:
 	mov ah,3Eh	;close EMMXXXX0 handle
 	int 21h
 @@exit:
-	@DbgOutS <"EmmUpdate exit",10>,?EMXRMDBG
+	@dprintf ?EMXRMDBG, <"EmmUpdate exit",10>
 	mov ax,di
 	ret
 EmmUpdate endp
@@ -2547,14 +2519,12 @@ if ?INITRMDBG
 ;-- display XBDA size in kB
 
 disp_xbda_size proc uses es bx
-	@DbgOutS <"XBDA size=">,1
 	push 0
 	pop es
 	mov bx,es:[@XBDA]
 	mov es,bx
 	movzx ax,byte ptr es:[0]
-	@DbgOutW ax,1
-	@DbgOutS <13,10>,1
+	@dprintf ?INITRMDBG, <"XBDA size=%X",10>, ax
 	ret
 disp_xbda_size endp
 endif
@@ -3208,6 +3178,7 @@ if ?INITRMDBG
  endif
 endif
 
+	mov si, mode
 	invoke InitJemm
 	.if bVerbose
 		invoke printf, CStr("Physical start address of EMS pages: %lX", LF), eax

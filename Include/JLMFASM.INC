@@ -194,10 +194,10 @@ VDMAD_Service VDMAD_Copy_From_Buffer    ;new v5.69
 ;--- CB_Client_Pointer will always contain a valid pointer.
 
 struct cb_s
-CB_VM_Status        DD  ?
-CB_High_Linear      DD  ?
-CB_Client_Pointer   DD  ?
-CB_VMID             DD  ?
+  CB_VM_Status        DD  ?
+  CB_High_Linear      DD  ?
+  CB_Client_Pointer   DD  ?
+  CB_VMID             DD  ?
 ends
 
 if 0

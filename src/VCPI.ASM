@@ -341,21 +341,8 @@ VCPI_SetMappings ENDP
 
 VCPI_V86toPM    PROC public
 
-if ?VCPIXDBG
-    @DbgOutS <"VCPI rm, ax=DE0C, esi=">,1
-    @DbgOutD esi,1
-    @DbgOutS <" cr3=">,1
-    @DbgOutD dword ptr [esi].V862PM.swCR3
-;    @DbgOutS <" linad IDT=">,1
-;    @DbgOutD dword ptr [esi].V862PM.swIDTOFFS
-;    @DbgOutS <" linad GDT=">,1
-;    @DbgOutD dword ptr [esi].V862PM.swGDTOFFS
-    @DbgOutS <" cs:eip=">,1
-    @DbgOutW word ptr [esi].V862PM.swCSEIP+4
-    @DbgOutS <":">,1
-    @DbgOutD dword ptr [esi].V862PM.swCSEIP
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VCPIXDBG, <"VCPI rm, ax=DE0C, esi=%X cr3=%X cs:eip=%X:%X",10>, esi, dword ptr [esi].V862PM.swCR3,\
+        word ptr [esi].V862PM.swCSEIP+4, dword ptr [esi].V862PM.swCSEIP
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX   ;restore client value
     mov ebp,[ebp].Client_Reg_Struc.Client_EBP   ;restore client value
 if ?VCPITMPSS
@@ -449,16 +436,8 @@ if ?VCPIXDBG
     mov eax,FLAT_DATA_SEL
     mov ss,eax
     mov esp,dwStackCurr
-    @DbgOutS <"VCPI pm, ax=DE0C">,1
-    @DbgOutS <", rm cs:eip=">,1
-    @DbgOutW word ptr dbgv.vCS,1
-    @DbgOutS <":">,1
-    @DbgOutD dbgv.vEIP,1
-    @DbgOutS <", rm ss:esp=">,1
-    @DbgOutW word ptr dbgv.vSS,1
-    @DbgOutS <":">,1
-    @DbgOutD dbgv.vESP,1
-    @DbgOutS <10>,1
+    @dprintf ?VCPIXDBG, <"VCPI pm, ax=DE0C, rm cs:eip=%X:%X, rm ss:esp=%X:%X", 10>,
+        word ptr dbgv.vCS, dbgv.vEIP, word ptr dbgv.vSS, dbgv.vESP
     mov esp, offset dbgv
 endif
     iretd
@@ -507,9 +486,12 @@ VCPI_PM_Entry PROC
     mov esi, esp
     mov edi, cr3
     mov ebx, [V86CR3]
+;--- this sequence cannot be traced, since the new stack is valid only
+;--- after CR3 has been set - and the old stack isn't valid with the new CR3.
     mov ss, ecx         ;this move must be before CR3 is switched
-    mov esp, [dwStackCurr]  ;problems with 386SWAT?
+    mov esp, [dwStackCurr]
     mov cr3, ebx
+
     push ebp            ;save client's SS
     push esi            ;save client's ESP
     push edi            ;save client's CR3
@@ -546,15 +528,7 @@ endif
     call [VCPI_Call_Table+ECX*4]
 if ?VCPIDBG
     mov ebp,esp
-    @DbgOutS <"VCPI pm, inp: ax=">,1
-    @DbgOutW <word ptr [ebp+4]>,1
-    @DbgOutS <" edx=">,1
-    @DbgOutD <dword ptr [ebp+0]>,1
-    @DbgOutS <", out: ax=">,1
-    @DbgOutW ax,1
-    @DbgOutS <" edx=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
+    @dprintf ?VCPIDBG, <"VCPI pm, inp: ax=%X edx=%X, out: ax=%X edx=%X",10>, word ptr [ebp+4], dword ptr [ebp+0], ax, edx
     add esp,8
 endif
 
@@ -582,11 +556,7 @@ endif
     retf
 
 @@INV_CALL:
-if ?VCPIDBG
-    @DbgOutS <"VCPI pm, invalid call ax=">,1
-    @DbgOutW ax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VCPIDBG, <"VCPI pm, invalid call ax=%X",10>, ax
     mov ah,EMSS_INVALID_SUBFUNC
     retf
 

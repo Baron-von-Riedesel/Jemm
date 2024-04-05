@@ -476,6 +476,10 @@
      of conventional memory BELOW the XBDA. In this case conventional memory
      cannot be increased anymore, even if the XBDA is moved.
 
+ þ The 386SWAT debugger isn't fully compatible with Jemm. It can't "intrude"
+   because for that it expects the XMS memory that the debugger uses is mapped
+   into linear address space. Jemm only maps the physical memory that it needs.
+
 
  8. License
 

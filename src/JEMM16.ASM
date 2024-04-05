@@ -349,80 +349,7 @@ endif
 
 if ?RMDBG
 
-;--- print a string in real-mode (for debugging)
-;--- preserves registers and flags
-
-VPRINTSTR PROC PUBLIC
-	push bp
-	mov bp,sp
-	XCHG BX,[bp+2]
-	PUSHF
-	PUSH AX
-@@NEXTCHAR:
-	MOV AL,CS:[BX]
-	INC BX
-	CMP AL,0
-	JZ @@DONE
-	push bx
-	mov bx,0007h
-	cmp al,LF
-	jnz @F
-	mov ax,0E0Dh
-	int 10h
-	mov al,LF
-@@:
-	mov ah,0Eh
-	int 10h
-	pop bx
-	JMP @@NEXTCHAR
-@@DONE:
-	POP AX
-	POPF
-	XCHG BX,[bp+2]
-	pop bp
-	RET
-VPRINTSTR ENDP
-
-;--- display word in AX
-;--- preserves registers and flags
-
-VDWORDOUT proc public
-	push eax
-	shr eax,16
-	call VWORDOUT
-	pop eax
-VDWORDOUT endp
-VWORDOUT proc public
-	push ax
-	mov al,ah
-	call VBYTEOUT
-	pop ax
-VWORDOUT endp
-VBYTEOUT proc public
-	pushf
-	push ax
-	mov ah,al
-	shr al,4
-	call vnibout
-	mov al,ah
-	call vnibout
-	pop ax
-	popf
-	ret
-vnibout:
-	and al,0Fh
-	cmp al,10
-	sbb al,69H
-	das
-	push bx
-	push ax
-	mov bx,0007
-	mov ah,0Eh
-	int 10h
-	pop ax
-	pop bx
-	ret
-VBYTEOUT endp
+	include dprntf16.inc
 
 endif
 
@@ -430,11 +357,11 @@ if ?INTEGRATED
 
 	align 2
 
-if ?BUFFERED	;buffered output in XMS memory block?
+ if ?BUFFERED	;buffered output in XMS memory block?
 ?EXTRAHDL equ 1
-else
+ else
 ?EXTRAHDL equ 0
-endif
+ endif
 
 xms_handle_table XMS_HANDLETABLE <01, size XMS_HANDLE, 0, xms_handle_array>
 xms_handle_array XMS_HANDLE ?XMS_STATICHDLS+1+?EXTRAHDL dup (<XMSF_INPOOL,0,0,0>)
@@ -478,7 +405,7 @@ if ?VDS
 	mov ax,offset NEW4B
 	cmp eax,es:[4Bh*4]
 	jnz @@nouninst
-	@DbgOutS <"TryUnload, int 4Bh is ok",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"TryUnload, int 4Bh is ok",10>
 @@:
 endif
 	clc
@@ -497,13 +424,7 @@ UnloadJemm proc c public
 
 	mov di,ax
 
-	@DbgOutS <"UnloadJemm enter, CS=">,?UNLRMDBG
-	@DbgOutW cs,?UNLRMDBG
-	@DbgOutS <" SS=">,?UNLRMDBG
-	@DbgOutW ss,?UNLRMDBG
-	@DbgOutS <" res. segm=">,?UNLRMDBG
-	@DbgOutW di,?UNLRMDBG
-	@DbgOutS <10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"UnloadJemm enter, CS=%X SS=%X res. segm=%X",10>, cs, ss, di
 
 ;--- remove EMMXXXX0 from driver chain
 
@@ -523,7 +444,7 @@ UnloadJemm proc c public
 	mov ecx, ds:[0]    ;remove driver from chain
 	mov es:[bx], ecx
 
-	@DbgOutS <"UnloadJemm: driver removed from chain",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"UnloadJemm: driver removed from chain",10>
 
 ;--- reset IVT vectors
 
@@ -547,7 +468,7 @@ UnloadJemm proc c public
 	add si,4
 	jmp @@nextvec
 @@ok:
-	@DbgOutS <"UnloadJemm: IVT vectors restored",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"UnloadJemm: IVT vectors restored",10>
 
 ;--- reset XMS hook
 
@@ -569,8 +490,23 @@ ife ?INTEGRATED
 	rep movsb
 	pop es
 @@noxms:
-	@DbgOutS <"UnloadJemm: XMS hook removed",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"UnloadJemm: XMS hook removed",10>
 
+endif
+
+if ?KD
+;--- call int 68h if kernel debugger installed.
+;--- if the installed instance didn't initialize the kd, nothing is to be done here!
+	push ds
+	mov ax,es
+	sub ax, 10h
+	mov ds, ax
+	test byte ptr ds:[7fh], 1
+	pop ds
+	jz @F
+	mov ah, D386_Real_Mode_Init
+	int D386_RM_Int
+@@:
 endif
 
 ;--- make sure jemm386's resident memory block is freed
@@ -602,7 +538,7 @@ endif
 	sub ax,10h
 	mov ds:[1],ax
 @@nopsp:
-	@DbgOutS <"UnloadJemm: resident segment prepared to be released",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"UnloadJemm: resident segment prepared to be released",10>
 
 ;--- now call the installed instance of Jemm386 to
 ;--- do the rest of the clean-up
@@ -632,8 +568,8 @@ rmtarget:
 	mov ss,ax
 	mov ds,ax
 	mov es,ax
-	@DbgOutS <"UnloadJemm: back from protected-mode",10>,?UNLRMDBG
-	@DbgOutS <"UnloadJemm exit",10>,?UNLRMDBG
+	@dprintf ?UNLRMDBG, <"UnloadJemm: back from protected-mode",10>
+	@dprintf ?UNLRMDBG, <"UnloadJemm exit",10>
 	mov ax,bx
 	clc
 	ret
@@ -883,7 +819,7 @@ start proc
 	mov sp, offset stacktop - 128
 	call TestCPU
 	jc @@exit
-	@DbgOutS <"Jemm386 enter",10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"Jemm386 enter",10>
 
 	mov di,sp
 	mov si,0080h
@@ -929,13 +865,14 @@ if ?LOAD
 endif
 
 @@exit:
-	@DbgOutS <"Jemm386 exit",10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"Jemm386 exit",10>
 	mov ah,04ch 		; that was all
 	int 21h
 start endp
 
 ;--- monitor installation
 ;--- in: SS=DS=DGROUP
+;--- si=mode
 ;--- out: EAX=first page used for EMS/VCPI
 
 InitJemm PROC c public
@@ -943,6 +880,7 @@ InitJemm PROC c public
 	push si
 	push di
 	push bp
+	mov bp, sp		;mode is at [bp+4]
 
 if 0; ?A20PORTS 	;this info is unreliable, don't activate!
 	mov ax,2403h	;get A20 gate support
@@ -993,6 +931,11 @@ endif
 	mov [pStratOfs],offset BPSTRAT
 
 if ?KD
+	mov ax,3500h or D386_RM_Int
+	int 21
+	mov ax, es		; int 68h vector 0000:0000?
+	or ax, bx
+	jz @F
 	mov si, word ptr [code32+5]	; DS:SI=GDT
 	mov eax, ds
 	shl eax, 4
@@ -1016,6 +959,12 @@ if ?KD
 	int D386_RM_Int
 	mov jemmini.kdofs, edi
 	mov jemmini.kdseg, es
+	cmp word ptr [bp+4], EXECMODE_EXE
+	jnz @F
+	mov ah, 51h
+	int 21h
+	mov es, bx
+	or byte ptr es:[7fh], 1		; use PSP:7Fh as "kd flag"
 @@:
 endif
 
@@ -1023,6 +972,7 @@ endif
 ;--- build an IRETDV86 struct on the stack.
 
 	mov dx,sp
+	and sp,not 3	; ensure the 32-bit stack is dword aligned
 	xor ax,ax
 	push ax
 	push gs	; IRETDV86.vGS
@@ -1060,6 +1010,7 @@ endif
 	push GDT_SIZE-1
 	CLI
 	LGDT FWORD PTR [bp-6]
+	add sp, 2+4
 
 FLAT_CODE_SEL equ 1*8
 FLAT_DATA_SEL equ 2*8
@@ -1068,9 +1019,9 @@ FLAT_DATA_SEL equ 2*8
 	OR AL,1
 	MOV CR0,EAX
 
-	add EBP, EDX	; EBP = flat address of SS:SP
+	add EBP, EDX			; EBP = flat address of SS:SP
 
-	XOR EAX,EAX
+	XOR AX,AX
 	LLDT AX 				; initialise LDT (it is not used)
 	mov FS,AX
 	mov GS,AX
@@ -1094,7 +1045,7 @@ backinv86:
 
 	push eax				; FIRSTPAGE value
 
-	@DbgOutS <"V86 mode entered",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"V86 mode entered",10>
 
 	call GetRes		;get Jemm resident part
 	mov bx,ax
@@ -1117,7 +1068,7 @@ endif
 
 	sti
 
-	@DbgOutS <"interrupts enabled, hooking int 15h, 2Fh, ...",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"interrupts enabled, hooking int 15h, 2Fh, ...",10>
 	mov si,offset intvecs
 @@nextint2:
 	mov al,[si].INTMOD.bInt
@@ -1137,7 +1088,7 @@ endif
 	call endinit
 
 ife ?INTEGRATED
-	@DbgOutS <"calling InstallXMSHandler",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"calling InstallXMSHandler",10>
 	call InstallXMSHandler
  if ?MOVEXBDA and not ?MOVEXBDAPM
 	call move_xbda ;must be called after InstallXMSHandler
@@ -1263,13 +1214,7 @@ move_xbda proc
 	pop es
 	mov ax,es:[@XBDA]
 	mov dx,es:[@MEM_SIZE]
-if ?INITRMDBG
-	@DbgOutS <"move_xbda: xbda seg=">,1
-	@DbgOutW ax,1
-	@DbgOutS <", convmem=">,1
-	@DbgOutW dx,1
-	@DbgOutS <"kb",13,10>,1
-endif
+	@dprintf ?INITRMDBG, <"move_xbda: xbda seg=%X, convmem=%X kb",10>, ax, dx
 	shl dx,6
 	cmp ax,dx		;XBDA must be just above conventional memory
 	jnz nomovexbda	;else it a) has been moved already b) doesn't exist
@@ -1281,11 +1226,7 @@ endif
 	call [XMSdriverAddress]
 	cmp ax,1
 	jnz nomovexbda
-if ?INITRMDBG
-	@DbgOutS <"move_xbda: alloc umb ok, seg=">,1
-	@DbgOutW bx,1
-	@DbgOutS <13,10>,1
-endif
+	@dprintf ?INITRMDBG,<"move_xbda: alloc umb ok, seg=%X",10>, bx
 ;--- copy content of XBDA to new location
 	mov es,bx
 	pushf
@@ -1358,13 +1299,13 @@ ife ?A20XMS 					;if there is no XMS A20 trapping
 	cmp jemmini.NumUMBs,0		;XMS hook is needed *only* for UMBs.
 	jz @@umbdone				;dont install if no UMBs are supplied
 endif
-	@DbgOutS <"InstallXMSHandler: getting XMS UMB status",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"InstallXMSHandler: getting XMS UMB status",10>
 	mov dx, -1
 	mov ah, XMS_ALLOCUMB
 	call [XMSdriverAddress]
 	and ax, ax
 	jnz @@umbalreadythere
-	@DbgOutS <"InstallXMSHandler: hooking into XMS driver chain",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"InstallXMSHandler: hooking into XMS driver chain",10>
 	les bx,[XMSdriverAddress]
 @@nexttest:
 	mov al,es:[bx]
@@ -1374,10 +1315,10 @@ endif
 	cmp al,0EAh
 	jz @@nexttest
 ;--- unexpected pattern found in XMS hook chain
-	@DbgOutS <"InstallXMSHandler: unexpected pattern found in XMS hook chain",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"InstallXMSHandler: unexpected pattern found in XMS hook chain",10>
 	jmp @@umbdone
 @@endofchain:
-	@DbgOutS <"InstallXMSHandler: end of chain found",13,10>,?INITRMDBG
+	@dprintf ?INITRMDBG, <"InstallXMSHandler: end of chain found",10>
 	cli
 	mov byte ptr es:[bx+0],0EAh
 	mov word ptr es:[bx+1],offset XMShandler

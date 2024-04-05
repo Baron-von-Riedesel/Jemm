@@ -1,98 +1,34 @@
 
+ifndef ?INITRMDBG
+?INITRMDBG  equ 0   ;log real-mode init
+endif
+ifndef ?XMSRMDBG
+?XMSRMDBG   equ 0   ;log XMS calls
+endif
+ifndef ?EMXRMDBG
+?EMXRMDBG   equ 0   ;log EMMXXXX0 calls
+endif
+ifndef ?UNLRMDBG
+?UNLRMDBG   equ 0   ;log unload
+endif
+?RMDBG      equ ?INITRMDBG + ?XMSRMDBG + ?EMXRMDBG + ?UNLRMDBG  ; debug displays in real-mode
+
 ?BUFFERED equ 0
 ?USEMONO equ 0  ;1=use monochrome monitor for dbg displays
 
-;--- display string
-
-@DbgOutS macro string, bCond
-local bDisp
-bDisp = 0
 ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-        call VPRINTSTR
-        db string
-        db 0
-endif
+
+dprintf proto c :ptr, :vararg
+
+@dprintf macro bCond, fmt, args:vararg
+ if bCond
+  ifnb <args>
+	invoke dprintf, CStr(fmt), args
+  else
+	invoke dprintf, CStr(fmt)
+  endif
+ endif
 endm
-
-;--- display char
-
-@DbgOutC macro bChar, bCond
-local bDisp
-bDisp = 0
-ifdef _DEBUG
-bDisp = 1
+else
+@dprintf textequ <;>
 endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-        push eax
-        mov al,bChar
-        call VPUTCHR
-        pop eax
-endif
-endm
-
-;--- display DWORD
-
-@DbgOutD macro _dword, bCond
-local bDisp
-bDisp = 0
-ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-        push eax
-        mov eax, _dword
-        call VDWORDOUT
-        pop eax
-endif
-endm
-
-;--- display WORD
-
-@DbgOutW macro _word, bCond
-local bDisp
-bDisp = 0
-ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-        push ax
-        mov ax, _word
-        call VWORDOUT
-        pop ax
-endif
-endm
-
-;--- display BYTE
-
-@DbgOutB macro _byte, bCond
-local bDisp
-bDisp = 0
-ifdef _DEBUG
-bDisp = 1
-endif
-ifnb <bCond>
-bDisp = bCond
-endif
-if bDisp
-        push ax
-        mov al, _byte
-        call VBYTEOUT
-        pop ax
-endif
-endm
-

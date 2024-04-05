@@ -1,20 +1,6 @@
 
 ;--- globals for jemm16.asm and init16.asm
 
-ifndef ?INITRMDBG
-?INITRMDBG  equ 0   ;log real-mode init
-endif
-ifndef ?XMSRMDBG
-?XMSRMDBG   equ 0   ;log XMS calls
-endif
-ifndef ?EMXRMDBG
-?EMXRMDBG   equ 0   ;log EMMXXXX0 calls
-endif
-ifndef ?UNLRMDBG
-?UNLRMDBG   equ 0   ;log unload
-endif
-?RMDBG      equ ?INITRMDBG + ?XMSRMDBG + ?EMXRMDBG + ?UNLRMDBG  ; debug displays in real-mode
-
 if ?INTEGRATED
 NAMEEXE equ <"JEMMEX">
 NAMEMOD equ <"JemmEx">
@@ -48,11 +34,6 @@ EmmInstallcheck proto c
 XMSinit proto c
 CheckIntHooks proto stdcall :WORD
 UnloadJemm proto c
-if ?RMDBG
-VPRINTSTR proto
-VDWORDOUT proto
-VWORDOUT  proto
-endif
 if ?INTEGRATED
 ?XMS_STATICHDLS equ 10	;free xms handles to be used for int 15h, ax=e820h
 I15SetHandle proto c

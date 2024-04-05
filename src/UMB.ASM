@@ -57,12 +57,7 @@ umb_handler endp        ;fall thru!
 
 UMB_alloc proc
 
-if ?UMBDBG
-    @DbgOutS <"UMBalloc enter, DX=">,1
-    @DbgOutW dx,1
-    @DbgOutS <10>,1
-endif
-
+    @dprintf ?UMBDBG, <"UMBalloc enter, DX=%X",10>, dx
     mov esi, offset UMBsegments
     xor ebx,ebx     ; holds largest too-small block size
 
@@ -80,11 +75,7 @@ endif
     add esi,size UMBBLK
     cmp esi,offset UMBend
     jnz @@UMBloop
-if ?UMBDBG
-    @DbgOutS <"UMBalloc failed, bx=">,1
-    @DbgOutW bx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?UMBDBG, <"UMBalloc failed, bx=%X",10>, bx
     xor eax,eax     ; flag failure
     or ebx,ebx
     jne @@umb_too_small
@@ -129,15 +120,7 @@ endif
     sub cx,ax                   ; subtract allocation
     mov [ebx].UMBBLK.wSize,cx   ; update new block with old block size minus allocation
     mov [esi].UMBBLK.wSize,ax   ; update original UMB block size to allocation
-if ?UMBDBG
-    @DbgOutS <"UMB block split, new entry=">,1
-    @DbgOutD ebx,1
-    @DbgOutS <" segm=">,1
-    @DbgOutW [ebx].UMBBLK.wSegm,1
-    @DbgOutS <", size=">,1
-    @DbgOutW [ebx].UMBBLK.wSize,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?UMBDBG, <"UMB block split, new entry=%X segm=%X size=%X",10>, ebx, [ebx].UMBBLK.wSegm, [ebx].UMBBLK.wSize
 
 @@good_umb:
     mov dx,[esi].UMBBLK.wSize               ; return actual block size in dx
@@ -153,15 +136,7 @@ UMB_alloc endp  ;fall throu
 
 UMB_exit proc
 ;UMB_exit:
-if ?UMBDBG
-    @DbgOutS <"UMB exit, ax=">,1
-    @DbgOutW ax,1
-    @DbgOutS <", bx=">,1
-    @DbgOutW bx,1
-    @DbgOutS <", dx=">,1
-    @DbgOutW dx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?UMBDBG, <"UMB exit, ax=%X, bx=%X, dx=%X",10>, ax, bx, dx
     mov word ptr [ebp].Client_Reg_Struc.Client_EAX, ax
     mov word ptr [ebp].Client_Reg_Struc.Client_EDX, dx
     and al,al
@@ -176,11 +151,7 @@ UMB_exit endp
 
 ;UMB_free proc
 UMB_free:
-if ?UMBDBG
-    @DbgOutS <"UMBfree enter, DX=">, 1
-    @DbgOutW DX, 1
-    @DbgOutS <10>, 1
-endif
+    @dprintf ?UMBDBG, <"UMBfree enter, DX=%X",10>, dx
 
     call UMB_findblock  ;clears eax
     jc  UMB_exit
@@ -199,13 +170,7 @@ UMB_realloc proc
 
 ;;  mov ebx,[ebp].Client_Reg_Struc.Client_EBX   ; restore EBX
 
-if ?UMBDBG
-    @DbgOutS <"UMBrealloc enter, DX=">, 1
-    @DbgOutW DX,1
-    @DbgOutS <", BX=">, 1
-    @DbgOutW BX,1
-    @DbgOutS <10>, 1
-endif
+    @dprintf ?UMBDBG, <"UMBrealloc enter, DX=%X, BX=%X",10>, dx, bx
 
     call UMB_findblock  ;clears eax
     jc UMB_exit
@@ -280,9 +245,7 @@ endif
     jnc @@umbdone
     inc [esi].JEMMINIT.NumUMBs
     mov byte ptr [edi].UMBBLK.wSegm+1,cl
-    @DbgOutS <"new UMB at ">,?INITDBG
-    @DbgOutW [edi].UMBBLK.wSegm,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, <"new UMB at %X",10>, [edi].UMBBLK.wSegm
     mov [edi].UMBBLK.wSize,100h
 if ?SPLIT
     call clearpageEx
@@ -298,7 +261,7 @@ endif
     cmp cl,0F8h
     jb @@nextitem2
 @@umbdone:
-    @DbgOutS <"UMBs initialized",10>,?INITDBG
+    @dprintf ?INITDBG, <"UMBs initialized",10>
     ret
 UMB_Init endp
 
@@ -340,11 +303,7 @@ clearpageEx proc
     shl eax,5   ;20,40,60,80,A0,C0,E0
     mov byte ptr [edi].UMBBLK.wSegm,al
     sub word ptr [edi].UMBBLK.wSize,ax
-    @DbgOutS <"split page, UMB at ">,?INITDBG
-    @DbgOutW [edi].UMBBLK.wSegm,?INITDBG
-    @DbgOutS <" size=">,?INITDBG
-    @DbgOutW [edi].UMBBLK.wSize,?INITDBG
-    @DbgOutS <10>,?INITDBG
+    @dprintf ?INITDBG, <"split page, UMB at %X size=%X",10>, [edi].UMBBLK.wSegm, [edi].UMBBLK.wSize
     shl eax,4   ;1->200, 2->400, 3->600, 4->800, 5->A00, 6->C00, 7->E00
     push edi
     push ecx

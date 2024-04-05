@@ -125,15 +125,7 @@ Pool_GetFree4KPages PROC public
     mov eax,edx
 @@uselower:                     ; eax = min(eax, edx)
 
-if ?POOLDBG
-    @DbgOutS <"Pool_GetFree4KPages: ">,1
-    @DbgOutD eax,1
-    @DbgOutS <", dwUsedMem4K=">,1
-    @DbgOutD dwUsedMem4K,1
-    @DbgOutS <", dwMaxMem4K=">,1
-    @DbgOutD dwMaxMem4K,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG,<"Pool_GetFree4KPages: %X, dwUsedMem4K=%X, dwMaxMem4K=%X",10>, eax, dwUsedMem4K, dwMaxMem4K
     ret
     align 4
 
@@ -182,17 +174,7 @@ Pool_GetFree16KPages PROC public
 
     add eax, esi
 
-if ?POOLDBG
-    @DbgOutS <"Pool_GetFree16KPages=">,1
-    @DbgOutD eax,1
-    @DbgOutS <" max4k=">,1
-    @DbgOutD [dwMaxMem4K],1
-    @DbgOutS <" total4k=">,1
-    @DbgOutD [dwTotalMem4K],1
-    @DbgOutS <" XMS-4k=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_GetFree16KPages=%X max4k=%X total4k=%X XMS-4k=%X",10>, eax, [dwMaxMem4K], [dwTotalMem4K], edx
     pop edx
     pop ecx
     pop esi
@@ -217,16 +199,7 @@ Pool_ExpandBlock PROC
 
     pushad
 
-if ?POOLDBG
-    @DbgOutS <"Pool_ExpandBlock: esi=">,1
-    @DbgOutD esi,1
-    @DbgOutS <", addrK=">
-    @DbgOutD [esi].POOL_SYSTEM_INFO.psi_addressK
-    @DbgOutS <", pArray=">
-    @DbgOutD [esi].POOL_SYSTEM_INFO.psi_descptr
-    @DbgOutS <10>,1
-endif
-
+    @dprintf ?POOLDBG, <"Pool_ExpandBlock: esi=%X, addrK=%X, pArray=%X",10>, esi, [esi].POOL_SYSTEM_INFO.psi_addressK, [esi].POOL_SYSTEM_INFO.psi_descptr
 
     mov edi,[esi].POOL_SYSTEM_INFO.psi_descptr
 if ?EXPANDFIRST
@@ -421,9 +394,7 @@ Pool_Allocate4KPage PROC public
     sub [esi].POOL_SYSTEM_INFO.psi_16kfree, cl
 if ?POOLDBG    
     jnc @@blockok
-    @DbgOutS <"Pool_Allocate4kPage: 16k-free count underflow for block ">,1
-    @DbgOutD esi,1
-    @DbgOutS <10>,1
+    @dprintf ?POOLDBG, <"Pool_Allocate4kPage: 16k-free count underflow for block %X",10>, esi
 @@blockok:
 endif
     dec [esi].POOL_SYSTEM_INFO.psi_4kfree
@@ -439,21 +410,11 @@ endif
     mov ecx,[esi].POOL_SYSTEM_INFO.psi_addressK
     shl ecx,10      ; convert from K to bytes
     add eax,ecx
-if ?POOLDBG
-    @DbgOutS <"Pool_Allocate4kPage ok, page=">,1
-    @DbgOutD eax,1
-    @DbgOutS <", block=">,1
-    @DbgOutD esi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG,<"Pool_Allocate4kPage ok, page=%X, block=%X",10>, eax, esi
     ret
 
 @@blockbad:
-if ?POOLDBG
-    @DbgOutS <"Pool_Allocate4kPage: found inconsistent block ">,1
-    @DbgOutD esi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG,<"Pool_Allocate4kPage: found inconsistent block %X",10>, esi
     @CheckBlockIntegrity; nothing free, although block indicated there was
     jmp @@nextblock     ; continue search
     align 4
@@ -627,11 +588,7 @@ Pool_FindBlock proc
     add esi,POOLBLOCK_TOTAL_SPACE
     cmp esi, [PoolAllocationEnd]
     jb @@findblkloop
-if ?POOLDBG    
-    @DbgOutS <"Pool_FindBlock: page ">,1
-    @DbgOutD edx,1
-    @DbgOutS <" not in pool",10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_FindBlock: page %X not in pool",10>, edx
     stc
     ret
 @@rightblock:
@@ -685,24 +642,12 @@ Pool_Free4KPage PROC public
     call Pool_TryFreeToXMS  ; free empty pool allocation block to XMS if appropriate
 @@success:
 
-if ?POOLDBG
-    @DbgOutS <"Pool_Free4kPage ok, page=">,1
-    @DbgOutD edx,1
-    @DbgOutS <" block=">,1
-    @DbgOutD esi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_Free4kPage ok, page=%X block=%X",10>, edx, esi
     clc
 @@fail1:
     ret
 @@fail2:
-if ?POOLDBG
-    @DbgOutS <"Pool_Free4kPage: page ">,1
-    @DbgOutD edx,1
-    @DbgOutS <" was not allocated (block=">,1
-    @DbgOutD esi,1
-    @DbgOutS <")",10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_Free4kPage: page %X was not allocated (block=%X)",10>, edx, esi
     stc
     ret
     align 4
@@ -747,23 +692,14 @@ Pool_Free16KPage PROC public
 
 @@fail1:
 if ?POOLDBG
-    @DbgOutS <"Pool_Free16kPage failed edx=">,1
-    @DbgOutD edx,1
+    @dprintf ?POOLDBG, <"Pool_Free16kPage failed edx=%X">, edx
     sub edx, [EMSPageAllocationStart]
     shr edx, 2
-    @DbgOutS <" EMS page=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
+    @dprintf ?POOLDBG, <" EMS page=%X",10>, edx
     jmp @@fail
 endif
 @@fail2:
-if ?POOLDBG
-    @DbgOutS <"Pool_Free16kPage failed page=">,1
-    @DbgOutD edx,1
-    @DbgOutS <", masks=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_Free16kPage failed page=%X, masks=%X",10>, edx, eax
 @@fail:
     @CheckBlockIntegrity
     stc
@@ -786,13 +722,7 @@ Pool_GetUnusedBlock PROC
     add edx,POOLBLOCK_TOTAL_SPACE
     cmp edx, [PoolAllocationMax]
     jb @@findblkloop
-if ?POOLDBG
-    @DbgOutS <"Pool_GetUnusedBlock failed, table start/end=">,1
-    @DbgOutD [PoolAllocationTable],1
-    @DbgOutS <"/">,1
-    @DbgOutD [PoolAllocationMax],1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_GetUnusedBlock failed, table start/end=%X/%X",10>, [PoolAllocationTable], [PoolAllocationMax]
     stc
 @@found:
     ret
@@ -812,13 +742,7 @@ Pool_PrepareBlock PROC
 
     pushad
 
-if ?POOLDBG
-    @DbgOutS <"Pool_PrepareBlock: size in kB=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <" addr in kB=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_PrepareBlock: size in kB=%X addr in kB=%X",10>, ecx, edi
 
     mov [edx].POOL_SYSTEM_INFO.psi_descptr,esi
 
@@ -1172,15 +1096,7 @@ endif
 
 @@allocok:
 
-if ?POOLDBG
-    @DbgOutS <"Pool_AllocateEMBForPool: found XMS block hdl=">,1
-    @DbgOutD edx,1
-    @DbgOutS <" addr=">,1
-    @DbgOutD [edx].XMS_HANDLE.xh_baseK,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD [edx].XMS_HANDLE.xh_sizeK,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_AllocateEMBForPool: found XMS block hdl=%X addr=%X siz=%X",10>, edx, [edx].XMS_HANDLE.xh_baseK, [edx].XMS_HANDLE.xh_sizeK
 
     mov [edx].XMS_HANDLE.xh_flags,XMSF_USED ; flag candidate as used
     mov [edx].XMS_HANDLE.xh_locks,1         ; and locked
@@ -1271,15 +1187,7 @@ endif
     add eax,ecx
     mov [edi].XMS_HANDLE.xh_baseK,eax   ; new block start == old block start + old block new size
 
-if ?POOLDBG
-    @DbgOutS <"Pool_AllocateEMBForPool: free XMS block hdl=">,1
-    @DbgOutD edi,1
-    @DbgOutS <" addr=">,1
-    @DbgOutD [edi].XMS_HANDLE.xh_baseK,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD [edi].XMS_HANDLE.xh_sizeK,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"Pool_AllocateEMBForPool: free XMS block hdl=%X addr=%X siz=%X",10>, edi, [edi].XMS_HANDLE.xh_baseK, [edi].XMS_HANDLE.xh_sizeK
 
 ; edx -> owner XMS handle for new pool allocation block(s)
 ; may be multiple blocks due to XMSBlockCount shifter
@@ -1476,13 +1384,7 @@ Pool_Init1 proc public
 
     mov [PoolAllocationMax],edi
 
-if ?INITDBG
-    @DbgOutS <"pool start/end=">,1
-    @DbgOutD PoolAllocationTable,1
-    @DbgOutS <"/">,1
-    @DbgOutD PoolAllocationMax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"pool start/end=%X/%X",10>,PoolAllocationTable, PoolAllocationMax
     ret
 
 Pool_Init1 endp
@@ -1509,13 +1411,7 @@ Pool_Init2 proc public
     cmp [bNoPool], 0
     je @@setblocks
 
-if ?INITDBG
-    @DbgOutS <"pool sharing is off, 4k pages remaining=">,1
-    @DbgOutD eax,1
-    @DbgOutS <" dwMaxMem4k=">,1
-    @DbgOutD dwMaxMem4K,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"pool sharing is off, 4k pages remaining=%X dwMaxMem4k=%X",10>, eax, dwMaxMem4K
 
 ;-- pool sharing is off, rest of block is used for EMS/VCPI
 ;-- make sure current values of MaxMem4K and EMSPagesMax
@@ -1547,23 +1443,13 @@ endif
 
 ;--- al=flags, edi=phys addr, esi=XMS handle, ecx=size in kB
 
-if ?INITDBG
-    @DbgOutS <"Pool_init2: addr=">,1
-    @DbgOutD edi,1
-    @DbgOutS <" size in 4kb pg=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"Pool_init2: addr=%X size in 4kb pg=%X",10>, edi, ecx
     shl ecx, 2  ;convert to 1kb units
     shr edi, 10 ;must be a 1k-address
     call Pool_AllocBlocksForEMB
     shl edi, 10 ;convert back to phys. address
 
-if ?INITDBG
-    @DbgOutS <"Pool_init2: exit, edi=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"Pool_init2: exit, edi=%X",10>, edi
 
     pop esi
     ret

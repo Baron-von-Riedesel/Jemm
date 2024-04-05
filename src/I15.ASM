@@ -101,15 +101,7 @@ I15_Simulate87 proc public
 
 ;--- here we have: esi=src, edi=dst, ecx=size
 
-if ?I15DBG
-    @DbgOutS <"Int 15h, ah=87h, src=">,1
-    @DbgOutD esi,1
-    @DbgOutS <", dst=">,1
-    @DbgOutD edi,1
-    @DbgOutS <", siz=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?I15DBG, <"Int 15h, ah=87h, src=%X, dst=%X, siz=%X",10>, esi, edi, ecx
 
 ;-- NOCHECK -> moves for addresses not backuped with RAM/ROM will fail
 ;-- (cause an exception)
@@ -154,17 +146,7 @@ if ?XMS35COMPAT
     mov edi,edx
     mov eax,[ebp].Client_Reg_Struc.Client_EDX   ;src bits 32-47
     mov edx,[ebp].Client_Reg_Struc.Client_EBX   ;dst bits 32-47
-  if ?I15DBG
-    @DbgOutS <"Int 15h, ah=87h, src=">,1
-    @DbgOutW ax,1
-    @DbgOutD esi,1
-    @DbgOutS <", dst=">,1
-    @DbgOutW dx,1
-    @DbgOutD edi,1
-    @DbgOutS <", siz=">,1
-    @DbgOutW cx,1
-    @DbgOutS <10>,1
-  endif
+    @dprintf ?I15DBG, <"Int 15h, ah=87h, src=%X.%X, dst=%X.%X siz=%X",10>, ax, esi, dx, edi, cx
     call MoveMemoryPhysEx
     jmp @@ok
 @@:

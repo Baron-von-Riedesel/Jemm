@@ -137,7 +137,7 @@ DATA_ ends
 
 InitVMM proc public
 
-	@DbgOutS <"Init enter",10>,?INITDBG
+	@dprintf ?INITDBG,<"Init enter",10>
 
 ;--- save the vectors received from Jemm
 ;--- e08_ServiceTable is a VMM_SERV_TABLE struct
@@ -218,7 +218,7 @@ InitVMM proc public
 	shr eax,16
 	mov [esi+6],ax
 @@exit:
-	@DbgOutS <"Init exit",10>,?INITDBG
+	@dprintf ?INITDBG, <"Init exit",10>
 	ret
 	align 4
 
@@ -570,7 +570,7 @@ New_IO_Handler endp
 
 ImportJemmIOTraps proc uses esi
 
-	@DbgOutS <"ImportJemmIOTraps",10>, ?IODBG
+	@dprintf ?IODBG, <"ImportJemmIOTraps",10>
 	mov esi, [IO_Trap_Table]
 if 1
 	mov eax, offset New_IO_Handler
@@ -664,7 +664,7 @@ Install_IO_Handler proc
 	cld
 	cmp [IO_Handler_Region],0
 	jnz @@isallocated
-	@DbgOutS <"Install_IO_Handler: reserve 256 kB region",10>, ?IODBG
+	@dprintf ?IODBG, <"Install_IO_Handler: reserve 256 kB region",10>
 	push edx
 	push 0
 	push 64
@@ -675,16 +675,12 @@ Install_IO_Handler proc
 	cmp eax,-1
 	jz @@error
 	mov [IO_Handler_Region], eax
-	@DbgOutS <"Install_IO_Handler: region=">, ?IODBG
-	@DbgOutD eax, ?IODBG
-	@DbgOutS <10>, ?IODBG
+	@dprintf ?IODBG, <"Install_IO_Handler: region=%X",10>, eax
 	push edx
 	call ImportJemmIOTraps
 	pop edx
 @@isallocated:
-	@DbgOutS <"Install_IO_Handler: port=">, ?IODBG
-	@DbgOutW edx, ?IODBG
-	@DbgOutS <10>, ?IODBG
+	@dprintf ?IODBG, <"Install_IO_Handler: port=%X",10>, dx
 	call CommitTrapPage
 	jc @@error
 	movzx eax, dx
@@ -700,9 +696,7 @@ Install_IO_Handler proc
 	clc
 	ret
 @@error:
-	@DbgOutS <"Install_IO_Handler: trap port=">, ?IODBG
-	@DbgOutW edx, ?IODBG
-	@DbgOutS <"failed",10>, ?IODBG
+	@dprintf ?IODBG, <"Install_IO_Handler: trap port=%X failed",10>, dx
 	stc
 	ret
 	align 4
@@ -743,9 +737,7 @@ DefaultTrappedPort endp
 ;--- untrap port, dx=port
 
 Remove_IO_Handler proc
-	@DbgOutS <"Remove_IO_Handler: untrap port=">, ?IODBG
-	@DbgOutW edx, ?IODBG
-	@DbgOutS <10>, ?IODBG
+	@dprintf ?IODBG, <"Remove_IO_Handler: untrap port=%X",10>, dx
 	xor ecx, ecx
 	cmp [IO_Handler_Region],ecx
 	jz @@error
@@ -769,9 +761,7 @@ Remove_IO_Handler proc
 	clc
 	ret
 @@error:
-	@DbgOutS <"Remove_IO_Handler: untrap port=">, ?IODBG
-	@DbgOutW edx, ?IODBG
-	@DbgOutS <"failed",10>, ?IODBG
+	@dprintf ?IODBG, <"Remove_IO_Handler: untrap port=%X failed",10>, dx
 	stc
 	ret
 	align 4
@@ -906,11 +896,11 @@ Hook_V86_Int_Chain proc
 @@error2:
 	pop eax
 @@error:
-	@DbgOutS <"Hook_V86_Int_chain: exit error",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: exit error",10>
 	stc
 	ret
 @@newhook:
-	@DbgOutS <"Hook_V86_Int_chain: new hook",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: new hook",10>
 	mov [edx+eax*8].HOOKV86.dwHook, esi
 	push ebx
 	push esi
@@ -926,7 +916,7 @@ endif
 ;--- 3. generate the thunk code: "push #int" & "jmp near32 v86hook"
 ;--- 4. modify the int bitmap in TSS
 
-	@DbgOutS <"Hook_V86_Int_chain: modifying IDT",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: modifying IDT",10>
 	mov ecx, [g_dwIDT]
 	mov si, [ecx+eax*8+6]
 	shl esi,16
@@ -947,7 +937,7 @@ endif
 	sub ecx, 5						; v5.82: adjust size of "jmp near32"
 	mov dword ptr [edx+1], ecx
 
-	@DbgOutS <"Hook_V86_Int_chain: modifying Int bitmap",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: modifying Int bitmap",10>
 	mov ebx, [dwTSSbase]
 	movzx ecx, [ebx].TSSSEG.tsOfs
 	add ebx, ecx
@@ -958,7 +948,7 @@ endif
 	pop esi
 	pop ebx
 @@done:
-	@DbgOutS <"Hook_V86_Int_chain: exit ok",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: exit ok",10>
 	clc
 	ret
 	align 4
@@ -999,9 +989,7 @@ ifdef _DEBUG
 	jz skiplog
 @@:
 endif
-	@DbgOutS <"v86_hook: int=">, ?JLMDBG
-	@DbgOutW eax, ?JLMDBG
-	@DbgOutS <10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"v86_hook: int=%X",10>, ax
 skiplog:
 
 	mov edx, [ecx+eax*8].HOOKV86.dwOldVec
@@ -1696,10 +1684,8 @@ FindDevice endp
 ;--- new v5.74: alloc v86 breakpoint if v86 api is to be installed
 
 VMM_Add_DDB proc public
-	@DbgOutS <"VMM_Add_DBB, ID=">, ?JLMDBG
 	movzx eax, [esi].VxD_Desc_Block.DDB_Req_Device_Number
-	@DbgOutW eax, ?JLMDBG
-	@DbgOutS <10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"VMM_Add_DBB, ID=%X",10>, eax
 	mov edx, offset ddb_list
 @@nextitem:
 	and eax,eax
@@ -1715,7 +1701,7 @@ VMM_Add_DDB proc public
 	jz done
 	cmp [esi].VxD_Desc_Block.DDB_V86_API_Proc,0		;v86 API?
 	jz done
-	@DbgOutS <"VMM_Add_DBB: JLM with API",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"VMM_Add_DBB: JLM with API",10>
 	push ecx
 	push esi
 	mov esi,[esi].VxD_Desc_Block.DDB_V86_API_Proc
@@ -1724,7 +1710,7 @@ VMM_Add_DDB proc public
 	pop esi
 	pop ecx
 	jc error
-	@DbgOutS <"VMM_Add_DBB: callback allocated",10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"VMM_Add_DBB: callback allocated",10>
 	mov [esi].VxD_Desc_Block.DDB_V86_API_CSIP, eax
 	cmp [Int2fHooked],0
 	jnz done
@@ -1733,9 +1719,7 @@ VMM_Add_DDB proc public
 	mov eax, ?APIINT
 	mov esi, offset Int2fHook
 	call Hook_V86_Int_Chain
-	@DbgOutS <"VMM_Add_DBB: Int 2F hooked, addr=">, ?JLMDBG
-	@DbgOutD esi, ?JLMDBG
-	@DbgOutS <10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"VMM_Add_DBB: Int 2F hooked, addr=%X",10>, esi
 	popad
 done:
 	mov [ecx].VxD_Desc_Block.DDB_Next, esi
@@ -1751,9 +1735,7 @@ ifdef _DEBUG
 finalint2f proc
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh
 	jz done
-	@DbgOutS <"finalint2f: ax=">, ?JLMDBG
-	@DbgOutW [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
-	@DbgOutS <10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"finalint2f: ax=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
 done:
 	stc
 	ret
@@ -1770,16 +1752,11 @@ ifdef _DEBUG
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh	;that happens pretty often, so don't log it
 	jz @F
 endif
-	@DbgOutS <"Int2fHook: client_ax=">, ?JLMDBG
-	@DbgOutW [ebp].Client_Reg_Struc.Client_EAX, ?JLMDBG
-	@DbgOutS <10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Int2fHook: client_ax=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
 @@:
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 1684h
 	jnz not_ours
-	@DbgOutS <"Int2FHook: ax=1684h detected, ID=">, ?JLMDBG
-	movzx eax,word ptr [ebp].Client_Reg_Struc.Client_EBX
-	@DbgOutW eax, ?JLMDBG
-	@DbgOutS <10>, ?JLMDBG
+	@dprintf ?JLMDBG, <"Int2FHook: ax=1684h detected, ID=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EBX
 	mov edx, offset ddb_list
 @@nextitem:
 	cmp ax, [edx].VxD_Desc_Block.DDB_Req_Device_Number

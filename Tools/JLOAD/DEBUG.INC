@@ -31,44 +31,23 @@ else
 ?TRACE = 0
 endif
 
-VPRINTSTR proto
-VDWORDOUT proto
-VWORDOUT  proto
+dprintf   proto c :ptr, :vararg
 
-@DbgOutS macro string, bCond
 ifdef _DEBUG
+
+@dprintf macro bCond, fmt, args:vararg
  if bCond
-	call VPRINTSTR
-	db string
-	db 0
+  ifnb <args>
+	invoke dprintf, CStr(fmt), args
+  else
+	invoke dprintf, CStr(fmt)
+  endif
  endif
+endm
+
+else
+
+@dprintf textequ <;>
+
 endif
-	endm
 
-;--- display DWORD in V86
-
-@DbgOutD macro _dword, bCond
-ifdef _DEBUG
- if bCond
-	push _dword
-	call VDWORDOUT
- endif
-endif
-	endm
-
-;--- display WORD in V86
-
-@DbgOutW macro _word, bCond
-ifdef _DEBUG
- if bCond
-	push _word
-	call VWORDOUT
- endif
-endif
-	endm
-
-@tracejmp macro target
-if ?TRACE
-	jmp target
-endif
-	endm

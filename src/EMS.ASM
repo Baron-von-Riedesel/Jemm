@@ -243,17 +243,7 @@ Int67_Entry PROC public
     MOV DS,ECX
     MOV ES,ECX
 
-if ?V86DBG
-    @DbgOutS <"Int 67h in v86-mode, CS:EIP=">,1
-    @DbgOutW <word ptr [ebp].V86FRAME.fCS>,1
-    @DbgOutS <":">,1
-    @DbgOutD [ebp].V86FRAME.fEIP,1
-    @DbgOutS <" EBP=">,1
-    @DbgOutD ebp,1
-    @DbgOutS <" AX=">,1
-    @DbgOutW ax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?V86DBG, <"Int 67h in v86-mode, CS:EIP=%X:%X EBP=%X AX=%X",10>, [ebp].V86FRAME.fCS, [ebp].V86FRAME.fEIP, ebp, ax
 
     mov ecx,[dwRSeg]
     cmp cx,ds:[67h*4+2]     ;IVT vector 67h modified?
@@ -277,24 +267,16 @@ if ?VCPI
   if ?VCPIDBG
     bt vcpidbgfilt,cx
     jnc nodbgout
-    @DbgOutS <"VCPI rm, in: ax=">,1
-    @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_EAX>,1
-    @DbgOutS <" cx=">,1
-    @DbgOutW <word ptr [ebp].Client_Reg_Struc.Client_ECX>,1
-    @DbgOutS <" edx=">,1
-    @DbgOutD [ebp].Client_Reg_Struc.Client_EDX,1
+    @dprintf ?VCPIDBG, <"VCPI rm, in: ax=%X cx=%X edx=%X">, word ptr [ebp].Client_Reg_Struc.Client_EAX,
+        word ptr [ebp].Client_Reg_Struc.Client_ECX, [ebp].Client_Reg_Struc.Client_EDX
     call [VCPI_Call_Table+ECX*4]
-    @DbgOutS <", out: ax=">,1
-    @DbgOutW ax,1
-    @DbgOutS <" edx=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
+    @dprintf ?VCPIDBG, <", out: ax=%X edx=%X",10>, ax, edx
     jmp vcpi_done
     align 4
 ;--- VCPI functions that are to be logged
 ;------------- FEDCBA9876543210
 vcpidbgfilt dw 0000111111111111b
-  nodbgout:
+nodbgout:
   endif
     call [VCPI_Call_Table+ECX*4]
 vcpi_done:
@@ -1094,26 +1076,9 @@ ems4_move_memory PROC
     shl edi,4
     add edi,esi     ; edi -> EMS region buffer address
 
-if ?EMSDBG
-    @DbgOutS <"EMM 57h: siz=">,1
-    @DbgOutD [edi].EMM57.e57_dwSize,1
-    @DbgOutS <", src=">,1
-    @DbgOutB [edi].EMM57.e57_bSrcTyp,1
-    @DbgOutS <"/">,1
-    @DbgOutW [edi].EMM57.e57_wSrcHdl,1
-    @DbgOutS <"/">,1
-    @DbgOutW [edi].EMM57.e57_wSrcSeg,1
-    @DbgOutS <"/">,1
-    @DbgOutW [edi].EMM57.e57_wSrcOfs,1
-    @DbgOutS <", dst=">,1
-    @DbgOutB [edi].EMM57.e57_bDstTyp,1
-    @DbgOutS <"/">,1
-    @DbgOutW [edi].EMM57.e57_wDstHdl,1
-    @DbgOutS <"/">,1
-    @DbgOutW [edi].EMM57.e57_wDstSeg,1
-    @DbgOutS <"/">,1
-    @DbgOutW [edi].EMM57.e57_wDstOfs,1
-endif
+    @dprintf ?EMSDBG, <"EMM 57h: siz=%X src=%X/%X/%X/%X, dst=%X/%X/%X/%X">, [edi].EMM57.e57_dwSize,\
+        [edi].EMM57.e57_bSrcTyp, [edi].EMM57.e57_wSrcHdl, [edi].EMM57.e57_wSrcSeg, [edi].EMM57.e57_wSrcOfs,\
+        [edi].EMM57.e57_bDstTyp, [edi].EMM57.e57_wDstHdl, [edi].EMM57.e57_wDstSeg, [edi].EMM57.e57_wDstOfs
 
     mov ecx,[edi].EMM57.e57_dwSize
     test ecx,ecx
@@ -1247,11 +1212,7 @@ endif
 ; exit with code in AH
 
 @@exit:
-if ?EMSDBG
-    @DbgOutS <"=">,1
-    @DbgOutB ah,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?EMSDBG, <"=%X",10>, ah
     mov edx,[ebp].Client_Reg_Struc.Client_EDX
     mov ebx,[ebp].Client_Reg_Struc.Client_EBX
     ret
@@ -1545,13 +1506,7 @@ GetFreeEMSPages PROC
 @@eaxok:
 
 @@ret:
-if ?POOLDBG
-    @DbgOutS <"GetFreeEMSPages: eax=">,1
-    @DbgOutD eax,1
-    @DbgOutS <" EMSMax-EMSUsed=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?POOLDBG, <"GetFreeEMSPages: eax=%X EMSMax-EMSUsed=%X",10>, eax, edx
     pop edx
     ret
 
@@ -1582,9 +1537,7 @@ AllocateEMSPage PROC
     sub edi, [EMSPageAllocationStart]
     shr edi, 2
 
-    @DbgOutS <"AllocateEMSPage ok, page=">,?POOLDBG
-    @DbgOutW di,?POOLDBG
-    @DbgOutS <10>,?POOLDBG
+    @dprintf ?POOLDBG, <"AllocateEMSPage ok, page=%X",10>, di
 
     add edi, [EMSPageAllocationEnd]
     mov [edi].EMSPD2.bSubIdx,dl
@@ -1656,9 +1609,7 @@ ReleaseEMSPage  PROC
     jc @@ret
     mov [edx].EMSPD.wIndex,-1
 
-    @DbgOutS <"ReleaseEMSPage ok, EMSPD=">,?POOLDBG
-    @DbgOutD edx,?POOLDBG
-    @DbgOutS <10>,?POOLDBG
+    @dprintf ?POOLDBG, <"ReleaseEMSPage ok, EMSPD=%X",10>, edx
 
     dec [EMSPagesUsed]
 @@ret:
@@ -1762,18 +1713,18 @@ ife ?LIM32
 
 if ?INITDBG
     xor ecx,ecx
-    @DbgOutS <"SysMem table:",10>,1
+    @dprintf ?INITDBG, <"SysMem table:",10>
 @@nextitemx:
-    @DbgOutC [ebx+ecx],1
+    @dprintf ?INITDBG, <"%c">, byte ptr [ebx+ecx]
     inc ecx
     test cl,0Fh
     jnz @@nextitemx
     test cl,30h
     jz @F
-    @DbgOutC '-',1
+    @dprintf ?INITDBG, <'-'>
     jmp @@nextitemx
 @@:
-    @DbgOutS <10>,1
+    @dprintf ?INITDBG, <10>
     and cl,cl
     jnz @@nextitemx
 endif
@@ -1826,11 +1777,7 @@ endif
     jns @F
     mov word ptr [EMSPagesMax],MAX_EMS_PAGES_POSSIBLE
 @@:
-if ?INITDBG
-    @DbgOutS <"EMS_Init1: phys EMS pages=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"EMS_Init1: phys EMS pages=%X",10>, edx
     shl edx,2
     add [dwMaxMem4K],edx
 endif   ;?LIM32
@@ -1861,16 +1808,7 @@ EMS_Init2 proc public
     call SetEMSStateTable
     call SetEMSNameTable
 
-if ?INITDBG
-    @DbgOutS <"EMS handle table=">,1
-    @DbgOutD EMSHandleTable,1
-    @DbgOutS <", state table=">,1
-    @DbgOutD EMSStateTable,1
-    @DbgOutS <", name table=">,1
-    @DbgOutD EMSNameTable,1
-    @DbgOutS <10>,1
-    @WaitKey 1,0
-endif
+    @dprintf ?INITDBG,<"EMS handle table=%X, state table=%X, name table=%X",10>, EMSHandleTable, EMSStateTable, EMSNameTable
 
 ;--- allocate and init EMS page descriptor array (EMSPD)
 ;--- size of EMSPD is 4 bytes, it
@@ -1880,13 +1818,7 @@ endif
     mov ecx,[EMSPagesMax]
     mov [EMSPageAllocationStart],edi
 
-if ?INITDBG
-    @DbgOutS <"EMS pages=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <" at ">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"EMS pages=%X at %X",10>, ecx, edi
 
     push ecx
     or eax,-1
@@ -1894,13 +1826,7 @@ endif
     pop ecx
     mov [EMSPageAllocationEnd],edi
 
-if ?INITDBG
-    @DbgOutS <"EMS page alloc start/end=">,1
-    @DbgOutD [EMSPageAllocationStart],1
-    @DbgOutS <"/">,1
-    @DbgOutD [EMSPageAllocationEnd],1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"EMS page alloc start/end=%X/%X",10>, [EMSPageAllocationStart], [EMSPageAllocationEnd]
 
 ;--- behind the EMS EMSPD array comes an array of bytes
 ;--- which are the "nibble" offsets of the descriptor's bit array
@@ -1908,11 +1834,7 @@ endif
     inc eax
     rep stosb
 
-if ?INITDBG
-    @DbgOutS <"EMS array of subindices end=">,1
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?INITDBG, <"EMS array of subindices end=%X",10>, edi
 
 ;--- init EMS SYSTEM handle
 
@@ -1945,7 +1867,7 @@ ife ?LIM32
 @@nomap2:
 endif
 
-    @DbgOutS <"EMSInit2 done",10>,?INITDBG
+    @dprintf ?INITDBG, <"EMSInit2 done",10>
     ret
 EMS_Init2 endp
 

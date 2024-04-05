@@ -3,12 +3,13 @@
 ;*** and use VCPI to switch to protected mode and back
 
 ?ENTRIES equ 110h	;PTE entries to display with option -p
-?VCPIDBG equ 0		;support VCPI debug interface
+?386SWAT equ 1          ;support 386SWAT interface
+?DEB386  equ 0		;support (w)deb386 interface
 ?DISPEXC equ 0		;display exceptions in ring 0
 
 	.286
 	.model small
-	.stack 1024
+	.stack 2048
 	.dosseg
 
 desc struct
@@ -28,6 +29,13 @@ sym db text,0
 	exitm <offset sym>
 endm
 
+if ?DEB386
+D386_Identify       equ 43h	; returns debugger identification
+D386_Prepare_PMode  equ 44h	; partially prepare for protected mode operation
+PMINIT_INIT_IDT     equ 0	; (ES:EDI) = pointer to PM IDT
+D386_Id             equ 0F386h ; debugger identification code
+endif
+
 	.386P
 	option casemap:none
         
@@ -38,29 +46,29 @@ lf	equ 10
 
 mygdt label byte                ;GDT
         db 1*8 dup (0)          ;+00h null descriptor
-        db 1*8 dup (0)			;+08h
-restab  db 3*8 dup (0)          ;+10h descriptors reserved for vcpi host
-pmcs    desc <0ffffh,0,0,9Ah,0,0>	;+28h
-pmds    desc <0ffffh,0,0,92h,0,0>	;+30h
-pmflat  desc <0ffffh,0,0,92h,8fh,0>	;+38h
-pmtr    desc <068h-1,0,0,89h,0,0> ;selector for TR	;+40h
-if ?VCPIDBG
-vcpidbgdesc label dword			;+48
-		db 30*8 dup (0)			; 30 descriptors for 386SWAT
+restab  db 3*8 dup (0)          ;+08h descriptors reserved for vcpi host
+pmcs    desc <0ffffh,0,0,9Ah,0,0>	;+20h
+pmds    desc <0ffffh,0,0,92h,0,0>	;+28h
+pmtr    desc <068h-1,0,0,89h,0,0> ;selector for TR	;+38h
+pmflat  desc <0ffffh,0,0,92h,8fh,0>	;+30h
+if ?386SWAT or ?DEB386
+kddesc label dword			;+48
+		db 30*8 dup (0)			; descriptors free for kernel debugger
+KDSEL   equ offset kddesc - offset mygdt
 endif
-SIZGDT	equ $ - mygdt
-CSR0	equ pmcs - mygdt
-DSR0	equ pmds - mygdt
-FLATR0	equ pmflat - mygdt
-TRSEL 	equ pmtr - mygdt
-HOSTCS	equ restab - mygdt
+SIZGDT	equ $             - offset mygdt
+CSR0	equ offset pmcs   - offset mygdt
+DSR0	equ offset pmds   - offset mygdt
+TRSEL 	equ offset pmtr   - offset mygdt
+FLATSEL	equ offset pmflat - offset mygdt
+HOSTCS	equ offset restab - offset mygdt
 
 pdgdt    label fword
          dw SIZGDT-1            ;limit GDTR
 basegdt  dd offset mygdt        ;base  GDTR
 
 pdidt    label fword
-         dw 80h*8-1             ;limit IDTR
+         dw sizeof myidt-1      ;limit IDTR
 baseidt  dd offset myidt        ;base  IDTR
 
 ;--- far32 address of VCPI protected-mode API
@@ -83,11 +91,11 @@ vidtr	dd offset pdidt 		;linear address PD for IDTR
 
 TSSSEG struct
 dwLink	dd ?
-dqStk0	df ?	;+04
+dfStk0	df ?	;+04
 		dw ?
-dqStk1	df ?	;+0C
+dfStk1	df ?	;+0C
 		dw ?
-dqStk2	df ?	;+14
+dfStk2	df ?	;+14
 		dw ?
 _CR3	dd ?	;+1C
 _Eip	dd ?	;+20
@@ -110,8 +118,6 @@ _LDT	dd ?	;+60
 wFlags  dw ?	;+64
 wOffs   dw ?	;+66
 TSSSEG ends
-
-;taskseg TSSSEG <>   ;task state segment
 
 dwPage	dd 0		;page to release / allocated
 dwFreePages dd 0	;number free pages
@@ -141,17 +147,16 @@ RFLAG	equ 64	;option r - free pages in rmode
 bRet	db 00
 bNoDisp	db 00
 
-if ?VCPIDBG
-bVCPIDbg db 0
+if ?386SWAT or ?DEB386
+bKrnlDbg db 0
 dfDbgEntry df 0
 endif
 
 	.data?
 
-myidt label byte
-	db 80h*8 dup (?)
-
-ptab	db 1000h dup (?)
+myidt   db 100h*8 dup (?)
+ptab    db 1000h dup (?)
+taskseg TSSSEG <>   ;task state segment
 drtab	dd 8 dup (?)
 
 	.code
@@ -278,7 +283,6 @@ defint proc near
 	out 0a0h,al
 @@:
 	pop eax
-;	sti			;this is not needed, client runs in ring 0!
 	iretd
 defint endp
 
@@ -558,7 +562,7 @@ EMScheck endp
 
 emsstr  db 'EMMXXXX0'
 
-;*** protocol vcpi ***
+;*** call vcpi functions
 
 pvcpi proc near
 
@@ -591,15 +595,42 @@ pvcpi1:
 	movzx bx,bl
 	invoke printf, CStr( <"VCPI version: %u.%u",lf>),ax,bx
 @@:
-if ?VCPIDBG
-	mov ax,0DEF0h
+
+	call setdescriptors
+	push ds
+	pop es
+
+if ?386SWAT
+;--- the proper sequence of API calls for 386SWAT are
+;--- DEF0, DE01 (VCPI get pm interface), DEF2, DEF3
+
+	mov ax,0DEF0h	; returns debugger version in BX
 	int 67h
 	cmp ah,0
 	jnz @F
-	mov bVCPIDbg,1
+	mov bKrnlDbg, 1
+	jmp kd_done
 @@:
 endif
-	call InitProt
+if ?DEB386
+	mov ah,D386_Identify
+	int 68h
+	cmp ax, D386_Id
+	jnz kd_done
+	mov bKrnlDbg, 2
+	mov bx, FLATSEL
+	mov cx, KDSEL
+	mov dx, 0	; no GDT sel
+	mov si, offset mygdt	; ds:si=gdt
+	mov di, offset myidt	; es:di=idt
+	mov ah, D386_Prepare_PMode
+	int 68h
+	mov dword ptr [dfDbgEntry+0], edi
+	mov  word ptr [dfDbgEntry+4], es
+	push ds
+	pop es
+endif
+kd_done:
 
 	mov es,[ptadr]
 	xor di,di			;ES:DI -> page table 0
@@ -773,9 +804,9 @@ endif
 DispPTEs endp
 
 ;--- fill VCPI comm structure
-;--- set descriptors
+;--- set descriptors and IDT
 
-InitProt proc near
+setdescriptors proc
 	mov ax,cs
 	movzx eax,ax
 	shl eax, 4
@@ -792,14 +823,21 @@ InitProt proc near
 	add vidtr, eax
 
 	mov pmds.A0015,ax
-	mov pmtr.A0015,ax
 	shr eax,16
 	mov pmds.A1623,al
-	mov pmtr.A1623,al
 
+	mov ax,ds
+	movzx eax,ax
+	shl eax, 4
+	add eax, offset taskseg
+	mov pmtr.A0015,ax
+	shr eax,16
+	mov pmtr.A1623,al
+	mov dword ptr taskseg.dfStk0, esp
+	mov word ptr taskseg.dfStk0+4, DSR0
 
 	mov bx,0
-	mov edi,offset myidt
+	mov di,offset myidt
 if ?DISPEXC
 	mov ax,offset exceptions
 nextitem:
@@ -807,9 +845,9 @@ nextitem:
 	mov word ptr [di+2],CSR0
 	mov word ptr [di+4],0EE00h
 	mov word ptr [di+6],0
-	inc bl
 	add di,8
 	add ax,4
+	inc bl
 	cmp bl,20h
 	jnz nextitem
 endif
@@ -818,71 +856,42 @@ nextitem2:
 	mov word ptr [di+2],CSR0
 	mov word ptr [di+4],0EE00h
 	mov word ptr [di+6],0
-	inc bl
 	add di,8
-	cmp bl,80h
+	inc bl
 	jnz nextitem2
 	ret
-InitProt endp
+setdescriptors endp
 
 ;--- switch to protected-mode and back to v86-mode throu VCPI
 
-pmgo proc near
+pmgo proc
 
-if ?VCPIDBG
-	cmp bVCPIDbg,1
-	jnz novcpidbg
-;	mov dword ptr taskseg.dqStk0+0, esp
-;	mov word ptr taskseg.dqStk0+4, DSR0
-	mov ebx,vcr3
-	mov edx,vcr3  ;linear address (phys==lin here)
-	mov ax,0DEF4h
-	int 67h
-	cmp ah,0
-	jz @F
-	invoke printf, CStr( <"int 67h, ax=DEF4h failed",cr,lf>)
-	mov ah,00
-	int 16h
-	jmp novcpidbg
-@@:
-	mov edi,offset vcpidbgdesc
+if ?386SWAT
+	cmp bKrnlDbg, 1
+	jnz no386swat2
 	push ds
 	pop es
-	mov bx,offset vcpidbgdesc - offset mygdt
-	mov ax,0DEF2h
+	mov di, offset kddesc
+	mov bx, KDSEL
+	mov ax, 0DEF2h
 	int 67h
 	cmp ah,0
-	jz @F
-	invoke printf, CStr( <"int 67h, ax=DEF2h failed",cr,lf>)
-	mov ah,00
-	int 16h
-	jmp novcpidbg
+	jnz no386swat2
+	mov dword ptr [dfDbgEntry+0], edx
+	mov  word ptr [dfDbgEntry+4], bx
+
+	mov cx, 10h
+	mov bx, 0
+	mov di, offset myidt
 @@:
-	mov dword ptr dfDbgEntry+0,edx
-	mov word ptr dfDbgEntry+4,bx
-	mov bx,0
-	mov edi,offset myidt
-	push ds
-	pop es
-nextitem:
-	mov ax,0DEF3h
+	mov ax, 0DEF3h
 	int 67h
-	cmp ah,0
-	jz @F
-	cmp ah,83h	;not needed by the vcpi debugger
-	jz @F
-	movzx ax,ah
-	invoke printf, CStr( <"int 67h, ax=DEF3h failed, ah=%02X, bx=%04X",lf>),ax, bx
-	mov ah,00
-	int 16h
-	jmp novcpidbg
-@@:
 	inc bx
-	add di,8
-	cmp bx,20h
-	jnz nextitem
-novcpidbg:
+	add di, 8
+	loop @B
+no386swat2:
 endif
+
 	cli
 
 	mov [segcs],cs
@@ -902,14 +911,28 @@ pmentry::						;now in protected mode
 	mov ss,ax
 	mov esp,ebx
 	mov ds,ax
-	mov ax,FLATR0		;4G selector -> ES
+	mov ax,FLATSEL		;4G selector -> ES
 	mov es,ax
 	xor ax,ax
 	mov fs,ax
 	mov gs,ax
 
-if ?VCPIDBG
+if ?386SWAT
+	cmp bKrnlDbg,1
+	jnz @F
 	int 3
+@@:
+endif
+if ?DEB386
+	cmp bKrnlDbg,2
+	jnz @F
+	push ds
+	pop es
+	mov edi, offset myidt	;es:edi=idt
+	mov al, PMINIT_INIT_IDT
+	call [dfDbgEntry]
+	int 3
+@@:
 endif
 	test flags, QFLAG
 	jz @F
@@ -947,7 +970,7 @@ endif
 
 	clts						;clear task switched flag
 
-	mov ax,FLATR0
+	mov ax, FLATSEL
 	mov ds,ax					;DS must be FLAT
 	mov ax,0DE0Ch
 	call fword ptr ss:[vcpiv]
@@ -1092,6 +1115,14 @@ start:
 	add bx,ax
 	mov ah,4ah
 	int 21h
+	push ds
+	pop es
+	mov di, offset myidt
+	mov cx, sp
+	sub cx, di
+	shr cx, 1
+	xor ax, ax
+	rep stosw
 	call main
 	mov ax,4c00h
 	int 21h

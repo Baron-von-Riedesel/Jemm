@@ -438,20 +438,10 @@ endif
 @@Set:
 
 if ?DMADBG
-    @DbgOutS <"target lin. start address=">,1
-    @DbgOutD ebx,1
-    @DbgOutS <" length=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <" phys=">,1
-    @DbgOutD esi,1
-    @DbgOutS <" chn=">,1
-    @DbgOutD edi,1
     cmp esi, ebx
-    jz @@nothingtodo
-    @DbgOutS <"*">,1
-@@nothingtodo:    
-    @DbgOutS <10>,1
-    @WaitKey 1, 0
+    setnz al
+    movzx eax,al
+    @dprintf ?DMADBG, <"target lin. start address=%X length=%X phys=%X chn=%X [%u]",10>,ebx,ecx,esi,edi,eax
 endif
 
     cmp esi, ebx                ; has address changed?

@@ -1,6 +1,11 @@
 
  History
 
+ __.__.2024: v5.85
+ - address region 11xxxx-3FFFFF is now only mapped as needed.
+ - optional kernel-debugger-aware variant calls int 68h for deinitialization.
+ - better log displays via macro @dprintf.
+
  12.02.2024: v5.84
 
  - fixed: Simulate_IO() no longer calls trap handler.

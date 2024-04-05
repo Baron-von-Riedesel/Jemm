@@ -60,11 +60,7 @@ EMMXXXX0_Interrupt proc public
     mov ecx, [dwReqPtr]
 if ?EMMXXXX0
     mov al, [ecx].request_hdr.rhCmd
-if ?EMXDBG
-    @DbgOutS <"EMMXXXX0 request ">,1
-    @DbgOutB al,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?EMXDBG,<"EMMXXXX0 request %X",10>,al
     cmp al, 3           ;IOCTL input?
     jz @@ioctl_read
     cmp al, 8           ;write?

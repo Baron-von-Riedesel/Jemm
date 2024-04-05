@@ -74,13 +74,7 @@ xms_handler proc public
 if ?INTEGRATED
     mov esi,[ebp].Client_Reg_Struc.Client_ESI
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-if ?EMBDBG
-    @DbgOutS <"xms_handler: ax=">,1
-    @DbgOutW ax,1
-    @DbgOutS <" edx=">,1
-    @DbgOutD edx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?EMBDBG, <"xms_handler: ax=%X edx=%X",10>, ax, edx
     cmp ah,0fh          ; 00-0F?
     jbe @@ok1
     mov al,ah
@@ -284,7 +278,7 @@ xms_alloc_handle endp
 ;--- AH=09H: alloc an EMB, size DX kB
 
 xms_alloc_emb proc
-    @DbgOutS <"xms_alloc_emb",10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_alloc_emb",10>
     push edx
     movzx edx,dx  ; extend alloc request to 32-bits
     jmp @@xms_alloc2
@@ -296,7 +290,7 @@ if ?XMS35
 xms_sext_alloc_emb::;<--- entry, ah=15h
 endif
     push edx
-    @DbgOutS <"xms_ext_alloc_emb",10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_ext_alloc_emb",10>
 
 @@xms_alloc2:
     push ecx
@@ -364,22 +358,12 @@ endif
 @@perfect_fit2:
     pop ecx
     pop edx
-    @DbgOutS <"xms_alloc_emb, handle=">,?EMBDBG
-    @DbgOutD edi,?EMBDBG
-    @DbgOutS <" baseK=">,?EMBDBG
-    @DbgOutD [edi].XMS_HANDLE.xh_baseK,?EMBDBG
-    @DbgOutS <" sizeK=">,?EMBDBG
-    @DbgOutD [edi].XMS_HANDLE.xh_sizeK,?EMBDBG
-    @DbgOutS <"[res=">,?EMBDBG
-    @DbgOutD [dwRes],?EMBDBG
-    @DbgOutS <"]",10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_alloc_emb, handle=%X baseK=%X sizeK=%X [res=%X]",10>, edi, [edi].XMS_HANDLE.xh_baseK, [edi].XMS_HANDLE.xh_sizeK, [dwRes]
     sub edi,[dwRes]
     mov dx,di                       ; return handle in DX
     mov bl,0
     mov ax,1
-    @DbgOutS <"xms_alloc_emb ok, handle=">,?EMBDBG
-    @DbgOutW dx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_alloc_emb ok, handle=%X",10>, dx
     ret
 xms_alloc_emb endp
 
@@ -437,7 +421,7 @@ endif
 
 xms_ext_query_free_mem proc
 
-    @DbgOutS <"xms_ext_query_free_mem",10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_ext_query_free_mem",10>
     xor edi,edi     ; highest ending address of any memory block
     xor eax,eax     ; contains largest free block
     xor edx,edx     ; contains total free XMS
@@ -486,7 +470,7 @@ xms_ext_query_free_mem endp
 
 xms_query_free_mem proc
            
-    @DbgOutS <"xms_query_free_mem",10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_query_free_mem",10>
 
     push ecx
     push eax
@@ -522,9 +506,7 @@ xms_query_free_mem endp
 
 xms_free_emb proc
 
-    @DbgOutS <"xms_free_emb, dx=">,?EMBDBG
-    @DbgOutW dx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_free_emb, dx=%X",10>, dx
 
     call xms_check_handle_ex     ; check if DX holds a "used" handle, set ESI
     mov bl,XMS_BLOCK_LOCKED
@@ -607,9 +589,7 @@ xms_free_emb endp
 
 xms_lock_emb proc
 
-    @DbgOutS <"xms_lock_emb enter, dx=">,?EMBDBG
-    @DbgOutW dx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_lock_emb enter, dx=%X",10>, dx
 
     call xms_check_handle_ex    ; check if DX holds "used" handle
     xor ax,ax                   ; flag error 
@@ -644,7 +624,7 @@ if ?XMS35
 
 xms_sext_lock_emb proc
 
-	@DbgOutS <"xms_sext_lock_emb enter",10>,?EMBDBG
+	@dprintf ?EMBDBG, <"xms_sext_lock_emb enter",10>
 	call xms_check_handle_ex	; check if dx holds "used" handle
     xor ax,ax                   ; flag error 
 	inc [esi].XMS_HANDLE.xh_locks; increase lock counter
@@ -662,7 +642,7 @@ endif
 
 xms_unlock_emb proc
 
-    @DbgOutS <"xms_unlock_emb enter",10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_unlock_emb enter",10>
     call xms_check_handle_ex       ; check if DX holds "used" handle
     xor ax,ax
     cmp [esi].XMS_HANDLE.xh_locks,al; check if block is locked
@@ -681,9 +661,7 @@ xms_unlock_emb endp
 
 xms_ext_get_handle_info proc
 
-    @DbgOutS <"xms_ext_get_handle_info enter, dx=">,?EMBDBG
-    @DbgOutW dx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_ext_get_handle_info enter, dx=%X",10>, dx
 
     call xms_check_handle_ex; check if handle in DX is valid (="used")
     xor cx,cx               ; reset free handle counter
@@ -715,9 +693,7 @@ xms_get_handle_info proc
 
     push ecx
     push edx
-    @DbgOutS <"xms_get_handle_info enter, dx=">,?EMBDBG
-    @DbgOutW dx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_get_handle_info enter, dx=%X",10>, dx
     
     call xms_ext_get_handle_info
     or ax,ax
@@ -749,13 +725,7 @@ xms_get_handle_info endp
 
 xms_ext_realloc_emb proc public
 
-    @DbgOutS <"xms_ext_realloc_emb enter, dx=">,?EMBDBG
-    @DbgOutW dx,?EMBDBG
-    @DbgOutS <" ebx=">,?EMBDBG
-    @DbgOutD ebx,?EMBDBG
-    @DbgOutS <" esp=">,?EMBDBG
-    @DbgOutD esp,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_ext_realloc_emb enter, dx=%X ebx=%X esp=%X",10>, dx, ebx, esp
     call xms_check_handle_ex   ; dx == "used" handle?
     push edx
 
@@ -927,9 +897,7 @@ endif
 @@ext_dont_need_handle:
 @@ext_grow_success:
     pop edx
-    @DbgOutS <"xms_ext_realloc_emb exit, esp=">,?EMBDBG
-    @DbgOutD esp,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_ext_realloc_emb exit, esp=%X",10>, esp
     mov ax,1
     mov bl,0
     ret
@@ -939,17 +907,13 @@ xms_ext_realloc_emb endp
 
 xms_realloc_emb proc
 
-    @DbgOutS <"xms_realloc_emb enter, ebx=">,?EMBDBG
-    @DbgOutD ebx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_realloc_emb enter, ebx=%X",10>, ebx
     push ebx                        ; preserve Hiword(ebx)
     movzx ebx,bx                    ; clear top 16 bit
     call xms_ext_realloc_emb
     mov [esp],bx                   ; modify Loword(ebx)
     pop ebx
-    @DbgOutS <"xms_realloc_emb exit, ebx=">,?EMBDBG
-    @DbgOutD ebx,?EMBDBG
-    @DbgOutS <10>,?EMBDBG
+    @dprintf ?EMBDBG, <"xms_realloc_emb exit, ebx=%X",10>, ebx
     ret                                 
 
 xms_realloc_emb endp
@@ -1043,19 +1007,8 @@ endif
     push eax
     push ebx
 
-if ?EMBDBG
-    @DbgOutS <"xms_move_emb: siz=">,1
-    @DbgOutD [esi].XMS_MOVE.len,1
-    @DbgOutS <" src=">,1
-    @DbgOutW [esi].XMS_MOVE.src_handle,1
-    @DbgOutS <":">,1
-    @DbgOutD [esi].XMS_MOVE.src_offset,1
-    @DbgOutS <" dst=">,1
-    @DbgOutW [esi].XMS_MOVE.dest_handle,1
-    @DbgOutS <":">,1
-    @DbgOutD [esi].XMS_MOVE.dest_offset,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?EMBDBG, <"xms_move_emb: siz=%X src=%X:%X dst=%X:%X",10>,\
+        [esi].XMS_MOVE.len, [esi].XMS_MOVE.src_handle, [esi].XMS_MOVE.src_offset, [esi].XMS_MOVE.dest_handle, [esi].XMS_MOVE.dest_offset
 
     mov ecx,[esi].XMS_MOVE.len      ; get length
     test cl,1                       ; is it even?
@@ -1102,25 +1055,11 @@ endif
 ;   BL.EDI = destination A00-A39
 ;   ECX = number of words to move
 ;**************************************************
-if ?EMBDBG
-    @DbgOutS <"xms_move_emb: siz(byt)=">,1
-    @DbgOutD ecx,1
  if ?XMS35
-    @DbgOutS <" src(40bit)=">,1
-    @DbgOutB bh,1
+    @dprintf ?EMBDBG,<"xms_move_emb: siz(byt)=%X src(40bit)=%X%08X dst(40bit)=%X%08X",10>, ecx, bh, esi, bl, edi
  else
-    @DbgOutS <" src(32bit)=">,1
+    @dprintf ?EMBDBG,<"xms_move_emb: siz(byt)=%X src(32bit)=%X dst(32bit)=%X",10>, ecx, esi, edi
  endif
-    @DbgOutD esi,1
- if ?XMS35
-    @DbgOutS <" dst(40bit)=">,1
-    @DbgOutB bl,1
- else
-    @DbgOutS <" dst(32bit)=">,1
- endif
-    @DbgOutD edi,1
-    @DbgOutS <10>,1
-endif
 
     or ecx,ecx                 ; nothing to do ??
     jz @@xms_exit_copy
@@ -1239,13 +1178,11 @@ if ?A20XMS
 XMS_HandleA20 proc
 
     mov al,ah
-    @DbgOutS <"XMS A20 emulation, ah=">,?A20DBG
-    @DbgOutB al,?A20DBG
-    @DbgOutS <", curr cnt=">,?A20DBG
-    @DbgOutW [wA20],?A20DBG
-    @DbgOutS <", curr state=">,?A20DBG
-    @DbgOutB [bA20Stat],?A20DBG
-    @DbgOutS <10>,?A20DBG
+if ?A20DBG
+    push eax
+    @dprintf ?A20DBG, <"XMS A20 emulation, ah=%X, curr cnt=%X, curr state=%X",10>, al,[wA20], [bA20Stat]
+    pop eax
+endif
 
     mov cx, word ptr [wA20]
     cmp al,4
@@ -1374,10 +1311,8 @@ ife ?DYNTRAPP60
     jnz Simulate_IO
     mov [bLast64],0
 endif
-    @DbgOutS <"A20_Handle60: write to port 60h kbc output port, al=">,?A20DBG
-    @DbgOutB al,?A20DBG
-    @DbgOutS <10>,?A20DBG
     push eax
+    @dprintf ?A20DBG, <"A20_Handle60: write to port 60h kbc output port, al=%X",10>, al
     shr al,1
     and al,1
     call A20_Set
@@ -1396,11 +1331,7 @@ A20_Inp92::
     mov ah, [bA20Stat]
     shl ah, 1
     or al, ah
-    @DbgOutS <"A20_Handle60: read port ">,?A20DBG
-    @DbgOutW dx,?A20DBG
-    @DbgOutS <" kbc output port, al=">,?A20DBG
-    @DbgOutB al,?A20DBG
-    @DbgOutS <10>,?A20DBG
+    @dprintf ?A20DBG, <"A20_Handle60: read port %X kbc output port, al=%X",10>, dx, al
     ret
     align 4
 A20_Handle60 endp
@@ -1421,9 +1352,7 @@ endif
 if ?A20DBG
 ;   cmp al,0D1h
 ;   jnz @@nokbcout
-    @DbgOutS <"A20_Handle64: write to port 64h, al=">,?A20DBG
-    @DbgOutB al,?A20DBG
-    @DbgOutS <10>,?A20DBG
+    @dprintf ?A20DBG, <"A20_Handle64: write to port 64h, al=%X",10>, al
 @@nokbcout:
 endif
     out dx, al
@@ -1434,9 +1363,7 @@ A20_Handle64 endp
 A20_Handle92 proc public
     test cl,OUTPUT      ;is it in or out?
     jz A20_Inp92
-    @DbgOutS <"A20_Handle92: write to port 92h, al=">,?A20DBG
-    @DbgOutB al,?A20DBG
-    @DbgOutS <10>,?A20DBG
+    @dprintf ?A20DBG, <"A20_Handle92: write to port 92h, al=%X",10>, al
     push eax
     shr al,1
     and al,1
@@ -1469,11 +1396,7 @@ if ?INTEGRATED
     mov [hmamin], ax
     mov ax, [esi].JEMMINIT.X2Max
     mov [x2max], ax
-  if ?INITDBG
-    @DbgOutS <"XMS init: x2max=">,1
-    @DbgOutW ax,1
-    @DbgOutS <10>,1
-  endif
+    @dprintf ?INITDBG, <"XMS init: x2max=%X",10>, ax
     mov al, [esi].JEMMINIT.A20Method
     mov [A20Index],al
  if ?XMS35
@@ -1524,11 +1447,7 @@ endif
     call MapPhysPagesEx
     mov [PageMapHeap], edx
     
-if ?INITDBG    
-    @DbgOutS <"HMA shadowed at ">, 1
-    @DbgOutD eax, 1
-    @DbgOutS <10>, 1
-endif
+    @dprintf ?INITDBG, <"HMA shadowed at %X",10>, eax
     pop ecx
     sub ecx, 100000h
     add eax, ecx

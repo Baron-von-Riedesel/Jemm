@@ -1,7 +1,5 @@
 
-;--- printf for debug displays
-;--- assume CS and SS flat;
-;--- no assumptions about DS/ES
+;--- printf for debug displays, 32-bit
 
 ;--- i64toa(long long n, char * s, int base);
 ;--- convert 64-bit long long to string
@@ -24,7 +22,7 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 @@:
 	mov ebx,outb
 	add ebx,22
-	mov byte ptr ss:[ebx],0
+	mov byte ptr [ebx],0
 @@nextdigit:
 	dec ebx
 	xor edx,edx
@@ -37,14 +35,14 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 	jbe @F
 	add dl,7+20h
 @@:
-	mov ss:[ebx],dl
+	mov [ebx],dl
 	mov edx, eax
 	or edx, esi
 	jne @@nextdigit
 	cmp ch,0
 	je @F
 	dec ebx
-	mov ss:[ebx],ch
+	mov [ebx],ch
 @@:
 	mov eax,ebx
 	ret
@@ -84,13 +82,13 @@ formatitem:
 	mov [longarg],dl
 	mov bl,1
 	mov cl,' '
-	cmp BYTE PTR cs:[esi],'-'
+	cmp BYTE PTR [esi],'-'
 	jne @F
 	dec bl
 	inc esi
 @@:
 	mov [flag],bl
-	cmp BYTE PTR cs:[esi],'0'
+	cmp BYTE PTR [esi],'0'
 	jne @F
 	mov cl,'0'
 	inc esi
@@ -98,8 +96,8 @@ formatitem:
 	mov [fillchr],ecx
 	mov ebx,edx
 
-	.while ( byte ptr cs:[esi] >= '0' && byte ptr cs:[esi] <= '9' )
-		lodsb cs:[esi]
+	.while ( byte ptr [esi] >= '0' && byte ptr [esi] <= '9' )
+		lodsb
 		sub al,'0'
 		movzx eax,al
 		imul ecx,ebx,10		;ecx = ebx * 10
@@ -108,7 +106,7 @@ formatitem:
 	.endw
 
 	mov [size_],ebx
-	cmp BYTE PTR cs:[esi],'l'
+	cmp BYTE PTR [esi],'l'
 	jne @F
 	mov [longarg],1
 	inc esi
@@ -132,14 +130,14 @@ formatitem:
 	pop eax
 	jmp done
 handle_c:
-	mov eax,ss:[edi]
+	mov eax,cs:[edi]
 	add edi, 4
 @@:
 	call VPUTCHR
 	retn
 
 handle_s:
-	mov esi,ss:[edi]
+	mov esi,cs:[edi]
 	add edi,4
 	jmp print_string
 handle_d:
@@ -153,11 +151,11 @@ handle_x:
 	mov ebx, 16
 @@:
 	xor edx,edx
-	mov eax,ss:[edi]
+	mov eax,cs:[edi]
 	add edi,4
 	cmp longarg,1
 	jnz @F
-	mov edx,ss:[edi]
+	mov edx,cs:[edi]
 	add edi,4
 	jmp printnum
 @@:

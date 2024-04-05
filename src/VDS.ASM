@@ -81,12 +81,7 @@ vds_handler proc public
     cmp ah,81h
     jnz @@isnotvds
     movzx ebx,al
-
-if ?VDSDBG gt 2
-    @DbgOutS <"VDS entry, al=">,1
-    @DbgOutB al,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 2,<"VDS entry, al=%X",10>, ebx
     sub ebx,2
     jc @@vds_reserved
     cmp ebx,VDS_MAX
@@ -115,12 +110,7 @@ endif
 @@vds_reserved:
     mov ecx, [OldInt4B]
     jecxz @@novdsoldcall
-if ?VDSDBG gt 0
-    @DbgOutS <"unhandled Int 4Bh, jmp to cs:ip=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-    @WaitKey 1, 0
-endif
+    @dprintf ?VDSDBG gt 0,<"unhandled Int 4Bh, jmp to cs:ip=%X",10>, eax
     mov word ptr [ebp].Client_Reg_Struc.Client_EIP, CX
     shr ecx, 16
     mov [ebp].Client_Reg_Struc.Client_CS, ECX
@@ -176,13 +166,7 @@ vds_reqbuff proc
 
     mov [edi].DDS.wID, 0
     mov ecx, [edi].DDS.dwSize
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS request buff, flgs=">,1
-    @DbgOutW dx,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1,<"VDS request buff, flgs=%X siz=%X",10>, dx, ecx
     and ecx, ecx
     jz @@ok
     mov al, VDSERR_BUFFTOOSMALL  ; buffer too small for region
@@ -213,11 +197,7 @@ endif
 
 ;--- a free region large enough found
 
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS free region found at ">,1
-    @DbgOutW ax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1,<"VDS free region found at %X",10>, ax
 
     mov ebx, eax
     mov [edi].DDS.wID, ax
@@ -229,23 +209,13 @@ endif
     shl eax, 10     ;convert to byte
     add eax, [DMABuffStartPhys]
     mov [edi].DDS.dwPhys, eax
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS req buff, phys=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1,<"VDS req buff, phys=%X",10>, eax
     test dl,VDSF_COPY       ; copy into buffer?
     jz @@ok
     xor ecx, ecx
     jmp vds_copyinbuffEx
 @@fail6:    
-if ?VDSDBG gt 0
-    @DbgOutS <"VDS req buff aborted, eax=">,1
-    @DbgOutD eax,1
-    @DbgOutS <", ebx=">,1
-    @DbgOutD ebx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 0,<"VDS req buff aborted, eax=%X, ebx=%X",10>, eax, ebx
     mov al, VDSERR_BUFFINUSE; error "buffer currently in use"
 @@fail:
     stc
@@ -264,21 +234,7 @@ vds_reqbuff endp
 
 vds_unlock proc
 
-if ?VDSDBG gt 2
-    @DbgOutS <"VDS unlock flgs=">,1
-    @DbgOutW dx,1
-    @DbgOutS <" addr=">,1
-    @DbgOutW [edi].DDS.wSeg,1
-    @DbgOutS <":">,1
-    @DbgOutD [edi].DDS.dwOfs,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD [edi].DDS.dwSize,1
-    @DbgOutS <" id=">,1
-    @DbgOutW [edi].DDS.wID,1
-    @DbgOutS <" phys=">,1
-    @DbgOutD [edi].DDS.dwPhys,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 2,<"VDS unlock flgs=%X addr=%X:%X siz=%X id=%X phys=%X",10>, dx, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize, [edi].DDS.wID, [edi].DDS.dwPhys
 
 vds_unlock endp ;fall through
 
@@ -291,30 +247,8 @@ vds_unlock endp ;fall through
 vds_relbuff proc
 
     movzx ebx, [edi].DDS.wID
-if ?VDSDBG gt 2
-    @DbgOutS <"VDS release buff, flgs=">,1
-    @DbgOutW dx,1
-    @DbgOutS <" DDS=[siz=">,1
-    @DbgOutD [edi].DDS.dwSize,1
-    @DbgOutS <" ID=">,1
-    @DbgOutW bx,1
-    @DbgOutS <" addr=">,1
-    @DbgOutD [edi].DDS.dwPhys,1
-    @DbgOutS <"]",10>,1
-endif
-if ?VDSDBG gt 2
-    @DbgOutS <"DMA buffer bits:">,1
-    @DbgOutD DMABuffFree+0,1
-    @DbgOutS <"-">,1
-    @DbgOutD DMABuffFree+4,1
-    @DbgOutS <"-">,1
-    @DbgOutD DMABuffFree+8,1
-    @DbgOutS <"-">,1
-    @DbgOutD DMABuffFree+12,1
-    @DbgOutS <"-">,1
-    @DbgOutB <byte ptr DMABuffFree+16>,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 2,<"VDS release buff, flgs=%X DDS=[siz=%X ID=%X addr=%X",10>, dx, [edi].DDS.dwSize, bx, [edi].DDS.dwPhys
+    @dprintf ?VDSDBG gt 2,<"DMA buffer bits:%08X-%08X-%08X-%08X-X",10>,DMABuffFree+0,DMABuffFree+4,DMABuffFree+8,DMABuffFree+12, byte ptr DMABuffFree+16
     and ebx, ebx
     jz @@ok
 
@@ -368,12 +302,8 @@ vds_relbuff endp
 testbuffer proc
 
     movzx ebx, [edi].DDS.wID
-if ?VDSDBG gt 2
-    @DbgOutS <"VDS testbuff id=">,1
-    @DbgOutW bx,1
-    @DbgOutS <10>,1
-endif
-    mov al,0Ah                  ;"invalid buffer ID"
+    @dprintf ?VDSDBG gt 2,<"VDS testbuff id=%X",10>,bx
+    mov al,0Ah              ;"invalid buffer ID"
     and ebx, ebx
     jz  @@fail
     cmp bx, ?DMABUFFMAX
@@ -413,30 +343,16 @@ endif
     add ebx, [DMABuffStart]
     add ebx, eax
 @@ok:
-if ?VDSDBG gt 2
-    @DbgOutS <"VDS testbuff ok, buff start (linear)=">,1
-    @DbgOutD ebx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 2,<"VDS testbuff ok, buff start (linear)=%X",10>, ebx
     clc
     ret
 @@fail2:
-if ?VDSDBG gt 0
-    @DbgOutS <"VDS testbuff @@fail2, ebx=">, 1
-    @DbgOutD ebx, 1
-    @DbgOutS <" ecx=">, 1
-    @DbgOutD ecx, 1
-    @DbgOutS <10>, 1
-endif
+    @dprintf ?VDSDBG gt 0,<"VDS testbuff @@fail2, ebx=%X ecx=%X",10>, ebx, ecx
     pop ebx
 @@fail3:
     mov al,0Bh  ;"copy out of buffer range"
 @@fail:
-if ?VDSDBG gt 0
-    @DbgOutS <"VDS testbuff failed, al=">, 1
-    @DbgOutB al, 1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 0,<"VDS testbuff failed, al=%X",10>, al
     stc
     ret
     align 4
@@ -466,15 +382,7 @@ vds_copyinbuffEx proc
     movzx eax, [edi].DDS.wSeg
     shl eax, 4
     add eax, [edi].DDS.dwOfs
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS copyinbuff src=">,1
-    @DbgOutD eax,1
-    @DbgOutS <" dst=">,1
-    @DbgOutD ebx,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD ecx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1,<"VDS copyinbuff src=%X dst=%X siz=%X",10>, eax, ebx, ecx
     pushad
     mov esi, eax
     mov edi, ebx
@@ -672,17 +580,7 @@ vds_lock proc
 
     mov esi, edx    ;save flags
 
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS lock flgs=">,1
-    @DbgOutW dx,1
-    @DbgOutS <" addr=">,1
-    @DbgOutW [edi].DDS.wSeg,1
-    @DbgOutS <":">,1
-    @DbgOutD [edi].DDS.dwOfs,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD [edi].DDS.dwSize,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1, <"VDS lock flgs=%X addr=%X:%X siz=%X",10>, dx, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize
 
     xor eax, eax
     mov ebx, [edi].DDS.dwSize   ; region size
@@ -738,21 +636,7 @@ endif
     jnc @@lockok
 @@nobuffering:    
 
-if ?VDSDBG gt 0
-    @DbgOutS <"VDS lock failed, ret size=">,1
-    @DbgOutD edx,1
-    @DbgOutS <" rc=">,1
-    @DbgOutB al,1
-    @DbgOutS <" addr=">,1
-    @DbgOutW [edi].DDS.wSeg,1
-    @DbgOutS <":">,1
-    @DbgOutD [edi].DDS.dwOfs,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD [edi].DDS.dwSize,1
-    @DbgOutS <" flags=">,1
-    @DbgOutW si,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 0,<"VDS lock failed, ret size=%X rc=%X addr=%X:%X siz=%X flags=%X">, edx, al, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize, si
 
 @@lenfail:
     mov [edi].DDS.dwSize,edx    ; update maximum contiguous length
@@ -761,13 +645,7 @@ endif
     ret
 
 @@locksuccess:
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS lock ok, ret size=">,1
-    @DbgOutD [edi].DDS.dwSize,1
-    @DbgOutS <" phys=">,1
-    @DbgOutD eax,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1, <"VDS lock ok, ret size=%X phys=%X",10>, [edi].DDS.dwSize, eax
     mov [edi].DDS.dwPhys,eax ; physical address
     mov [edi].DDS.wID,0      ; zero buffer id
 
@@ -793,19 +671,7 @@ vds_lock endp
 
 vds_scatterlock proc
 
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS scatlock flgs=">,1
-    @DbgOutW dx,1
-    @DbgOutS <" addr=">,1
-    @DbgOutW [edi].EDDS.wSeg,1
-    @DbgOutS <":">,1
-    @DbgOutD [edi].EDDS.dwOfs,1
-    @DbgOutS <" siz=">,1
-    @DbgOutD [edi].EDDS.dwSize,1
-    @DbgOutS <" avl=">,1
-    @DbgOutW [edi].EDDS.wNumAvail,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1, <"VDS scatlock flgs=%X addr=%X:%X siz=%X avl=%X",10>, dx, [edi].EDDS.wSeg, [edi].EDDS.dwOfs, [edi].EDDS.dwSize, [edi].EDDS.wNumAvail
 
     mov ebx,[edi].EDDS.dwSize
     xor ecx,ecx     ; cx holds entries used
@@ -937,28 +803,12 @@ endif
     sub edx,esi
     dec ebx
     mov [edi+ebx*8+size EDDS].EDDSRG.dwSizeRg, edx
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS scatlock exit, rc=0, used=">,1
-    @DbgOutW [edi].EDDS.wNumUsed, 1
-    @DbgOutS <", addr=">,1
-    @DbgOutD [edi+size EDDS].EDDSRG.dwPhysAddr, 1
-    @DbgOutS <", siz=">,1
-    @DbgOutD [edi+size EDDS].EDDSRG.dwSizeRg, 1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1, <"VDS scatlock exit, rc=0, used=%X, addr=%X, siz=%X",10>, [edi].EDDS.wNumUsed, [edi+size EDDS].EDDSRG.dwPhysAddr, [edi+size EDDS].EDDSRG.dwSizeRg
     clc
     ret
 @@scatfail:
     mov [edi].EDDS.dwSize,edx
-if ?VDSDBG gt 0
-    @DbgOutS <"VDS scatlock exit, rc=">,1
-    @DbgOutB al,1
-    @DbgOutS <", siz=">,1
-    @DbgOutD [edi].EDDS.dwSize, 1
-    @DbgOutS <" used=">,1
-    @DbgOutW [edi].EDDS.wNumUsed, 1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 0, <"VDS scatlock exit, rc=%X, siz=%X used=%X",10>, al, [edi].EDDS.dwSize, [edi].EDDS.wNumUsed
     stc
     ret
 
@@ -1024,11 +874,7 @@ vds_scatterunlock endp
 vds_disabletrans proc
 
     mov ebx, [EBP].Client_Reg_Struc.Client_EBX
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS enable translation for channel ">,1
-    @DbgOutW bx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1, <"VDS disable translation for channel %X",10>, bx
     cmp bx, 8
     mov al, 0Ch     ;error "invalid channel"
     jnc @@fail
@@ -1057,11 +903,7 @@ vds_disabletrans endp
 vds_enabletrans proc
 
     mov ebx, [EBP].Client_Reg_Struc.Client_EBX
-if ?VDSDBG gt 1
-    @DbgOutS <"VDS disable translation for channel ">,1
-    @DbgOutW bx,1
-    @DbgOutS <10>,1
-endif
+    @dprintf ?VDSDBG gt 1, <"VDS enable translation for channel %X",10>, bx
     cmp bx, 8
     mov al, 0Ch     ;error "invalid channel"
     jnc @@fail

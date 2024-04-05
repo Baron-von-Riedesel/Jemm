@@ -37,40 +37,6 @@ endif
 
 .text$03 segment
 
-;--- display DWORD in eax
-
-VDWORDOUT proc public
-	push eax
-	shr eax,16
-	call VWORDOUT
-	pop eax
-VDWORDOUT endp
-VWORDOUT proc public
-	push eax
-	mov al,ah
-	call VBYTEOUT
-	pop eax
-VWORDOUT endp
-VBYTEOUT proc public
-	pushfd
-	push eax
-	mov ah,al
-	shr al,4
-	call VNIBOUT
-	mov al,ah
-	call VNIBOUT
-	pop eax
-	popfd
-	ret
-VBYTEOUT endp
-VNIBOUT proc
-	and al,0Fh
-	cmp al,10
-	sbb al,69H
-	das
-	jmp VPUTCHR
-VNIBOUT endp
-
 ;--- make no assumptions about DS and ES here!
 ;--- also don't push/pop segment registers!
 
@@ -178,8 +144,7 @@ endif
 	mul cl
 	mov ecx,eax
 @@nextcell:
-	db 2Eh	;CS prefix
-	lodsw 
+	lodsw cs:[esi]
 	mov ss:[edi],ax
 	add edi,2
 	loop @@nextcell
@@ -197,29 +162,19 @@ VPUTCHR ENDP
 
 ;--- print a string which is hard-coded behind the call to this function
 
-VPRINTSTR PROC public
-	XCHG EBX,[ESP]
-	PUSH EAX
-@@NEXTCHAR:
-	MOV AL,CS:[EBX] 	; using CS prefix should always work here
-	INC EBX
-	CMP AL,0
-	JZ	@@DONE
-	call VPUTCHR
-	JMP @@NEXTCHAR
-@@DONE:
-	POP EAX
-	XCHG EBX,[ESP]
-	RET
-VPRINTSTR endp
-
 ifdef _DEBUG
 	include dprintf.inc
 endif
 
 if 0
 
-;--- support for 386SWAT: check if int 3 vector still points to
+;--- 386SWAT isn't compatible with Jemm, because this debugger
+;--- expects that extended memory is mapped into linear address space,
+;--- at least those parts of XMS memory that 386SWAT uses for itself.
+;--- Jemm simply doesn't do that; it maps the memory that it needs and
+;--- nothing else.
+
+;--- check if int 3 vector still points to
 ;--- the monitor code segment. If no, assume 386SWAT has intruded
 
 DebugBreak proc public

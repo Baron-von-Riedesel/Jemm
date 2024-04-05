@@ -303,8 +303,8 @@ dwSizeV86   equ <[ebp-24]>
 ;--- no access to global variables possible until paging is enabled
 ;--- and memory block has been moved to extended memory!
 
-;    @dprintf ?INITDBG, <"Welcome in PM",10>	; doesn't work yet
-    @DbgOutS <"Welcome in PM",10>, ?INITDBG
+;--- dprintf used direct addressing, doesn't work yet
+;    @dprintf ?INITDBG, <"Welcome in PM",10>
 
     push edi                ;== jemmini [ebp-4]
     push ebx                ;== rsofsinit [ebp-8]
@@ -446,6 +446,8 @@ if ?PGE
 endif
     loop @B
 
+ifdef ?MAPFULL4M
+
 ;-- for VCPI intruders, set remaining PTEs in page tab 0.
 
     push eax
@@ -462,6 +464,7 @@ endif
     test di,0FFFh
     loopnz @B
     pop eax
+endif
 
 ;-- init system page table with the rest.
 ;-- in a first step just 3 PTEs are needed (to map page tables)
@@ -482,7 +485,9 @@ endif
     MOV EAX,CR0
     OR EAX,80000000H       ; set PE bit
     MOV CR0,EAX
-    @DbgOutS  <"Paging has been enabled",10>, ?INITDBG
+
+;--- dprintf uses direct addressing, cannot work yet
+;    @dprintf ?INITDBG,<"Paging has been enabled",10>
 
 ;--- paging enabled, now move monitor code+data in extended memory
 
@@ -503,7 +508,7 @@ nextpage:
     mov ecx, [esi+4]
     and ecx, ecx
     jz reloc_done
-    @dprintf ?INITDBG, <"rlcs at %X for page %X size=%X edx=%X",10>, esi, ebx, ecx, edx
+;    @dprintf ?INITDBG, <"rlcs at %X for page %X size=%X edx=%X",10>, esi, ebx, ecx, edx
     add ecx, esi
     add esi, 8
     sub ebx, edx        ;subtract size of header from RVA
@@ -521,7 +526,7 @@ nextreloc:
     jmp nextpage
 reloc_done:
     popad
-    @dprintf ?INITDBG, <"base relocs done",10>
+;    @dprintf ?INITDBG, <"base relocs done",10>
 endif
 
 ;-- copy all to extended memory (linear address 110000h)
@@ -531,10 +536,10 @@ endif
     shr ecx, 2
     rep movsd
 
-    @dprintf ?INITDBG, <"monitor code+data moved to extended memory",10>
-
 ;--- after code + data has been moved to extended memory
-;--- access to global variables is possible
+;--- direct addressing is ok, so access to global variables works now
+
+    @dprintf ?INITDBG, <"monitor code+data moved to extended memory",10>
 
 ;--- load final values for GDTR + IDTR
 

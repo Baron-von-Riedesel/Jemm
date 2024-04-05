@@ -75,11 +75,7 @@ Get_VDMAD_Version endp
 
 Lock_DMA_Region proc uses edi ebx
 
-	@DbgOutS <"Lock_DMA_Region, addr=">, ?DMADBG
-	@DbgOutD esi, ?DMADBG
-	@DbgOutS <", size=">, ?DMADBG
-	@DbgOutD ecx, ?DMADBG
-	@DbgOutS <10>, ?DMADBG
+	@dprintf ?DMADBG, <"Lock_DMA_Region, addr=%X, size=%X",10>, esi, ecx
 	push esi
 	lea ebx, [esi+ecx-1]	;let EBX point to the last byte
 	mov eax, esi
@@ -119,9 +115,7 @@ Lock_DMA_Region proc uses edi ebx
 	mov ax, si
 	and ax, 0FFFh
 	or dx, ax
-	@DbgOutS <"Lock_DMA_Region, returns edx=">, ?DMADBG
-	@DbgOutD edx, ?DMADBG
-	@DbgOutS <10>, ?DMADBG
+	@dprintf ?DMADBG, <"Lock_DMA_Region, returns edx=%X",10>, edx
 	ret
 @@error:
 	pop esi

@@ -7,7 +7,7 @@
 # OMF linker:   jwlink       MS link16
 # COFF linker:  jwlink       -
 
-# the 32-bit part of jwlink must be linked with base 0xF8400000;
+# the 32-bit part of jload must be linked with base 0xF8400000;
 # this isn't possible with (all?) MS link versions!
 
 # bin2inc translates binary files to assembly include files.
@@ -19,7 +19,7 @@ DEBUG = 0
 
 !if $(DEBUG)
 OUTDIR = DEBUG
-AOPTD=-D_DEBUG -D?PEDBG=1
+AOPTD=-D_DEBUG -D?PEDBG=1 -D?INITDBG=1 -D?RMDBG=1
 !else
 OUTDIR = RELEASE
 AOPTD=

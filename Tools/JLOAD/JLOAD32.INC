@@ -1,4 +1,18 @@
 
+;--- macros
+
+CStr macro text:vararg
+local sym
+	.const
+ ifidni <text>,<"">
+sym db 0
+ else
+sym db text,0
+ endif
+	.code
+	exitm <offset sym>
+endm
+
 ;--- constants
 
 ?PAGEMAP		equ	3FEh	;page table for mapping page tables

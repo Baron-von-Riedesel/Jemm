@@ -1,4 +1,7 @@
 
+ v5.85:
+   - debug displays now done with @dprintf().
+
  v5.84:
    - trap handling changed: Jemm's IO trap table is no longer imported,
      instead the old (=Jemm's) handler is called if the port isn't trapped

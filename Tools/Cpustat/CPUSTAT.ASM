@@ -70,8 +70,10 @@ O_GDT	equ 1
 O_IDT	equ 2
 O_PD	equ 4
 O_TSS	equ 8
+O_FPU	equ 16
 
 bOpt	db 0	;cmdline options -g -i -p -t
+bVerbose db 0	;for -p: 1=display paging tables
 
 	.code
 
@@ -477,17 +479,15 @@ error:
 DispIDT endp
 
 ;--- get # of PTEs in a page table
+;--- eax->physical address pt
 
-getPTEs proc uses si di ebx
+getPTEs proc stdcall uses si di ebx pPT:ptr
+
 	mov ebx, eax
-	xor di, di
-	invoke malloc, 1000h
-	jc error
-	mov di, ax
-	
+	mov di, pPT
 	and bx, 0F000h
 	invoke copymem, di, ebx, 1000h
-	jc error
+	jc exit
 	mov si, di
 	xor dx, dx
 	mov cx, 1024
@@ -498,18 +498,57 @@ nextitem:
 	inc dx
 @@:
 	loop nextitem
-	invoke free, di
 	mov ax, dx
-	ret
-error:
-	invoke free, di
-	stc
+	clc
+exit:
 	ret
 getPTEs endp
 
+;--- print page table
+;--- iPD: index in page directory
+
+printPT proc stdcall uses si pPT:ptr, iPD:word
+
+	mov si, pPT
+	mov cx, 1024
+nextitem:
+	push cx
+	test cl, 7
+	jnz @F
+;--- index page directory specifies address bits 22-31
+;--- index page table specifies address bits 12-21
+	movzx eax, di
+	shl eax, 22
+	mov dx, cx
+	sub dx, 1024
+	neg dx
+	movzx edx, dx
+	shl edx, 12
+	or eax, edx
+	invoke printf, CStr(lf,"%8lX: "), eax
+@@:
+	lodsd
+	.if al & 1
+		invoke printf, CStr("%8lX "), eax
+	.else
+		invoke printf, CStr("-------- ")
+	.endif
+	pop cx
+	loop nextitem
+	invoke printf, CStr(lf,lf)
+	ret
+printPT endp
+
 ;--- print page directory
+;--- if bVerbose==1, call printPT to display PTEs.
 
 printpd proc stdcall uses si di pPD:ptr
+
+local pPT:ptr
+
+	invoke malloc, 1000h
+	jc error
+	mov pPT, ax
 
 	mov si, pPD
 	xor di, di
@@ -525,16 +564,20 @@ nextitem:
 	jmp skipitem
 @@:
 	push eax
-	invoke getPTEs
+	invoke getPTEs, pPT
 	pop ecx
 	jc error
 	mov dx, di
 	shl edx, 22
 	invoke printf, CStr("%8lX: %08lX (%4u pages)",lf), edx, ecx, ax
+	.if bVerbose
+		invoke printpt, pPT, di
+	.endif
 skipitem:
 	inc di
 	cmp di, 1024
 	jnz nextitem
+	invoke free, pPT
 error:
 	ret
 printpd endp
@@ -717,16 +760,22 @@ local wSize:word
 				or bOpt, O_PD
 			.elseif (al == 't')
 				or bOpt, O_TSS
+			.elseif (al == 'v')
+				or bVerbose, 1
+			.elseif (al == 'f')
+				or bOpt, O_FPU
 			.else
 				jmp usage
 			.endif
 		.else
 usage:
 			invoke printf, CStr("usage: CPUSTAT [ options ]",lf)
+			invoke printf, CStr("    -f: clear FPU status",lf)
 			invoke printf, CStr("    -g: display GDT if in V86 mode",lf)
 			invoke printf, CStr("    -i: display IDT if in V86 mode",lf)
 			invoke printf, CStr("    -p: display PD if in V86 mode",lf)
 			invoke printf, CStr("    -t: display TSS if in V86 mode",lf)
+			invoke printf, CStr("    -v: make -p display paging tables",lf)
 			jmp exit
 		.endif
 	.endw
@@ -902,6 +951,17 @@ optional:
 		.else
 			invoke printf, CStr("no TSS in real-mode",lf)
 		.endif
+	.endif
+	.if (bOpt & O_FPU)
+		.if byte ptr [_msw] & 20h ; NE bit set?
+		.else
+			in al, 0A1h		; unmask IRQ 0Dh
+			and al, not 20h
+			out 0A1h, al
+			mov al,0
+			out 0F0h, al
+		.endif
+		fninit
 	.endif
 
 exit:

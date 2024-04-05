@@ -73,7 +73,7 @@ cpuid1_edx_str label word
 	dw DStr("TM - Thermal Monitoring",lf)
 	dw DStr("PBE - Pending Brk Enable",lf)
 
-cpuid1_ecx_bits db 0,1,2,3,5,7,8,9,13,19,20,23,26,28,30
+cpuid1_ecx_bits db 0,1,2,3,5,7,8,9,13,19,20,21,23,26,28,30
 cpuid1_ecx_str label word
 	dw DStr("SSE3",lf)
 	dw DStr("PCLMULQDQ - Carryless Multiplication",lf)
@@ -86,6 +86,7 @@ cpuid1_ecx_str label word
 	dw DStr("CMPXCHG16B",lf)
 	dw DStr("SSE4.1",lf)
 	dw DStr("SSE4.2",lf)
+	dw DStr("x2APIC",lf)
 	dw DStr("POPCNT",lf)
 	dw DStr("XSAVE",lf)
 	dw DStr("AVX - Advanced Vector Extensions",lf)
