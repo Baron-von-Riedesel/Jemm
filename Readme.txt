@@ -251,6 +251,50 @@
 
  6. Errors and Warnings
 
+ Errors will make Jemm386/JemmEx abort the load process, while warnings
+ will be displayed and then the load process continues.
+
+ - "Error: no XMM found, required"
+   Jemm386 only. Jemm386 needs an XMM - try Himem(S)X.
+
+ - "Error: XMM already installed"
+   JemmEx only. Since JemmEx has its very own XMM, it cannot tolerate
+   another one in the system.
+
+ - "Error: DPMI host detected"
+   Both Jemm386 and JemmEx refuse to load if a DPMI host has been detected.
+
+ - "Error: No supported A20 method detected"
+   JemmEx only. JemmEx is NOT compatible with this system.
+
+ - "Error: enable A20 failed"
+   JemmEx only. JemmEx is NOT compatible with this system.
+
+ - "Error: can't get I15 memory status"
+   JemmEx only. Int 15h, AX=E820h ( and the fallbacks, Int 15h,
+   ax=E801h/ah=88h ) failed or returned an amount of 0 kB extended memory.
+   Tool memstat may help to find the problem.
+
+ - "Error: can't get XMS memory status"
+   Jemm386 only. The XMS host reports no extended memory. Tool xmsstat
+   may give a hint what's wrong.
+
+ - "Error: can't allocate enough I15 memory"
+   JemmEx only. Run tool memstat to see how much extended memory the
+   system is reporting.
+
+ - "Error: can't allocate enough XMS memory"
+   Jemm386 only. Run tool xmsstat to see how much extended memory the
+   XMM is reporting.
+
+ - "Error: can't lock XMS memory"
+   Jemm386 only. Well, this shouldn't happen. Jemm386 needs the physical
+   address of the memory block where it is to reside. The XMM most likely has
+   to be replaced.
+
+ - "Warning: option 'xxx=' rejected, invalid syntax"
+   The option is ignored.
+
  - "Warning: E820 - too many ext memory blocks, block xxxxxxxx ignored!"
    JemmEx only. Occurs if int 15h, ax=e820h returns more than 10 available
    memory blocks. It's very well possible that super-extended memory isn't
@@ -266,20 +310,24 @@
 
  - "Warning: no suitable page frame found, EMS functions limited."
    Most programs using EMS won't work without a page frame, so this warning
-   should not be ignored. First step is to load Jemm from the command line, with
-   the /V option to see why Jemm cannot find a 64 kB region to be used as page
-   frame. Possible reasons are:
+   should not be ignored. To analyze the problem, a first step may be to load
+   Jemm from the command line, with the /V option to see why it cannot find a
+   64 kB region to be used as page frame. Possible reasons are:
     - UMBPCI is used. Memory regions activated by UMBPCI are detected by Jemm
-      and cannot be used for the Page Frame anymore.
+      and hence won't be used for mapping the Page Frame.
     - BIOS marks 128 kB ( E0000-FFFFF ) as reserved in Int 15h, ax=E820h.
-   If it's not possible to make Jemm use a valid page frame, it should be setup
+    Using the video segment A000 as page frame is useful only for very specific
+   applications and cannot be recommended. Using regions below A000 are even
+   more problematic on machines with 640 kB conventional memory, since the
+   address range is already "owned" by DOS. 
+    If it's not possible to make Jemm use a valid page frame, it should be setup
    with option NOEMS.
 
  - "Warning: EMS banking start too low, set to 0x1000."
    This warning only occurs if option B=xxxx has been used inappropriately.
 
  - "Warning: MIN has been reduced to n kB"
-   Warning occurs if the amount given for MIN exceeds avaiable free memory. 
+   Warning occurs if the amount given for MIN exceeds available free memory. 
 
  - "Warning: wanted DMA buffer size too large, set to 128 kB"
    Warning occurs if option D=nnn has been used with a value larger than
@@ -287,7 +335,8 @@
 
  - "Warning: XMS host doesn't provide handle array, dynamic memory allocation off!"
    Jemm386 only. Jemm wants the XMM to reveal its handle table. If this feature
-   isn't available, Jemm has to allocate it's memory for EMS and VCPI on startup.
+   isn't available, Jemm has to allocate it's memory for EMS and VCPI statically
+   on startup.
 
 
  7. Additional Tools

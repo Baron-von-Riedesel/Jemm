@@ -2982,7 +2982,7 @@ endif
 			.endif
 		.else
 range_invalid:
-			invoke printf, CStr("%s: option '%c=' rejected, invalid syntax", LF), offset szError, memtype
+			invoke printf, CStr("%s: option '%c=' rejected, invalid syntax", LF), offset szWarning, memtype
 		.endif
 	.endw
 
