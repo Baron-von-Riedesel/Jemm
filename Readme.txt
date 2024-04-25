@@ -6,18 +6,19 @@
   3.   Commandline Options
   4.   EMS Implementation Notes
   5.   Emulation of privileged Opcodes
-  6.   Additional Tools
-  6.1  UMBM
-  6.2  JEMFBHLP
-  6.3  CPUSTAT
-  6.4  EMSSTAT
-  6.5  XMSSTAT
-  6.6  MEMSTAT
-  6.7  VCPI
-  6.8  MOVEXBDA
-  6.9  CPUID
-  7.   Troubleshooting, Hints
-  8.   License
+  6.   Errors and Warnings
+  7.   Additional Tools
+  7.1  UMBM
+  7.2  JEMFBHLP
+  7.3  CPUSTAT
+  7.4  EMSSTAT
+  7.5  XMSSTAT
+  7.6  MEMSTAT
+  7.7  VCPI
+  7.8  MOVEXBDA
+  7.9  CPUID
+  8.   Troubleshooting, Hints
+  9.   License
 
 
  1. About Jemm
@@ -178,7 +179,7 @@
             might confuse resident programs which rely on EMS or VCPI but
             didn't ensure this configuration to keep unchanged (by allocating
             an EMS page) while they are running.
- V86EXC0D   makes Jemm route General Protection Faults (GPF) which occur in
+ V86EXC0D   makes Jemm route General Protection Faults (GPF) that occur in
             V86-mode to Int 0Dh. Without this option they are routed to
             Int 06h. This option should only be set if a resident program
             is to be installed that can handle GPFs in V86-mode.
@@ -248,9 +249,50 @@
  - RDTSC
 
 
- 6. Additional Tools
+ 6. Errors and Warnings
 
- 6.1. UMBM
+ - "Warning: E820 - too many ext memory blocks, block xxxxxxxx ignored!"
+   JemmEx only. Occurs if int 15h, ax=e820h returns more than 10 available
+   memory blocks. It's very well possible that super-extended memory isn't
+   available if this warning has occured. The only cure is to adjust constant
+   ?XMS_STATICHDLS in file jemm16.inc and recompile JemmEx.
+
+ - "Warning: address of allocated EMB (=XXXXXX) is beyond 16MB" 
+   Jemm386 only. Means that Jemm386 is forced to reside beyond the physical
+   16MB barrier. No problem for Jemm386 itself, but the VDS API requires a
+   DMA buffer that is located below that 16MB barrier. So one is better off not
+   to ignore this warning. The simplest fix is to replace the XMM, use
+   HimemX2.exe instead of HimemX.exe.
+
+ - "Warning: no suitable page frame found, EMS functions limited."
+   Most programs using EMS won't work without a page frame, so this warning
+   should not be ignored. First step is to load Jemm from the command line, with
+   the /V option to see why Jemm cannot find a 64 kB region to be used as page
+   frame. Possible reasons are:
+    - UMBPCI is used. Memory regions activated by UMBPCI are detected by Jemm
+      and cannot be used for the Page Frame anymore.
+    - BIOS marks 128 kB ( E0000-FFFFF ) as reserved in Int 15h, ax=E820h.
+   If it's not possible to make Jemm use a valid page frame, it should be setup
+   with option NOEMS.
+
+ - "Warning: EMS banking start too low, set to 0x1000."
+   This warning only occurs if option B=xxxx has been used inappropriately.
+
+ - "Warning: MIN has been reduced to n kB"
+   Warning occurs if the amount given for MIN exceeds avaiable free memory. 
+
+ - "Warning: wanted DMA buffer size too large, set to 128 kB"
+   Warning occurs if option D=nnn has been used with a value larger than
+   the maximum of 128 (kb).
+
+ - "Warning: XMS host doesn't provide handle array, dynamic memory allocation off!"
+   Jemm386 only. Jemm wants the XMM to reveal its handle table. If this feature
+   isn't available, Jemm has to allocate it's memory for EMS and VCPI on startup.
+
+
+ 7. Additional Tools
+
+ 7.1. UMBM
 
  UMBM is a small tool only useful in conjunction with Uwe Sieber's UMBPCI.
  The main purpose of UMBM is to allow DOS to load the XMM into upper memory.
@@ -277,7 +319,7 @@
  to CONFIG.SYS. UMBM has been tested to run with MS-DOS 6/7 and FreeDOS.
 
 
- 6.2. JEMFBHLP
+ 7.2. JEMFBHLP
 
  JEMFBHLP is a tiny device driver only needed if both FreeDOS and Jemm's
  FASTBOOT option are used. FreeDOS v1.0 does not provide the information
@@ -288,7 +330,7 @@
  I was told that in FreeDOS v1.1 this problem has been fixed.
 
 
- 6.3. CPUSTAT
+ 7.3. CPUSTAT
 
  CPUSTAT displays some system registers. Most of them aren't accessible in
  v86-mode. So this program should be seen as a test if the emulation of the
@@ -298,20 +340,20 @@
  of the v86-monitor. Run "CPUSTAT -?" for more details.
 
 
- 6.4. EMSSTAT
+ 7.4. EMSSTAT
 
  EMSSTAT can be used to display the current status of the installed EMM.
  It works with any EMM, not just Jemm.
 
 
- 6.5. XMSSTAT
+ 7.5. XMSSTAT
 
  XMSSTAT can be used to display the current status of the installed XMM.
  It allows to check current values of JemmEx options X2MAX, MAXEXT and
  XMSHANDLES.
 
 
- 6.6. MEMSTAT
+ 7.6. MEMSTAT
 
  MEMSTAT may be used to display the machine's memory layout, as it is
  returned by the BIOS. The most interesting infos are:
@@ -320,14 +362,14 @@
  - total amount of free memory
 
 
- 6.7. VCPI
+ 7.7. VCPI
 
  VCPI may be used to display the VCPI status of the installed EMM.
  With option -p it will display the page table entries for the conventional
  memory.
 
 
- 6.8. MOVEXBDA
+ 7.8. MOVEXBDA
 
  MOVEXBDA is a device driver supposed to move the Extended BIOS Data
  Area ( XBDA or EBDA ) to low DOS memory. If an XBDA exists, it is usually
@@ -344,12 +386,12 @@
  MOVEXBDA should work with any EMM.
 
 
- 6.9. CPUID
+ 7.9. CPUID
 
  CPUID displays cpu features returned by the CPUID instruction.
 
 
- 7. Troubleshooting, Hints
+ 8. Troubleshooting, Hints
 
  þ If Jemm halts or reboots the machine, the following combinations
    of parameters may help to find the reason. Generally, Jemm386 should be
@@ -446,12 +488,6 @@
    then that region is not used by Jemm. If you are sure that the region
    is ok to be used, include it with 'I=XXXX-XXXX'.
 
- þ JemmEx will display warning "E820 - too many ext memory blocks, block 
-   xxxxxxxx ignored!" if int 15h, ax=e820h returns more than 10 available
-   memory blocks. It's very well possible that super-extended memory isn't
-   available if this warning has occured. The only cure is to adjust constant
-   ?XMS_STATICHDLS in file jemm16.inc and recompile JemmEx.
-
  þ The I=XXXX commandline option may be used to include the VGA "graphics"
    segment A000h. It might be possible to increase DOS conventional memory
    up to 736 kB by option I=A000-B7FF. However, there are quite a few
@@ -476,12 +512,8 @@
      of conventional memory BELOW the XBDA. In this case conventional memory
      cannot be increased anymore, even if the XBDA is moved.
 
- þ The 386SWAT debugger isn't fully compatible with Jemm. It can't "intrude"
-   because for that it expects the XMS memory that the debugger uses is mapped
-   into linear address space. Jemm only maps the physical memory that it needs.
 
-
- 8. License
+ 9. License
 
  - JEMM386/JEMMEX: partly Artistic License (see ARTISTIC.TXT for details)
  - UMBM:     Public Domain
