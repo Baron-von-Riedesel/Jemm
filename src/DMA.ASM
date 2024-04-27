@@ -20,6 +20,7 @@
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
     include debug.inc
+    include dma.inc
 
 ;--- publics/externals
 
@@ -109,26 +110,26 @@ Dma_HandleDmaPorts8 proc public
 if ?DMADBG
     push eax
     @dprintf ?DMADBG, <"Dma_HandleDmaPorts8: OUT, dx=%X al=%X ">, dx, al
-    in al, 8
+    in al, 8			; ok to read port 8???
     @dprintf ?DMADBG, <"08=%X",10>, al
     pop eax
 endif
 
-    CMP DL,8                    ; Program addresses and/or length of the blocks
+    CMP DL, DMA_STATUS_CMD     ; ports 0-7 ( channel 0-3 index/count )?
     JB @@BlockSet8
-    CMP DL,0AH                  ; single mask?
+    CMP DL, DMA_SINGLEMASK     ; single mask?
     JZ @@SMask8
-    CMP DL,0BH                  ; "Mode Register" responded ?
-    JZ @@Mode8                 ; DMA-Controller #1 ?
-    CMP DL,0CH
-    JZ @@Clear8                ; clear flip-flop?
+    CMP DL, DMA_MODE           ; "Mode Register" responded ?
+    JZ @@Mode8
+    CMP DL, DMA_FLIPFLOP       ; clear flip-flop?
+    JZ @@Clear8
 if ?MMASK
-    CMP DL,0DH
+    CMP DL, DMA_IMM_RESET
     JZ @@MMask8On
-    CMP DL,0EH
+    CMP DL, DMA_MASK_RESET
     JZ @@MMask8Off
-    CMP DL,0FH
-    JZ @@MMask8                ; master mask?
+    CMP DL, DMA_MULTIMASK
+    JZ @@MMask8
 endif
     @dprintf ?DMADBG, <"Dma_HandleDmaPorts8: unhandled OUT to port %X",10>, dx
     out dx, al
@@ -137,13 +138,13 @@ endif
     out dx, al
     BTR [DmaGblFlags],HiLoFlag1
     ret
-@@BlockSet8:                    ;--- I/O addresses 0-7 (DMA 8bit)
+@@BlockSet8:            ; I/O addresses 0-7 (DMA 8bit)
     MOV BX,HiLoFlag1
     MOVZX EDI,DL
-    SHR EDI,1               ; get channel# into EDI
+    SHR EDI,1           ; get channel# into EDI
     jc Dma_SetLength
     JMP Dma_SetAddr
-@@SMask8:
+@@SMask8:               ;single mask
     mov edi, eax
     AND EDI,0011B
     jmp Dma_SetSMask
@@ -188,20 +189,20 @@ if ?DMADBG
     pop eax
 endif
 
-    CMP DL,0C0h+10h             ; dto. 2nd DMA-Controller ?
+    CMP DL, DMA_STATUS_CMD16    ; ports C0-CE ( channel 4-7 index/count )? 
     JB @@BlockSet16
-    CMP DL,0C0h+0AH*2           ; single mask?
+    CMP DL, DMA_SINGLEMASK16    ; single mask?
     JZ @@SMask16
-    CMP DL,0C0h+0BH*2           ; mode set?
+    CMP DL, DMA_MODE16          ; mode set?
     JZ @@Mode16
-    CMP DL,0C0h+0Ch*2
+    CMP DL, DMA_FLIPFLOP16
     JZ @@Clear16
 if ?MMASK
-    CMP DL,0C0h+0Dh*2
+    CMP DL, DMA_IMM_RESET16
     JZ @@MMask16On
-    CMP DL,0C0h+0Eh*2
+    CMP DL, DMA_MASK_RESET16
     JZ @@MMask16Off
-    CMP DL,0C0h+0Fh*2           ; master mask?
+    CMP DL, DMA_MULTIMASK16
     JZ @@MMask16
 endif
     @dprintf ?DMADBG, <"Dma_HandleDmaPorts16: unhandled OUT to port %X",10>, dx
@@ -211,24 +212,24 @@ endif
     out dx, al
     BTR [DmaGblFlags],HiLoFlag2
     ret
-@@BlockSet16:                   ;--- I/O addresses C0-CF (DMA 16bit)
+@@BlockSet16:           ; I/O addresses C0-CF (DMA 16bit)
     MOV BX,HiLoFlag2
     MOV EDI,EDX
-    SHR EDI,2               ; get channel# into EDI
+    SHR EDI,2           ; get channel# into EDI
     AND EDI,3
     ADD EDI,4
-    TEST DL,02H              ; block length or address?
+    TEST DL,02H         ; block length or address?
     JNZ Dma_SetLength
     jmp Dma_SetAddr
 @@SMask16:
     mov edi, eax
-    AND EDI,0011B
+    AND EDI,011B        ; mask the DMA channel #
     add edi,4
     jmp Dma_SetSMask
 @@Mode16:
     MOV EDI,EAX
-    AND EDI,011B            ; mask the DMA channel #
-    ADD EDI,4               ; 16bit channels are 4-7
+    AND EDI,011B        ; mask the DMA channel #
+    ADD EDI,4
     JMP Dma_SetMode
 if ?MMASK
 @@MMask16On:            ;mask all 4 channels
@@ -270,7 +271,7 @@ Dma_SetMode:
 Dma_IsReady proc
 if 0
     mov ecx,[dwRFlags]
-    test byte ptr [ecx],2    ;new Int 13h/40h DMA op?
+    test byte ptr [ecx],RFL_DMAOP ;new Int 13h/40h DMA op?
     jz @@nonewreq
     and byte ptr [ecx],not 2
     and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED  ;wait until channel is enabled
@@ -294,7 +295,7 @@ Dma_SetSMask proc
     or [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
 if 0
     mov ecx,[dwRFlags]
-    and byte ptr [ecx],not 2
+    and byte ptr [ecx],not RFL_DMAOP
 endif
     push eax
     call Dma_CheckChannel
@@ -418,11 +419,11 @@ endif
 if ?HOOK13
     mov eax,[dwRFlags]
   if 1
-    test byte ptr [eax],2            ; is a int 13h/40h read op pending?
+    test byte ptr [eax],RFL_DMAOP ; is a int 13h/40h read op pending?
     jz @@Bye
-    mov byte ptr [eax],1
+    mov byte ptr [eax],RFL_COPYBUFFER
   else
-    or byte ptr [eax],1
+    or byte ptr [eax],RFL_COPYBUFFER
   endif
 else
     or [bDiskIrq],1
@@ -569,10 +570,11 @@ Dma_IsContiguous ENDP
 
 ; Copy the DMA-buffercontents after termination of the DISK-I/O to the
 ; wanted target/location.
-; * This is triggered by an v86-breakpoint in the real-mode int 13
+; * If ?HOOK13 is 1, this is triggered by an v86-breakpoint in real-mode int 13
 ; * and int 40 handlers. First the original int 13 / 40 is done, and
 ; * then, if the DMA buffer was used, things are copied from this buffer
 ; * to the target linear address.
+; * if ?HOOK13 is 0, this is called by Int 15h handler, ax=9101h.
 
 Dma_CopyBuffer PROC public
 
@@ -591,7 +593,7 @@ endif
     call MoveMemory
 if ?HOOK13
     mov eax,[dwRFlags]
-    mov byte ptr [eax],0
+    mov byte ptr [eax],0	; clear flags RFL_xxx
 endif
     ret
     align 4

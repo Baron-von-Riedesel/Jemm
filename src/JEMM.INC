@@ -303,6 +303,10 @@ wRFlags     dw ?    ;offset of DMA flags
 endif
 RSOFS ends
 
+;--- bRFlags values
+RFL_COPYBUFFER  equ 1   ; 1=copy out of DMA buffer
+RFL_DMAOP       equ 2   ; 1=DMA op started
+
 ;--- max number of UMB blocks
 ;--- this constant is also defined in Jemm386c.c
 

@@ -901,7 +901,7 @@ local bWarning:byte
 
 	.if bx != 16
 		invoke printf, CStr("%s: no suitable page frame found, EMS functions limited.", LF), addr szWarning
-		mov jemmini.NoFrame,1
+		mov jemmini.NoFrame, TRUE
 		xor ax,ax
 		jmp exit
 	.endif
@@ -959,7 +959,7 @@ if ?SPLIT
 endif
 	cmp jemmini.NoEMS,0
 	jne @F
-	cmp jemmini.NoFrame,0
+	cmp jemmini.NoFrame, FALSE
 	je notumb
 @@:
 	cmp al,'P'

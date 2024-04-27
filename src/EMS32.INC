@@ -330,25 +330,13 @@ EMS_RESTORE_PAGES PROC
 
 EMS_RESTORE_PAGES ENDP
 
-; report the failure so that we can maybe support it in the future
+; log the failure
 
 EMS_NOT_IMPL PROC
 
-IF  ?UNIMPL_EMS_DBG
-    mov     edi,offset unimpl_ax
-    call    w2a
-    push    offset unimpl_func
-    call    PrintString
-ENDIF
+    @dprintf ?EMSDBG, <"Unimplemented EMS function called, ax=%X",10>, ax
     MOV     AH,EMSS_INVALID_FUNCTION      ; "Invalid function code"
     RET
-
-if ?UNIMPL_EMS_DBG    
-unimpl_func db "Unimplemented EMS function called, ax="
-unimpl_ax   db "____"
-            db 13,10
-            db 0
-endif
 
 EMS_NOT_IMPL ENDP
 

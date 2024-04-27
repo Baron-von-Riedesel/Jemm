@@ -13,7 +13,6 @@ ifndef ?UNLRMDBG
 endif
 ?RMDBG      equ ?INITRMDBG + ?XMSRMDBG + ?EMXRMDBG + ?UNLRMDBG  ; debug displays in real-mode
 
-?BUFFERED equ 0
 ?USEMONO equ 0  ;1=use monochrome monitor for dbg displays
 
 ifdef _DEBUG

@@ -1218,8 +1218,6 @@ if ?INTEGRATED
 
 ;--- for the integrated version the rest of the memory can be released now
 
-ife ?BUFFERED   ;avoid this if debug output is buffered
-
 	mov ebx, edi
 	sub ebx, [esi].JEMMINIT.MonitorStart
 	shr ebx, 10
@@ -1227,7 +1225,6 @@ ife ?BUFFERED   ;avoid this if debug output is buffered
 	push esi
 	call xms_ext_realloc_emb
 	pop esi
-endif
 
 endif
 

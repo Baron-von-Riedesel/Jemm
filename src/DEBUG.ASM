@@ -13,27 +13,11 @@
 	include jemm32.inc		;declarations for Jemm32
 	include debug.inc
 
-if ?BUFFERED
-?BUFFSTA	equ 4F8h;physical start address buffer
-?BUFFOFS	equ 4FCh;offset in buffer
-?BUFFSIZ	equ 100000h
-endif
-
 ;--- publics/externals
 
 	include external.inc
 
-;--- macros
-
-;	assume SS:FLAT,DS:FLAT,ES:FLAT
-
 if ?DBGOUT
-
-if ?BUFFERED
-.text$01 segment
-DbgPTE	dd 0
-.text$01 ends
-endif
 
 .text$03 segment
 
@@ -42,31 +26,16 @@ endif
 
 VPUTCHR PROC public
 	PUSHAD
-if ?BUFFERED
-	test byte ptr ss:[417h],10h  ;scroll lock on?
-	jz @@done
-	mov edi,ss:[?BUFFSTA]
-	and edi,edi
-	jz @@done
-	mov ecx,ss:[?BUFFOFS]
-	lea edx,[edi+ecx]
-	and dx,0F000h
-	or dl, PTF_PRESENT or PTF_RW or PTF_USER
-	mov ebx,[DbgPTE]
-	mov ss:[ebx], edx
-	mov esi,cr3
-	mov cr3,esi
-
-	@SYSPTE2LINEAR edi, ebx
-
-	movzx ebx,cx
-	and bh,0Fh
-	mov ss:[edi+ebx],al
-	inc ecx
-	and ecx,?BUFFSIZ-1
-	mov ss:[?BUFFOFS],ecx
-@@done:
-else
+if ?KD
+	cmp cs:[bKD],0	; kernel debugger detected?
+	jz @F
+	mov edx, eax	; then redirect output to it
+	xor eax, eax
+	int 41h
+	popad
+	ret
+@@:
+endif
 if ?USEMONO
 	mov edi,0B0000h
 	mov ebx,7
@@ -117,11 +86,8 @@ endif
 	CALL @@SCROLL_SCREEN
 @@OLDLINE:
 	MOV SS:[EBX*2+450h],DX
-endif
 	POPAD
 	RET
-
-ife ?BUFFERED
 
 ;--- scroll screen up 1 line
 ;--- esi -> start screen
@@ -155,8 +121,6 @@ endif
 	add edi,2
 	loop @@nextcell2
 	retn
-
-endif
 
 VPUTCHR ENDP
 
@@ -198,97 +162,10 @@ endif
 
 Debug_Init proc public
 
-if ?BUFFERED
-	cmp [bNoPool],0
-	jz @@ok
-@@error:
-;--- severe error. disable debug output
-	mov byte ptr ds:[VPUTCHR],0C9h
-	ret
-@@ok:
-	mov edx, [XMS_Handle_Table.xht_pArray]
- if 1;e ?INTEGRATED
-	movzx ecx, [XMS_Handle_Table.xht_numhandles]
-	movzx eax, [XMS_Handle_Table.xht_sizeof]
-@@nextitem:
-	test [edx].XMS_HANDLE.xh_flags, XMSF_FREE
-	jz @@skipitem
-  if 1;?XMS35
-	test word ptr [edx].XMS_HANDLE.xh_baseK+2, 0FFC0h
-	jnz @@skipitem
-  endif
-	cmp [edx].XMS_HANDLE.xh_sizeK, ?BUFFSIZ / 1024
-	jnc  @@founditem
-@@skipitem:
-	add edx,eax
-	loop @@nextitem
-	jmp @@error
-@@founditem:
-	jz @@splitdone
-	push ebx
-	mov ebx, edx
-@@nextitem2:
-	test [ebx].XMS_HANDLE.xh_flags, XMSF_INPOOL
-	jnz @@founditem2
-	add ebx,eax
-	loop @@nextitem2
-	pop ebx
-	jmp @@error
-@@founditem2:
-	mov [ebx].XMS_HANDLE.xh_flags, XMSF_FREE
-	mov eax, [edx].XMS_HANDLE.xh_baseK
-	add eax, ?BUFFSIZ / 1024
-	mov [ebx].XMS_HANDLE.xh_baseK, eax
-	mov eax, [edx].XMS_HANDLE.xh_sizeK
-	sub eax, ?BUFFSIZ / 1024
-	mov [ebx].XMS_HANDLE.xh_sizeK, eax
-	pop ebx
-@@splitdone:
-	mov [edx].XMS_HANDLE.xh_flags, XMSF_USED
-	mov [edx].XMS_HANDLE.xh_locks, 1
-	mov [edx].XMS_HANDLE.xh_sizeK, ?BUFFSIZ / 1024
-	mov eax, [edx].XMS_HANDLE.xh_baseK
- else
-	mov eax, ?BUFFSIZ / 1024
-	cmp [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_sizeK, eax
-	jc @@error
-	sub [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_sizeK, eax
-	add [edx].XMS_HANDLE.xh_sizeK, eax
-	mov eax, [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_baseK
-	add [edx+sizeof XMS_HANDLE].XMS_HANDLE.xh_baseK, ?BUFFSIZ / 1024
- endif
-
-;--- now in EAX physical address of debug output buffer.
-;--- we need a 4 kB page of linear address space to map
-;--- the physical memory
-
-	shl eax, 10
-	mov ds:[?BUFFSTA],eax
-
-	mov edx,[PageMapHeap]
-	mov [DbgPTE], edx
-
-	mov ecx,?BUFFSIZ / 4096
-	or al, PTF_PRESENT or PTF_RW or PTF_USER
-@@nextitem3:
-	mov [edx],eax
-	pushad
-	mov eax,cr3
-	mov cr3,eax
-	@SYSPTE2LINEAR edi, edx
-	mov ecx, 4096/4
-	xor eax, eax
-	rep stosd
-	popad
-	add eax,4096
-	loop @@nextitem3
-
-	add edx,4
-	mov [PageMapHeap], edx
-
-	xor eax, eax
-	mov ds:[?BUFFOFS],eax
-endif ;?BUFFERED
+if ?KD
+	cmp [esi].JEMMINIT.kdseg,0
+	setnz [bKD]
+endif
 	ret
 Debug_Init endp
 

@@ -20,7 +20,6 @@ ifndef ?SHAREDIDT
 endif
 
 ?CODEIN2PAGE    EQU 0       ; 1=move code away from first page
-?UNIMPL_EMS_DBG EQU 0       ; 1=display a msg if an unimpl EMS func is called
 ?USETRIPLEFAULT EQU 0       ; 1=use triple fault to reboot
 ?SAFEKEYBOARD   equ 0       ; 1=use original vector for int 16h kbd poll
 ?DYNTRAPP60     equ 1       ; 1=trap port 60h conditionally only
@@ -162,62 +161,6 @@ EMSSTAT ends
 
 PBF_DONTEXPAND  EQU 1   ; don't try to expand this block
 PBF_DONTFREE    EQU 2   ; don't try to free this block
-
-;--- VDS
-
-;--- flags in DX used by various VDS functions
-
-VDSF_COPY       equ 02h
-VDSF_NOBUFFER   equ 04h
-VDSF_NOREMAP    equ 08h ;Jemm ignores this flag!
-VDSF_64KALIGN   equ 10h
-VDSF_128KALIGN  equ 20h
-VDSF_PTE        equ 40h ;1=scatter_lock returns PTEs 
-
-;--- error codes returned in AL by lock
-
-VDSERR_NOTCONTIGUOUS equ 1
-VDSERR_CROSSEDBOUNDS equ 2
-VDSERR_CANTLOCKPAGES equ 3
-VDSERR_NOBUFFER      equ 4
-VDSERR_BUFFTOOSMALL  equ 5
-VDSERR_BUFFINUSE     equ 6
-
-;--- DDS, used by 03-04, 07-08, 09-0A
-
-DDS struct
-dwSize  dd ?    ;+0  size of region
-dwOfs   dd ?    ;+4  offset virtual start address
-wSeg    dw ?    ;+8  segment/selector virtual start address (or 0000)
-wID     dw ?    ;+10 buffer ID
-dwPhys  dd ?    ;+12 physical address
-DDS ends
-
-;--- EDDS, used by 05-06
-
-EDDS struct
-dwSize  dd ?    ;+0
-dwOfs   dd ?    ;+4
-wSeg    dw ?    ;+8
-wRes    dw ?    ;+10
-wNumAvail   dw ?    ;+12
-wNumUsed    dw ?    ;+14
-EDDS ends
-
-;--- EDDS suffix for regions
-
-EDDSRG struct
-dwPhysAddr  dd ?    ;+16
-dwSizeRg    dd ?    ;+20
-EDDSRG ends
-
-;--- EDDS suffix for PTEs
-
-EDDSPT struct
-dwPTE       dd ?    ;+16
-EDDSPT ends
-
-;--- end VDS
 
 DESCRIPTOR struct
 wLimit  dw ?    ;+0

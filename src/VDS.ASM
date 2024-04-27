@@ -11,6 +11,7 @@
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
     include debug.inc
+    include vds.inc
 
 ;--- publics/externals
 
@@ -125,7 +126,7 @@ vds_handler endp
 
 if 0
 vds_unsup proc
-    mov al, 0Fh     ; error "function not supported"
+    mov al, VDSERR_FUNC_NOTSUPP ; error "function not supported"
     stc
     ret
 vds_unsup endp
@@ -148,7 +149,7 @@ vds_version proc
     clc
     ret
 @@fail:
-    mov al,10h  ;"reserved bit set in dx"
+    mov al,VDSERR_DXRSVDBITSSET  ;"reserved bit set in dx"
     stc
     ret
     align 4
@@ -159,11 +160,14 @@ vds_version endp
 ;--- DX = flags, bit 1: copy data into buffer
 ;--- EDI -> DDS
 ;--- modifies ECX, EAX, EBX, DDS.wID, DDS.dwPhys
-;--- out: C, al=5/6
+;--- out: C, al=5/6/16
 ;---      NC, DDS.dwPhys + DDS.wID set
 
 vds_reqbuff proc
 
+	mov al, VDSERR_DXRSVDBITSSET	; v5.85: check added
+	test dx, not VDSF_COPY
+	jnz @@fail
     mov [edi].DDS.wID, 0
     mov ecx, [edi].DDS.dwSize
     @dprintf ?VDSDBG gt 1,<"VDS request buff, flgs=%X siz=%X",10>, dx, ecx
@@ -252,7 +256,7 @@ vds_relbuff proc
     and ebx, ebx
     jz @@ok
 
-    mov al,0Ah  ;"invalid buffer id"
+    mov al, VDSERR_INVAL_BUFFID  ;"invalid buffer id"
     cmp bx, ?DMABUFFMAX
     ja @@error
 
@@ -303,7 +307,7 @@ testbuffer proc
 
     movzx ebx, [edi].DDS.wID
     @dprintf ?VDSDBG gt 2,<"VDS testbuff id=%X",10>,bx
-    mov al,0Ah              ;"invalid buffer ID"
+    mov al, VDSERR_INVAL_BUFFID ;"invalid buffer ID"
     and ebx, ebx
     jz  @@fail
     cmp bx, ?DMABUFFMAX
@@ -350,7 +354,7 @@ testbuffer proc
     @dprintf ?VDSDBG gt 0,<"VDS testbuff @@fail2, ebx=%X ecx=%X",10>, ebx, ecx
     pop ebx
 @@fail3:
-    mov al,0Bh  ;"copy out of buffer range"
+    mov al,VDSERR_BNDVIOLATION  ;"copy out of buffer range" - buffer boundary violation
 @@fail:
     @dprintf ?VDSDBG gt 0,<"VDS testbuff failed, al=%X",10>, al
     stc
@@ -659,7 +663,7 @@ vds_lock endp
 
 ;--- int 4b, ax=8105h
 ;--- inp: EDI -> EDDS
-;---      DX=flags
+;---      DX=flags (bits 6 & 7)
 ;--- out: NC
 ;---      EDDS.wNumUsed: no of entries used to describe region
 ;---      regions/PTEs behind EDDS are set
@@ -673,6 +677,12 @@ vds_scatterlock proc
 
     @dprintf ?VDSDBG gt 1, <"VDS scatlock flgs=%X addr=%X:%X siz=%X avl=%X",10>, dx, [edi].EDDS.wSeg, [edi].EDDS.dwOfs, [edi].EDDS.dwSize, [edi].EDDS.wNumAvail
 
+	mov al, VDSERR_DXRSVDBITSSET		; v5.85: check added
+	test dx, not (VDSF_PTE or VDSF_NPPTE)
+	jz @F
+    stc
+    ret
+@@:
     mov ebx,[edi].EDDS.dwSize
     xor ecx,ecx     ; cx holds entries used
     mov eax,ecx     ; zero eax for later calcs
@@ -704,7 +714,7 @@ vds_scatterlock proc
     clc
     ret
 @@notenoughregions:
-    mov al,9        ;error "NumAvail too small"
+    mov al, VDSERR_NAVL_TOOSMALL   ;error "NumAvail too small"
     stc
     ret
 
@@ -780,11 +790,11 @@ vds_scatterlock proc
     xor ebx,ebx
     mov edx,ebx
     movzx ecx,[edi].EDDS.wNumUsed   ; number regions used (cannot be 0)
-    mov al,0
+    mov al,0  ; no error
     cmp cx, [edi].EDDS.wNumAvail
     jbe @@finalloop
     mov cx,[edi].EDDS.wNumAvail ; only count up to minimum of available/used
-    mov al,9
+    mov al, VDSERR_NAVL_TOOSMALL
 if ?VDSDBG
     and ecx, ecx
     jz @@scatfail
@@ -853,18 +863,27 @@ endif
     movzx eax,ax
     sub ecx, eax
     mov [edi].EDDS.dwSize, ecx
-    mov al,9        ;error "NumAvail too small"
+    mov al, VDSERR_NAVL_TOOSMALL ;error "NumAvail too small"
     stc
     ret
 
 vds_scatterlock endp
 
 ;--- int 4b, ax=8106h
-;--- nothing to do
+;--- DX=flags (6 & 7 may be set)
+;--- ES:DI=EDDS
+;--- errors VDSERR_REG_NOTLOCKED and VDSERR_DXRSVDBITSSET may happen!
 
 vds_scatterunlock proc
+	mov al, VDSERR_DXRSVDBITSSET		; v5.85: check added
+	test dx, not (VDSF_PTE or VDSF_NPPTE)
+	jnz @@fail
+	;--- todo: check if region was locked
     clc
     ret
+@@fail:
+	stc
+	ret
 vds_scatterunlock endp
 
 ;--- disable automatic translation for a DMA channel
@@ -876,13 +895,13 @@ vds_disabletrans proc
     mov ebx, [EBP].Client_Reg_Struc.Client_EBX
     @dprintf ?VDSDBG gt 1, <"VDS disable translation for channel %X",10>, bx
     cmp bx, 8
-    mov al, 0Ch     ;error "invalid channel"
+    mov al, VDSERR_INVAL_DMACHN  ;error "invalid channel"
     jnc @@fail
-    mov al, 10h     ;error "reserved flags set in DX"
+    mov al, VDSERR_DXRSVDBITSSET ;error "reserved flags set in DX"
     and edx, edx
     jnz @@fail
 if ?DMA
-    mov al, 0Dh     ;error "disable count overflow"
+    mov al, VDSERR_DISCNTOVFL    ;error "disable count overflow"
     movzx ebx, bx
     cmp [DmaChn+ebx*8].cDisable,255
     jz @@fail
@@ -905,13 +924,13 @@ vds_enabletrans proc
     mov ebx, [EBP].Client_Reg_Struc.Client_EBX
     @dprintf ?VDSDBG gt 1, <"VDS enable translation for channel %X",10>, bx
     cmp bx, 8
-    mov al, 0Ch     ;error "invalid channel"
+    mov al, VDSERR_INVAL_DMACHN  ;error "invalid channel"
     jnc @@fail
-    mov al, 10h     ;error "reserved flags set in DX"
+    mov al, VDSERR_DXRSVDBITSSET ;error "reserved flags set in DX"
     and edx, edx
     jnz @@fail
 if ?DMA
-    mov al, 0Eh     ;error "disable count underflow"
+    mov al, VDSERR_DISCNTUNFL    ;error "disable count underflow"
     movzx ebx, bx
     cmp [DmaChn+ebx*8].cDisable,0
     jz @@fail

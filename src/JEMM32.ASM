@@ -162,6 +162,9 @@ bBpBack         db  BPTABLE.pBack shr 2
 ife ?HOOK13
 bDiskIrq        db  0   ;diskette transfer pending
 endif
+if ?KD
+bKD             db  0
+endif
 
     align 4
 

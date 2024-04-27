@@ -167,13 +167,13 @@ endif
 
 if ?HOOK13
 
-bRFlags DB 0
+bRFlags DB 0			; bit 0: 1=copy out of DMA buffer ; bit 1: 1=new DMA op started
 
 ;--- for DMA, hook int 40h (FD access)
 ;--- and int 13h (HD access)
 
 NEW40 PROC FAR
-	mov cs:[bRFlags],2	; tell the monitor that a new DMA op has started
+	mov cs:[bRFlags],RFL_DMAOP	; tell the monitor that a new DMA op has started
 	pushf
 	db 09Ah
 OLDINT40 dd 0
@@ -183,7 +183,7 @@ NEW40 ENDP
 	align 4
 
 NEW13 PROC FAR
-	mov cs:[bRFlags],2	; tell the monitor that a new DMA op has started
+	mov cs:[bRFlags],RFL_DMAOP	; tell the monitor that a new DMA op has started
 	pushf
 	db 09Ah
 OLDINT13 dd 0
@@ -191,8 +191,8 @@ NEW13 ENDP
 
 int1340common:
 	jc iret_with_new_CY
-	test cs:[bRFlags],1
-	jnz BP1340
+	test cs:[bRFlags],RFL_COPYBUFFER
+	jnz BP1340			; breakpoint int 13/40h: copy out of DMA buffer
 iret_with_new_CY:
 	push bp
 	mov bp,sp
@@ -357,11 +357,7 @@ if ?INTEGRATED
 
 	align 2
 
- if ?BUFFERED	;buffered output in XMS memory block?
-?EXTRAHDL equ 1
- else
 ?EXTRAHDL equ 0
- endif
 
 xms_handle_table XMS_HANDLETABLE <01, size XMS_HANDLE, 0, xms_handle_array>
 xms_handle_array XMS_HANDLE ?XMS_STATICHDLS+1+?EXTRAHDL dup (<XMSF_INPOOL,0,0,0>)

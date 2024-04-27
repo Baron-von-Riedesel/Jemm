@@ -72,6 +72,9 @@ externdef A20Index:BYTE
 else
 externdef XMSCtrlHandle:WORD
 endif
+if ?KD
+externdef bKD:byte
+endif
 
 externdef DMABuffSize:dword
 externdef DMABuffStart:dword
