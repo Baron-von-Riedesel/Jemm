@@ -1304,7 +1304,7 @@ if ?DYNTRAPP60
     mov ebx, [dwTSS]
     and dword ptr [ebx+P60BITOFS],not 1
 endif
-    test cl,OUTPUT      ;is it in or out?
+    test cl,OUT_INSTR   ;is it IN or OUT?
     jz @@input
 ife ?DYNTRAPP60
     cmp [bLast64],0D1h  ;last value written to 64 was "write output port"?
@@ -1337,7 +1337,7 @@ A20_Inp92::
 A20_Handle60 endp
 
 A20_Handle64 proc public
-    test cl,OUTPUT
+    test cl, OUT_INSTR
     jz Simulate_IO
 if ?DYNTRAPP60
     mov ah,al
@@ -1361,7 +1361,7 @@ endif
 A20_Handle64 endp
 
 A20_Handle92 proc public
-    test cl,OUTPUT      ;is it in or out?
+    test cl, OUT_INSTR  ;is it IN or OUT?
     jz A20_Inp92
     @dprintf ?A20DBG, <"A20_Handle92: write to port 92h, al=%X",10>, al
     push eax

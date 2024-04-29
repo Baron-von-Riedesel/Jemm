@@ -11,6 +11,7 @@
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
     include debug.inc
+    include dma.inc
     include vds.inc
 
 ;--- publics/externals
@@ -25,7 +26,7 @@ if ?VDS
 OldInt4B    dd 0
 endif
 
-if ?DMA or ?VDS
+if ?DMAPT or ?VDS
 
     align 4
 
@@ -108,7 +109,6 @@ endif
     or [ebp].Client_Reg_Struc.Client_EFlags,1      ;CF=1
     ret
 @@isnotvds:
-@@vds_reserved:
     mov ecx, [OldInt4B]
     jecxz @@novdsoldcall
     @dprintf ?VDSDBG gt 0,<"unhandled Int 4Bh, jmp to cs:ip=%X",10>, eax
@@ -116,6 +116,8 @@ endif
     shr ecx, 16
     mov [ebp].Client_Reg_Struc.Client_CS, ECX
     ret
+@@vds_reserved:
+    mov byte ptr [ebp].Client_Reg_Struc.Client_EAX, VDSERR_FUNC_NOTSUPP	;v5.85
 @@novdsoldcall:    
     call Simulate_Iret
     or  [ebp].Client_Reg_Struc.Client_EFlags,1      ;CF=1
@@ -250,6 +252,9 @@ vds_unlock endp ;fall through
 
 vds_relbuff proc
 
+	test dx, not VDSF_COPY	;v5.85 check added
+	jnz fail10
+
     movzx ebx, [edi].DDS.wID
     @dprintf ?VDSDBG gt 2,<"VDS release buff, flgs=%X DDS=[siz=%X ID=%X addr=%X",10>, dx, [edi].DDS.dwSize, bx, [edi].DDS.dwPhys
     @dprintf ?VDSDBG gt 2,<"DMA buffer bits:%08X-%08X-%08X-%08X-X",10>,DMABuffFree+0,DMABuffFree+4,DMABuffFree+8,DMABuffFree+12, byte ptr DMABuffFree+16
@@ -370,6 +375,8 @@ testbuffer endp
 
 vds_copyinbuff proc
 
+    cmp dx,0
+    jnz fail10
     mov ecx, [ebp].Client_Reg_Struc.Client_EBX
     shl ecx, 16
     mov cx, word ptr [ebp].Client_Reg_Struc.Client_ECX
@@ -400,6 +407,11 @@ vds_copyinbuffEx proc
 
 vds_copyinbuffEx endp
 
+fail10:
+	mov al, VDSERR_DXRSVDBITSSET
+	stc
+	ret
+
 ;--- int 4b, ax=810Ah, copy out of DMA buffer
 ;--- DX = flags, must be 0000
 ;--- Client->BX:CX = offset in buffer
@@ -407,6 +419,8 @@ vds_copyinbuffEx endp
 
 vds_copyoutbuff proc
 
+    cmp dx,0
+    jnz fail10
     mov ecx, [ebp].Client_Reg_Struc.Client_EBX
     shl ecx, 16
     mov cx, word ptr [ebp].Client_Reg_Struc.Client_ECX
@@ -544,11 +558,11 @@ vds_contiguous2 endp
 ;--- EDI -> DDS
 ;--- DX=Flags
 ;--- 0:reserved
-;--- 1:data should be copied into buffer (if necessary) [requires 2 cleared]
-;--- 2:buffer disable (buffer should not be allocated if noncontiguous or crosses 64/128 kB)
-;--- 3:dont attempt automatic remap
-;--- 4:region must not cross 64 kb border
-;--- 5:region must not cross 128 kb border
+;--- 1:1=data should be copied into buffer (if necessary) [requires 2 cleared]
+;--- 2:1=buffer disable (no DMA buffer should be allocated if noncontiguous or crosses 64/128 kB)
+;--- 3:1=disable automatic remap
+;--- 4:1=region must not cross 64 kb border
+;--- 5:1=region must not cross 128 kb border
 
 ;--- there are several cases:
 ;--- 1. region is contiguous (and does not cross borders)
@@ -886,7 +900,7 @@ vds_scatterunlock proc
 	ret
 vds_scatterunlock endp
 
-;--- disable automatic translation for a DMA channel
+;--- int 4b, ax=810B: disable automatic translation for a DMA channel
 ;--- Client->BX=DMA channel number
 ;--- DX=flags (all reserved and must be 0, hiword EDX is cleared)
 
@@ -894,18 +908,18 @@ vds_disabletrans proc
 
     mov ebx, [EBP].Client_Reg_Struc.Client_EBX
     @dprintf ?VDSDBG gt 1, <"VDS disable translation for channel %X",10>, bx
-    cmp bx, 8
+    cmp bx, MAXDMACHANNEL
     mov al, VDSERR_INVAL_DMACHN  ;error "invalid channel"
     jnc @@fail
     mov al, VDSERR_DXRSVDBITSSET ;error "reserved flags set in DX"
     and edx, edx
     jnz @@fail
-if ?DMA
+if ?DMAPT
     mov al, VDSERR_DISCNTOVFL    ;error "disable count overflow"
     movzx ebx, bx
-    cmp [DmaChn+ebx*8].cDisable,255
+    cmp [DmaChn+ebx*sizeof DMAREQ].cDisable,255
     jz @@fail
-    inc [DmaChn+ebx*8].cDisable
+    inc [DmaChn+ebx*sizeof DMAREQ].cDisable
 endif
     clc
     ret
@@ -915,26 +929,32 @@ endif
 
 vds_disabletrans endp
 
-;--- enable automatic translation for a DMA channel
+;--- int 4b, ax=810C: enable automatic translation for a DMA channel
 ;--- Client->BX=DMA channel number
 ;--- DX=flags (all reserved and must be 0, hiword EDX cleared)
+;--- out: Z if disablecnt is now zero
 
 vds_enabletrans proc
 
     mov ebx, [EBP].Client_Reg_Struc.Client_EBX
     @dprintf ?VDSDBG gt 1, <"VDS enable translation for channel %X",10>, bx
-    cmp bx, 8
+    cmp bx, MAXDMACHANNEL
     mov al, VDSERR_INVAL_DMACHN  ;error "invalid channel"
     jnc @@fail
     mov al, VDSERR_DXRSVDBITSSET ;error "reserved flags set in DX"
     and edx, edx
     jnz @@fail
-if ?DMA
+if ?DMAPT
     mov al, VDSERR_DISCNTUNFL    ;error "disable count underflow"
     movzx ebx, bx
-    cmp [DmaChn+ebx*8].cDisable,0
+    cmp [DmaChn+ebx*sizeof DMAREQ].cDisable,0
     jz @@fail
-    dec [DmaChn+ebx*8].cDisable
+    dec [DmaChn+ebx*sizeof DMAREQ].cDisable
+;--- v5.85: set ZF
+    setz al
+    shl al, 6   ; position of ZF in flags
+    and byte ptr [ebp].Client_Reg_Struc.Client_EFlags,not 40h  ;ZF=0
+    or  byte ptr [ebp].Client_Reg_Struc.Client_EFlags,al
 endif
     clc
     ret

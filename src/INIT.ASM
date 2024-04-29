@@ -75,8 +75,8 @@ IOBM label byte
 ; * trap ports c4..cf
 ; * trap port d4 d6 d8 (da, dc, de)
 
-if ?DMA or ?A20PORTS
- if ?DMA
+if ?DMAPT or ?A20PORTS
+ if ?DMAPT
   if ?MMASK
 ;----- FEDCBA9876543210
     DW 1111110011111111b    ; DMA-Controller #1 (00-0F)
@@ -99,7 +99,7 @@ if ?DMA or ?A20PORTS
     DW 0                    ; ports 60-6F
  endif
     DW 0                    ; ports 70-7F
- if ?DMA
+ if ?DMAPT
 ;----- FEDCBA9876543210
     DW 0000111010001110b    ; page register (80-8F)
  else
@@ -112,7 +112,7 @@ if ?DMA or ?A20PORTS
     DW 0                    ; ports 90-9F
  endif
     DW 0,0                  ; ports A0-BF
- if ?DMA
+ if ?DMAPT
 ;----- FEDCBA9876543210
     DW 1111111111110000b    ; DMA-Controller #2 (C0-CF)
   if ?MMASK
@@ -715,7 +715,7 @@ endif
 
     @dprintf ?INITDBG, <"page table 0 initialised, EDI=%X EBX=%X",10>, edi, ebx
 
-if ?DMA
+if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
 
 ;--- set bits in DMABuffFree bit array
 
@@ -738,12 +738,12 @@ if ?DMA
     and cx,0F000h
     lea edx, [ecx+eax-1]    ;edx -> last byte of buffer
 
-if ?DMABELOW16M
+ if ?DMABELOW16M
     cmp edx, 1000000h       ;DMA must be below 16M border
     jc @F
     xor eax, eax
 @@:
-endif
+ endif
     mov [DMABuffSize], eax
     and eax, eax
     jz @@buffernull
@@ -775,13 +775,13 @@ endif
     add edx,4
     mov [PageMapHeap], edx
 
-if ?INITDBG
+ if ?INITDBG
     mov edi, eax
     mov ecx, [DMABuffSize]
     shr ecx, 2
     mov eax, "BAMD"
     rep stosd
-endif
+ endif
 
     popad
 

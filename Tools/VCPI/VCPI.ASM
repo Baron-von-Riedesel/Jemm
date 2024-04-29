@@ -3,8 +3,8 @@
 ;*** and use VCPI to switch to protected mode and back
 
 ?ENTRIES equ 110h	;PTE entries to display with option -p
-?386SWAT equ 1          ;support 386SWAT interface
-?DEB386  equ 0		;support (w)deb386 interface
+?386SWAT equ 0		;1=support 386SWAT interface (doesn't work!)
+?DEB386  equ 1		;1=support (w)deb386 interface
 ?DISPEXC equ 0		;display exceptions in ring 0
 
 	.286
@@ -32,6 +32,7 @@ endm
 if ?DEB386
 D386_Identify       equ 43h	; returns debugger identification
 D386_Prepare_PMode  equ 44h	; partially prepare for protected mode operation
+D386_Real_Mode_Init equ 45h	; tell kd we're done
 PMINIT_INIT_IDT     equ 0	; (ES:EDI) = pointer to PM IDT
 D386_Id             equ 0F386h ; debugger identification code
 endif
@@ -148,6 +149,8 @@ bRet	db 00
 bNoDisp	db 00
 
 if ?386SWAT or ?DEB386
+KD_386SWAT equ 1
+KD_DEB386  equ 2
 bKrnlDbg db 0
 dfDbgEntry df 0
 endif
@@ -608,7 +611,7 @@ if ?386SWAT
 	int 67h
 	cmp ah,0
 	jnz @F
-	mov bKrnlDbg, 1
+	mov bKrnlDbg, KD_386SWAT
 	jmp kd_done
 @@:
 endif
@@ -617,7 +620,7 @@ if ?DEB386
 	int 68h
 	cmp ax, D386_Id
 	jnz kd_done
-	mov bKrnlDbg, 2
+	mov bKrnlDbg, KD_DEB386
 	mov bx, FLATSEL
 	mov cx, KDSEL
 	mov dx, 0	; no GDT sel
@@ -867,7 +870,7 @@ setdescriptors endp
 pmgo proc
 
 if ?386SWAT
-	cmp bKrnlDbg, 1
+	cmp bKrnlDbg, KD_386SWAT
 	jnz no386swat2
 	push ds
 	pop es
@@ -918,13 +921,13 @@ pmentry::						;now in protected mode
 	mov gs,ax
 
 if ?386SWAT
-	cmp bKrnlDbg,1
+	cmp bKrnlDbg,KD_386SWAT
 	jnz @F
 	int 3
 @@:
 endif
 if ?DEB386
-	cmp bKrnlDbg,2
+	cmp bKrnlDbg,KD_DEB386
 	jnz @F
 	push ds
 	pop es
@@ -976,6 +979,13 @@ endif
 	call fword ptr ss:[vcpiv]
 rmentr: 						;back in v86-mode
 	sti
+if ?DEB386
+	cmp bKrnlDbg,KD_DEB386
+	jnz @F
+	mov ah, D386_Real_Mode_Init
+	int 68h
+@@:
+endif
 	ret
 pmgo endp
 

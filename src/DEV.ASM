@@ -178,13 +178,13 @@ endif
     mov eax, [dwUsedMem4K]
     mov [ebx].EMX06.e06_VCPIUsed, eax
 @@novcpimem:
-if ?DMA
+if 1;?DMAPT
     mov eax, [DMABuffStartPhys]
 else
     xor eax, eax
 endif
     mov [ebx].EMX06.e06_DMABuff, eax
-if ?DMA
+if 1;?DMAPT
     mov eax, [DMABuffSize]
     shr eax, 10
 else

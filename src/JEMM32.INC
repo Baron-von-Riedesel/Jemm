@@ -14,7 +14,7 @@
 ?SHAREDGDT      equ 1       ; 1=place GDT in shared address space
 ?EXC10          equ 1       ; 1=detect exception 10h (floating point)
 ?I41SUPP        equ 1       ; 1=support Int 41h in protected-mode
-
+?ALT_TRAPHDL    equ 1       ; v5.85: 1=call alternate trap handler for system ports
 ifndef ?SHAREDIDT
 ?SHAREDIDT      equ 0       ; std=?, 1=place IDT in shared address space
 endif
@@ -56,7 +56,7 @@ GDT_SIZE        equ 200h    ; size of GDT
 @KB_FLAG        EQU 417H            ; Status SHIFT/CTRL/ALT etcetera.
 @RESET_FLAG     EQU 472H            ; Flag for Warmboot (=1234h)
 
-if ?DMA or ?VDS
+if ?DMAPT or ?VDS
 ?DMABUFFMAX     EQU 128             ; max DMA-Buffer size in kB
 endif
 
@@ -69,16 +69,6 @@ PTF_RW      equ 2
 PTF_USER    equ 4
 PTF_WT      equ 8
 PTF_4MB     equ 80h
-
-if ?DMA
-
-;--- bits in GblFlags
-
-HiLoFlag1       EQU     0     ; adressing the Hi-Byte , DMA #1
-HiLoFlag2       EQU     1     ; Same for DMA controller #2
-NeedBuffer      EQU     2     ; if DMA buffer is required
-
-endif
 
 if ?VCPI
 
@@ -187,17 +177,17 @@ GDT_SEL         equ 48h
 endif
 
 ;--- equates from JLM.INC
-;--- OUTPUT, WORD_IO and DWORD_IO are used as offset in tables
+;--- OUT_INSTR, WORD_IO and DWORD_IO are used as offset in tables
 ;--- and hence cannot be changed; see DMA.ASM!
 
-OUTPUT      equ 04h
+OUT_INSTR   equ 04h
 WORD_IO     equ 08h
 DWORD_IO    equ 10h
 STRING_IO   EQU 20h
 REP_IO      EQU 40h
 
 DMAREQ struct
-ChanMode    db ?    ;saved "mode" value (register 0Bh or D6h)
+bMode       db ?    ;saved "mode" value (register 0Bh or D6h)
 bFlags      db ?    ;flags (DMAF_ENABLED) 
 BlockLen    dw ?    ;saved "block length" value
 BaseAdr     dw ?    ;saved "block address" value
@@ -214,7 +204,7 @@ pInt4B  dd ?
 endif
 pBack   dd ?
 pI1587  dd ?
-if ?DMA
+if ?DMAPT
 p1340   dd ?
 endif
 pXMS    dd ?

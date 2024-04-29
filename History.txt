@@ -7,6 +7,7 @@
  - better log displays via macro @dprintf.
  - log displays redirected to kernel debugger if one has been detected.
  - buffered output of log displays removed.
+ - VDS func ax=810Ch: set ZF if disable cnt reaches zero.
 
  12.02.2024: v5.84
 

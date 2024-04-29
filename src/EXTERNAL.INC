@@ -162,6 +162,9 @@ externdef Dma_CopyBuffer:near
 externdef Dma_HandleDmaPorts8:near
 externdef Dma_HandleDmaPorts16:near
 externdef Dma_HandlePagePorts:near
+if ?ALT_TRAPHDL
+externdef ISA_DMA_Traphandler:near
+endif
 
 externdef ExtendedOp:near
 

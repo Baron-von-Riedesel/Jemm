@@ -92,7 +92,7 @@ AOPTD=
 !endif
 
 # list of 32bit modules
-COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\dma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
+COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\vdma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
 !if $(DEBUG)
 OUTD1=build\$(NAME1)D

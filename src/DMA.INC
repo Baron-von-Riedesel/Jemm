@@ -11,10 +11,11 @@ DMA_MASK_RESET     equ 14	; W master enable
 DMA_MULTIMASK      equ 15	; W master mask b0-3: channel
 
 ;--- bits in DMA_MODE
-DMA_MODE_OPERATION equ 0Ch	; "op" bits 2+3
-DMA_MODE_OP_VERIFY equ 00h
-DMA_MODE_OP_WRITE  equ 04h
-DMA_MODE_OP_READ   equ 08h
+DMA_MODE_OPERATION equ 1100b; "op" bits 2+3
+DMA_MODE_OP_VERIFY equ 0000b
+DMA_MODE_OP_WRITE  equ 0100b
+DMA_MODE_OP_READ   equ 1000b
+
 DMA_MODE_AUTO      equ 10h	; b4
 DMA_MODE_DIRECTION equ 20h	; b5: direction 0=increment, 1=decrement
 ;--- b6-7: 00=demand,01=single,10=block,11=cascade
@@ -28,3 +29,5 @@ DMA_FLIPFLOP16     equ DMA_BASE_16BIT + DMA_FLIPFLOP*2
 DMA_IMM_RESET16    equ DMA_BASE_16BIT + DMA_IMM_RESET*2
 DMA_MASK_RESET16   equ DMA_BASE_16BIT + DMA_MASK_RESET*2
 DMA_MULTIMASK16    equ DMA_BASE_16BIT + DMA_MULTIMASK*2
+
+MAXDMACHANNEL equ 8

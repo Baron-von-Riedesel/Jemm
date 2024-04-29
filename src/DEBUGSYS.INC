@@ -175,22 +175,22 @@ DS_PrintStackDump       equ 7bh
 DS_SetThreadID	        equ 7ch
 DS_ExecDebugCommand     equ 7dh
 DS_GetDebuggerInfo      equ 7eh
-DS_CheckFault           equ 7fh	
-DS_SetBreak             equ 80h	
-DS_RedirectExec         equ 81h	
-DS_PassOnDebugCommand   equ 82h	
-DS_TrapFault            equ 83h	
+DS_CheckFault           equ 7fh
+DS_SetBreak             equ 80h
+DS_RedirectExec         equ 81h
+DS_PassOnDebugCommand   equ 82h
+DS_TrapFault            equ 83h
 DS_SetStackTraceCallBack equ 84h
-DS_RemoveSegs           equ 85h	
-DS_DefineDebugSegs      equ 86h	
+DS_RemoveSegs           equ 85h
+DS_DefineDebugSegs      equ 86h
 DS_SetBaudRate          equ 87h
-DS_SetComPort           equ 88h	
-DS_ChangeTaskNum        equ 89h	
-DS_ExitCleanup          equ 8ah	
+DS_SetComPort           equ 88h
+DS_ChangeTaskNum        equ 89h
+DS_ExitCleanup          equ 8ah
 DS_InstallVGAHandler    equ 8bh
 DS_GetComBase	        equ	8ch
-DS_GetSymbol            equ 8dh	
-DS_CopyMem              equ 8eh	
+DS_GetSymbol            equ 8dh
+DS_CopyMem              equ 8eh
 DS_JumpTableEnd         equ 8eh
 
 SaveRegs_Struc	struc

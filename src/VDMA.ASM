@@ -26,18 +26,24 @@
 
     include external.inc
 
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
-
 .text$01 SEGMENT
 
-if ?DMA
+if ?DMAPT
 
+;--- DMAREQ.bFlags values
+DMAF_ENABLED    equ 1   ;1=channel is enabled/unmasked
+
+;--- bits in DmaGblFlags
+
+DMAG_HiLoFlag1  EQU 0   ; addressing Hi-Byte, DMA controller #1
+DMAG_HiLoFlag2  EQU 1   ; addressing Hi-Byte, DMA controller #2
+DMAG_NeedBuffer EQU 2   ; if DMA buffer is required
+
+;--- int 13h/40h DMA auto translation
 DmaTargetAdr    DD  0   ; Original adress for DMA
 DmaTargetLen    DD  0   ; Utilized part of the Buffer
 
-DMAF_ENABLED    equ 1   ;1=channel is enabled/unmasked
-
-DmaChn          DMAREQ 8 dup (<0,0,0,0,0,0>)	; also accessed by VDS code
+DmaChn          DMAREQ MAXDMACHANNEL dup (<0,0,0,0,0,0>)	; also accessed by VDS code
 DmaGblFlags     DW 0    ; global flags
                 align 4
 
@@ -47,14 +53,17 @@ endif
 
 .text$03 segment
 
-if ?DMA
+if ?DMAPT
+
+PAGEREGBASE equ 80h
 
 ;--- table to translate page ports (80-8F) to channel no
-PageLookUp DB 0,2,3,1,0,0,0,0, 0,6,7,5,0,0,0,0
+;------------  0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F
+PageLookUp DB -1, 2, 3, 1,-1,-1,-1, 0,-1, 6, 7, 5,-1,-1,-1,-1
 
 ;--- page translation table
-;--- channels   0,  1,  2,  3, -, 5,  6,  7
-PageXLat DB    87H,83H,81H,82H,0,8BH,89H,8AH
+;--- channels   0   1   2   3   4   5   6   7
+PageXLat DB    87H,83H,81H,82H,8Fh,8BH,89H,8AH
 
 ;--- Access to a DMA page register (80-8F)
 ;--- v5.84: now Simulate_IO_trap is called if access isn't "byte"
@@ -65,7 +74,7 @@ PageXLat DB    87H,83H,81H,82H,0,8BH,89H,8AH
 
 Dma_HandlePagePorts PROC public
 
-    test cl,OUTPUT
+    test cl,OUT_INSTR
     jz Simulate_IO   ;is input, just translate to byte accesses
     test cl,STRING_IO or DWORD_IO or WORD_IO
     jnz Simulate_IO_trap	; split access to bytes
@@ -74,9 +83,13 @@ Dma_HandlePagePorts PROC public
 
     OUT DX,AL
     MOVZX EBX,DL                  ; store page value in cache
-    MOVZX EDI,BYTE PTR PageLookUp[EBX-80H]
-    MOV [DmaChn+EDI*sizeof DMAREQ].PageReg,AL
+    MOVSX EDI,PageLookUp[EBX - PAGEREGBASE]
+	cmp edi, -1	; v5.85: check added
+	jz @F
+    MOV [DmaChn + EDI*sizeof DMAREQ].PageReg,AL
     jmp Dma_IsReady
+@@:
+	ret
     align 4
 
 Dma_HandlePagePorts ENDP
@@ -102,7 +115,7 @@ Dma_HandlePagePorts ENDP
 
 Dma_HandleDmaPorts8 proc public
 
-    test cl,OUTPUT
+    test cl,OUT_INSTR
     jz Simulate_IO
     test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte access?
     jnz Simulate_IO_trap
@@ -122,7 +135,7 @@ endif
     CMP DL, DMA_MODE           ; "Mode Register" responded ?
     JZ @@Mode8
     CMP DL, DMA_FLIPFLOP       ; clear flip-flop?
-    JZ @@Clear8
+    JZ ClearFlipFlop8
 if ?MMASK
     CMP DL, DMA_IMM_RESET
     JZ @@MMask8On
@@ -134,12 +147,12 @@ endif
     @dprintf ?DMADBG, <"Dma_HandleDmaPorts8: unhandled OUT to port %X",10>, dx
     out dx, al
     ret
-@@Clear8:
+ClearFlipFlop8::
     out dx, al
-    BTR [DmaGblFlags],HiLoFlag1
+    BTR [DmaGblFlags], DMAG_HiLoFlag1
     ret
 @@BlockSet8:            ; I/O addresses 0-7 (DMA 8bit)
-    MOV BX,HiLoFlag1
+    MOV BX, DMAG_HiLoFlag1
     MOVZX EDI,DL
     SHR EDI,1           ; get channel# into EDI
     jc Dma_SetLength
@@ -176,7 +189,7 @@ Dma_HandleDmaPorts8 endp
 
 Dma_HandleDmaPorts16 proc public
 
-    test cl,OUTPUT
+    test cl,OUT_INSTR
     jz Simulate_IO
     test cl,STRING_IO or WORD_IO or DWORD_IO ;not byte access?
     jnz Simulate_IO_trap
@@ -210,10 +223,10 @@ endif
     ret
 @@Clear16:
     out dx, al
-    BTR [DmaGblFlags],HiLoFlag2
+    BTR [DmaGblFlags], DMAG_HiLoFlag2
     ret
 @@BlockSet16:           ; I/O addresses C0-CF (DMA 16bit)
-    MOV BX,HiLoFlag2
+    MOV BX, DMAG_HiLoFlag2
     MOV EDI,EDX
     SHR EDI,2           ; get channel# into EDI
     AND EDI,3
@@ -247,6 +260,7 @@ endif
 
 Dma_HandleDmaPorts16 endp
 
+;--- EDI=channel#
 
 Dma_SetAddr:
     mov ecx,offset DmaChn.BaseAdr
@@ -266,7 +280,7 @@ Dma_SetLenOrAdr:
 ;
 Dma_SetMode:
     out dx, al
-    mov [DmaChn+EDI*sizeof DMAREQ].ChanMode,al
+    mov [DmaChn+EDI*sizeof DMAREQ].bMode,al
 
 Dma_IsReady proc
 if 0
@@ -307,12 +321,15 @@ Dma_SetSMask endp
 
 if ?MMASK
 ;--- Master mask port (000F, 00DE)
+;--- this port is W only!
 ;--- bit 0 -> 1=channel 0 inactive, 0=channel 0 active
 ;--- bit 1 -> ... chn 1
 ;--- bit 2 -> ... chn 2
 ;--- bit 3 -> ... chn 3
 
-;--- this port cannot be read reliably !!!!!
+;--- edi=0 or 4
+;--- al=
+;--- ah=
 
 Dma_SetMMask proc
     mov cl,4
@@ -341,6 +358,69 @@ Dma_SetMMask ENDP
 
 endif
 
+if ?ALT_TRAPHDL
+
+;--- v5.85: check some ISA 8-bit DMA ports even
+;--- if the io trap handler is external.
+;--- actually, just check port A,B,C,F
+
+ISA_DMA_Traphandler proc public
+	test cl,OUT_INSTR		; nothing done if IN
+	jz done
+	cmp dl, DMA_SINGLEMASK
+	jz is0A
+	cmp dl, DMA_MODE
+	jz is0B
+	cmp dl, DMA_FLIPFLOP
+	jz is0C
+if ?MMASK
+	cmp dl, DMA_MULTIMASK
+	jz is0F
+endif
+done:
+	clc
+	ret
+is0C:
+	call ClearFlipFlop8
+	jmp done
+if ?MMASK
+is0F:
+	test al,4		;channel 2?
+	jnz done
+	push eax
+	mov ah, al
+	push edi
+	xor edi, edi
+	call Dma_SetMMask
+	pop edi
+	pop eax
+	jmp done
+endif
+is0A:
+	push Dma_SetSMask
+	jmp checkchannel
+is0B:
+	push Dma_SetMode
+;	jmp checkchannel
+checkchannel:
+	push edi
+	mov edi, eax
+	and edi, 11b
+	cmp edi, 2		; channel 2?
+	clc
+	jnz @F
+	call dword ptr [esp+4]
+	stc				; handle OUT for channel 2 exclusively!
+@@:
+	pop edi
+	lea esp, [esp+4]
+	ret
+
+ISA_DMA_Traphandler endp
+
+endif
+
+
 ;
 ; A DMA-Channel is completely supplied with data about beginning and length,
 ; so a check can (and has to) take place.
@@ -354,8 +434,8 @@ Dma_CheckChannel PROC
 
     cmp [DmaChn+EDI*sizeof DMAREQ].cDisable,0   ;translation disabled by VDS?
     jnz @@Bye
-    test [DmaChn+EDI*sizeof DMAREQ].ChanMode,1100B  ; If a verify is wanted
-    JZ @@Bye                          ; nothing is to be done
+    test [DmaChn+EDI*sizeof DMAREQ].bMode,DMA_MODE_OPERATION
+    JZ @@Bye                          ; If a verify is wanted (MODE_OP==00), nothing is to be done
 
 if 1
     and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
@@ -378,7 +458,7 @@ endif
 
 ;--- now ESI holds the start address (linear!)
 
-    BTR [DmaGblFlags],NeedBuffer    ; Initialise.
+    BTR [DmaGblFlags], DMAG_NeedBuffer  ; Initialise.
 
 ;--- Is the block occupying contiguous physical pages?
 ;--- Or does it cross a 64kB/128 kB boundary?
@@ -389,22 +469,22 @@ endif
     pop ebx
     JNC @@Set   ;NC if buffer *is* contiguous               
 
-;   test [DmaChn+EDI*sizeof DMAREQ].ChanMode,10h ;auto-init? Then a buffer is useless
+;   test [DmaChn+EDI*sizeof DMAREQ].bMode,10h ;auto-init? Then a buffer is useless
 ;   jnz @@Set
 
     @dprintf ?DMADBG, <"block not contiguous or crosses 64k border, DMA buffer needed!",10>
 
     MOV ESI,[DMABuffStartPhys]      ; get DMA Buffer physical address
-    BTS [DmaGblFlags], NeedBuffer
+    BTS [DmaGblFlags], DMAG_NeedBuffer
     cmp ecx, [DMABuffSize]
     jbe @@blocksizeok
     mov ecx, [DMABuffSize]          ; error: DMA buffer overflow    
 @@blocksizeok:
     call @@SetX
-    MOV AL,[DmaChn+EDI*sizeof DMAREQ].ChanMode  ; copy data into buffer required?
-    and al,1100b
-    cmp al,1000b
-    JNZ @@IsRead
+    MOV AL,[DmaChn+EDI*sizeof DMAREQ].bMode  ; copy data into buffer required?
+    and al,DMA_MODE_OPERATION
+    cmp al,1000b	; 1000b = DMA_MODE_OP_READ!
+    JNZ @@IsRead	; is "JNZ" really correct here?
 
     @dprintf ?DMADBG, <"Dma_CheckChannel: copy into DMA buffer",10>
 
@@ -456,9 +536,9 @@ endif
 
     lea edx, [edi-4]
     shl edx, 2                  ; edx=0,4,8,C
-    or dl, 0C0h
-    BTR [DmaGblFlags],HiLoFlag2 ; DMA #2, HiLo-FlipFlop-Flag
-    OUT [0D8H],AL               ; clear Hi/Lo-FlipFlop
+    or dl, DMA_BASE_16BIT
+    BTR [DmaGblFlags],DMAG_HiLoFlag2 ; DMA #2, HiLo-FlipFlop-Flag
+    OUT DMA_FLIPFLOP16,AL       ; clear Hi/Lo-FlipFlop
     JMP $+2
     SHR ESI,1
     MOV EAX,ESI                 ; reprogram base address
@@ -469,13 +549,13 @@ endif
 
 @@Set8:
     LEA EDX,[EDI+EDI]
-    BTR [DmaGblFlags],HiLoFlag1 ; DMA #1, HiLo-FlipFlop-Flag
-    OUT [0CH],AL                ; clear Hi/Lo-FlipFlop
+    BTR [DmaGblFlags],DMAG_HiLoFlag1 ; DMA #1, HiLo-FlipFlop-Flag
+    OUT DMA_FLIPFLOP,AL         ; clear Hi/Lo-FlipFlop
     JMP $+2
     MOV EAX,ESI                 ; reprogram base address
     SHR ESI,16                  ; get bits 16-23 into 0-7
 @@Cont:
-    OUT DX,AL                   ;
+    OUT DX,AL                   ; set index/count
     MOV AL,AH
     JMP $+2
     OUT DX,AL
@@ -600,7 +680,7 @@ endif
 
 Dma_CopyBuffer ENDP
 
-endif   ;?DMA
+endif   ;?DMAPT
 
 .text$03    ends
 

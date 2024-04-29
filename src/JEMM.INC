@@ -13,7 +13,7 @@ endif
 ifndef ?KD
 ?KD             EQU 0       ; 1=support for PL0 debugger
 endif
-?DMA            EQU 1       ; 1=enable DMA port trapping support
+?DMAPT          EQU 1       ; 1=enable DMA port trapping support
 ?VDS            EQU 1       ; 1=enable VDS support
 ?VCPI           EQU 1       ; 1=enable VCPI support
 ?EMX            EQU 1       ; 1=EMX compat switch supported
@@ -298,7 +298,7 @@ MAX_EMS_PAGES_POSSIBLE  equ 8000h
 RSOFS struct
 wSizeRes    dw ?    ;size resident part
 wBpTab      dw ?    ;offset of BP table
-if ?DMA
+if ?DMAPT
 wRFlags     dw ?    ;offset of DMA flags
 endif
 RSOFS ends

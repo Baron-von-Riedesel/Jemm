@@ -259,12 +259,15 @@ NUMBP equ (size BPTABLE)/4
 ;--- v5.84: don't trap ports 80h, 8Ch-8Fh, ( 8Fh = page reg of channel 4 )
 ;---        C0h-C3h (channel 4)
 
+if ?ALT_TRAPHDL	;v5.85
+Alternate_IO_Traphandler dd ISA_DMA_Traphandler
+endif
 IO_Trap_Table label dword
 IO_Trap_Handler dd Default_IO_Trap_Handler
     dd (offset endportmap - offset portmap) / sizeof IOTRAPENTRY
 
 portmap label byte
-if ?DMA
+if ?DMAPT
     IOTRAPENTRY <000h,00Fh,Dma_HandleDmaPorts8>
     IOTRAPENTRY <081h,08Bh,Dma_HandlePagePorts>
     IOTRAPENTRY <0C4h,0DFh,Dma_HandleDmaPorts16>
@@ -1301,9 +1304,21 @@ v86excrtn:
 ;--- now DX, EAX and CL is set for the IO handlers    
 
     push ecx
+if ?ALT_TRAPHDL
+;--- v5.85: if trap handler has been changed, and port is < 0x100,
+;---        call the alternate handler if it has been set
+	cmp [IO_Trap_Handler], Default_IO_Trap_Handler
+	jz @F
+	cmp dh, 0
+	jnz @F
+	call [Alternate_IO_Traphandler]
+	jc @@io_handled
+@@:
+endif
     call [IO_Trap_Handler]
+@@io_handled:
     pop ecx
-    test cl,OUTPUT or STRING_IO
+    test cl,OUT_INSTR or STRING_IO
     jnz @@isout
     mov [ebp].Client_Reg_Struc.Client_EAX, eax
 @@isout:
@@ -1350,7 +1365,7 @@ Default_IO_Trap_Handler endp
 ;--- EBP -> client ptr
 ;--- CX = flags
 ;--- Hiword(ECX) = segment of src/dst for string IO
-;--- EAX = data (if OUTPUT flag is set)
+;--- EAX = data (if OUT_INSTR flag is set)
 ;--- DX = port
 
 ;--- it converts:
@@ -1385,7 +1400,7 @@ Simulate_IOex proc
     push ecx
     movzx ecx,cl
 ;    and ecx,1Ch
-    and ecx,DWORD_IO or WORD_IO or OUTPUT
+    and ecx,DWORD_IO or WORD_IO or OUT_INSTR
     mov ecx,[ecx + offset iojmp]
     xchg ecx, [esp]
     ret
@@ -1393,7 +1408,7 @@ Simulate_IOex proc
 
 iojmp label dword
     dd @@bin    ;+00
-    dd @@bout   ;+04 (OUTPUT is 4)   
+    dd @@bout   ;+04 (OUT_INSTR is 4)   
     dd @@win    ;+08 (WORD_IO is 8)
     dd @@wout   ;+0C
     dd @@din    ;+10 (DWORD_IO is 10h
@@ -1482,7 +1497,7 @@ iojmp label dword
     push ecx
     movzx ecx, cl
 ;    and ecx,1Ch
-    and ecx,DWORD_IO or WORD_IO or OUTPUT
+    and ecx,DWORD_IO or WORD_IO or OUT_INSTR
     mov ecx, [ecx + offset siojmp]
     xchg ecx, [esp]
     ret
