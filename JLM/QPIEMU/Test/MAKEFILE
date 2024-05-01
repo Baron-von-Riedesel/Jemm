@@ -1,0 +1,15 @@
+
+# NMake/WMake Makefile to create TESTQPI.EXE & TESTDMA.EXE
+
+NAME1 = TESTQPI
+NAME2 = TESTDMA
+OUTDIR= .
+ASM=jwasm.exe
+
+ALL: $(OUTDIR)\$(NAME1).EXE $(OUTDIR)\$(NAME2).EXE
+
+$(OUTDIR)\$(NAME1).EXE: $(NAME1).asm
+	@$(ASM) -nologo -mz -Fl$* -Sg -Fo=$*.EXE $(NAME1).asm
+
+$(OUTDIR)\$(NAME2).EXE: $(NAME2).asm
+	@$(ASM) -nologo -mz -Fl$* -Sg -Fo=$*.EXE $(NAME2).asm

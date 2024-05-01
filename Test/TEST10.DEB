@@ -1,0 +1,18 @@
+; test v86 exc 10
+; set CR0 NE bit
+; enable exceptions in FP control word
+; the do an FP pop
+; the exception occurs at the NEXT FP instruction (the finit)!
+a
+mov eax,cr0
+or al,20
+mov cr0,eax
+fstcw [180]
+and word [180],ffc0
+fldcw [180]
+fst double [200]
+finit
+int 3
+
+g=100
+q

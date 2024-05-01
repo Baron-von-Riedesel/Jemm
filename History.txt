@@ -8,6 +8,9 @@
  - log displays redirected to kernel debugger if one has been detected.
  - buffered output of log displays removed.
  - VDS func ax=810Ch: set ZF if disable cnt reaches zero.
+ - VDS: added several argument checks ( mostly DX ).
+ - fix: ISA DMA ports A-F must be handled by Jemm to detect FD accesss 
+   even if external handler has trapped these ports.
 
  12.02.2024: v5.84
 

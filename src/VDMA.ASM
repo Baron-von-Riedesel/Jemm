@@ -31,7 +31,7 @@
 if ?DMAPT
 
 ;--- DMAREQ.bFlags values
-DMAF_ENABLED    equ 1   ;1=channel is enabled/unmasked
+DMAF_ENABLED    equ 1   ;1=channel is enabled (=unmasked)
 
 ;--- bits in DmaGblFlags
 
@@ -87,7 +87,7 @@ Dma_HandlePagePorts PROC public
 	cmp edi, -1	; v5.85: check added
 	jz @F
     MOV [DmaChn + EDI*sizeof DMAREQ].PageReg,AL
-    jmp Dma_IsReady
+    jmp Dma_IsChannelUnmasked
 @@:
 	ret
     align 4
@@ -167,12 +167,11 @@ ClearFlipFlop8::
     jmp Dma_SetMode
 if ?MMASK
 @@MMask8On:             ;mask all 4 channels
-    mov al,0Fh
+    mov al,1111b
     jmp @@MMask8
 @@MMask8Off:            ;unmask all 4 channels
-    mov al,0
+    mov al,0000b
 @@MMask8:
-    mov ah, al
     xor edi, edi
     jmp Dma_SetMMask
 endif
@@ -246,13 +245,11 @@ endif
     JMP Dma_SetMode
 if ?MMASK
 @@MMask16On:            ;mask all 4 channels
-    mov al,0Fh
+    mov al,1111b
     jmp @@MMask16
 @@MMask16Off:           ;unmask all 4 channels
-    mov al,0
+    mov al,0000b
 @@MMask16:
-    mov ah, al
-    shl ah, 4
     mov edi, 4
     jmp Dma_SetMMask
 endif
@@ -273,7 +270,7 @@ Dma_SetLenOrAdr:
     adc ecx,0
     MOV BYTE PTR [ECX+EDI*sizeof DMAREQ],AL
     test cl,1
-    jnz Dma_IsReady
+    jnz Dma_IsChannelUnmasked
     ret
 ;
 ; Monitor "Mode Register" for the Transferdirection DMA <--> I/O
@@ -282,7 +279,7 @@ Dma_SetMode:
     out dx, al
     mov [DmaChn+EDI*sizeof DMAREQ].bMode,al
 
-Dma_IsReady proc
+Dma_IsChannelUnmasked proc
 if 0
     mov ecx,[dwRFlags]
     test byte ptr [ecx],RFL_DMAOP ;new Int 13h/40h DMA op?
@@ -293,52 +290,49 @@ if 0
 endif
     test [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
     jz @@Bye
-    CALL Dma_CheckChannel    ; Then check value
+    CALL Dma_CheckChannel    ; Then check if auto translation should be done
 @@Bye:
     RET
-Dma_IsReady endp
+Dma_IsChannelUnmasked endp
 
 ;--- Single mask port (000A, 00D4)
 ;--- bits 0-1 select channel
 ;--- bit 2=1 -> enable channel mask (=channel inactive)
 
 Dma_SetSMask proc
+    out dx, al
     and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
     test al,4
-    jnz @@isdisable
+    jnz exit
     or [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
 if 0
     mov ecx,[dwRFlags]
     and byte ptr [ecx],not RFL_DMAOP
 endif
-    push eax
     call Dma_CheckChannel
-    pop eax
-@@isdisable:
-    out dx, al
+exit:
     ret
 Dma_SetSMask endp
 
 if ?MMASK
 ;--- Master mask port (000F, 00DE)
-;--- this port is W only!
-;--- bit 0 -> 1=channel 0 inactive, 0=channel 0 active
+;--- this port is declared as W only, but usually it can be read as well.
+;--- bit 0 -> 1=channel 0 masked, 0=channel 0 unmasked (=active)
 ;--- bit 1 -> ... chn 1
 ;--- bit 2 -> ... chn 2
 ;--- bit 3 -> ... chn 3
 
 ;--- edi=0 or 4
-;--- al=
-;--- ah=
+;--- al=value to be written to port (bits 0-3)
 
 Dma_SetMMask proc
+    out dx, al
     mov cl,4
-    xchg al,ah   ;value to write to port now in AH, in AL transformed mask
 @@nextcnl:
 ;   test [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
 ;   jnz @@skipchannel       ;channel is already active
     and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
-    bt eax, edi
+    shr al,1
     jc @@skipchannel       ;channel will become/stay inactive
     or [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
     push eax
@@ -350,8 +344,6 @@ Dma_SetMMask proc
     inc edi
     dec cl
     jnz @@nextcnl
-    mov al, ah
-    out dx, al
     ret
 
 Dma_SetMMask ENDP
@@ -360,12 +352,16 @@ endif
 
 if ?ALT_TRAPHDL
 
-;--- v5.85: check some ISA 8-bit DMA ports even
-;--- if the io trap handler is external.
-;--- actually, just check port A,B,C,F
+;--- v5.85: check some ISA 8-bit DMA ports for channel 2 even
+;--- if an external i/o trap handler has been installed.
+;--- actually, just ports A,B,C,F are checked,
+;--- but generally, writes to ports 4/5 and 81h ( page register for channel 2 )
+;--- should also be checked.
 
 ISA_DMA_Traphandler proc public
-	test cl,OUT_INSTR		; nothing done if IN
+	cmp [DmaChn+2*sizeof DMAREQ].cDisable,0	;ISA DMA translation disabled for channel 2?
+	jnz done
+	test cl,OUT_INSTR		; nothing done if IN (no longer true if ports 4/5/81h will be checked)
 	jz done
 	cmp dl, DMA_SINGLEMASK
 	jz is0A
@@ -383,19 +379,6 @@ done:
 is0C:
 	call ClearFlipFlop8
 	jmp done
-if ?MMASK
-is0F:
-	test al,4		;channel 2?
-	jnz done
-	push eax
-	mov ah, al
-	push edi
-	xor edi, edi
-	call Dma_SetMMask
-	pop edi
-	pop eax
-	jmp done
-endif
 is0A:
 	push Dma_SetSMask
 	jmp checkchannel
@@ -415,19 +398,37 @@ checkchannel:
 	pop edi
 	lea esp, [esp+4]
 	ret
+if ?MMASK
+is0F:
+;--- just channel 2 is of interest;
+;--- in AL, the mask-bit is already at pos 2
+	pushad
+	mov edi, 2
+	and al, 100b
+	or eax, edi
+	mov dl, DMA_SINGLEMASK
+	call Dma_SetSMask
+	popad
+	clc
+	ret
+endif
 
 ISA_DMA_Traphandler endp
 
 endif
 
-
-;
-; A DMA-Channel is completely supplied with data about beginning and length,
-; so a check can (and has to) take place.
+; A DMA-Channel is unmasked, so a check can (and has to) take place.
 ;
 ; In: EDI: Channelnumber 0..7
 ; modifies ECX, ESI, EBX
 ;
+; Generally, this code assumes that DMA writes that are done within an INT13/INT40
+; are done because a FD/HD op uses ISA DMA, no matter what DMA channel is modified.
+; This is NOT a valid assumption! ( might be DMA register ports writes during an IRQ ).
+
+;--- better approach: check channel 2 only for FD
+;--- optionally, if activated by cmdline option, check channel (3/X) for HD
+
 Dma_CheckChannel PROC
 
     @dprintf ?DMADBG, <"Dma_CheckChannel enter, edi=%u",10>, edi
@@ -438,6 +439,7 @@ Dma_CheckChannel PROC
     JZ @@Bye                          ; If a verify is wanted (MODE_OP==00), nothing is to be done
 
 if 1
+;--- todo: explain why this is done!
     and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
 endif
 

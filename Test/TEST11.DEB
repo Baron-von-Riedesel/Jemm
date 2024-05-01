@@ -1,0 +1,20 @@
+; test v86 exc 11
+; set CR0 AM bit
+; set EFL AC bit
+; then access stack unaligned
+a
+mov eax,cr0
+or eax,40000
+mov cr0,eax
+and sp,FFFC
+pushfd
+pop eax
+or eax,40000
+push eax
+popfd
+push ax
+push eax
+int 3
+
+g=100
+q

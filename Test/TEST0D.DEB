@@ -1,0 +1,7 @@
+; test v86 exc 0D
+a
+mov ax,[ffff]
+int 3
+
+g=100
+q
