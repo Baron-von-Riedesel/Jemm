@@ -160,7 +160,7 @@ endif
 bBpTab          db  0   ;offset start bptable in RSEG
 bBpBack         db  BPTABLE.pBack shr 2
 ife ?HOOK13
-bDiskIrq        db  0   ;diskette transfer pending
+bDiskIrq        db  0   ; bit0: 1=diskette transfer pending
 endif
 if ?KD
 bKD             db  0
@@ -2230,7 +2230,7 @@ endif
 
 ife ?HOOK13
 @@isfdirq:
-    btr word ptr ss:[bDiskIrq],0
+    btr word ptr ss:[bDiskIrq],0	; copy out of DMA buffer required?
     jnc @@v86mon
     push ss
     pop ds

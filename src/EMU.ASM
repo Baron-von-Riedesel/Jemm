@@ -53,7 +53,7 @@ endif
     je @@invd
     cmp al,30h
     je @@wrmsr
-    cmp al,31h
+    cmp al,31h	; whether RDTSC is privileged depends on CR4, bit 2 (TSD)
     je @@rdtsc
     cmp al,32h
     je @@rdmsr

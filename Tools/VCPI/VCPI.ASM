@@ -283,7 +283,7 @@ defint proc near
 	and al,al
 	jz @F
 	mov al,20h
-	out 0a0h,al
+	out 20h,al
 @@:
 	pop eax
 	iretd
@@ -1125,6 +1125,8 @@ start:
 	add bx,ax
 	mov ah,4ah
 	int 21h
+
+	push es
 	push ds
 	pop es
 	mov di, offset myidt
@@ -1133,6 +1135,7 @@ start:
 	shr cx, 1
 	xor ax, ax
 	rep stosw
+	pop es
 	call main
 	mov ax,4c00h
 	int 21h

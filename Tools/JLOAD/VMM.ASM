@@ -121,6 +121,7 @@ MoveMemory  		dd 0
 					dd _Allocate_GDT_Selector ; v5.83
 					dd _Free_GDT_Selector ; v5.83
 					dd Get_DDB ; v5.83
+					dd V86ToPM ; v5.86
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 
@@ -857,6 +858,13 @@ Set_PM_Int_Vector endp
 ;---        jmp v86_hook
 ;---        db 0
 
+GATE struct
+wOfsLo dw ?
+wSel   dw ?
+wAttr  dw ?
+wOfsHi dw ?
+GATE ends
+
 Hook_V86_Int_Chain proc
 	cmp eax,100h
 	jnc @@error
@@ -896,11 +904,11 @@ Hook_V86_Int_Chain proc
 @@error2:
 	pop eax
 @@error:
-	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: exit error",10>
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: exit error",10>
 	stc
 	ret
 @@newhook:
-	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: new hook",10>
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: new hook",10>
 	mov [edx+eax*8].HOOKV86.dwHook, esi
 	push ebx
 	push esi
@@ -916,18 +924,17 @@ endif
 ;--- 3. generate the thunk code: "push #int" & "jmp near32 v86hook"
 ;--- 4. modify the int bitmap in TSS
 
-	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: modifying IDT",10>
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: modifying IDT",10>
 	mov ecx, [g_dwIDT]
-	mov si, [ecx+eax*8+6]
-	shl esi,16
-	mov si,[ecx+eax*8+0]
+	mov si, [ecx+eax*8].GATE.wOfsHi
+	shl esi, 16
+	mov si, [ecx+eax*8].GATE.wOfsLo
 	mov [edx+eax*8].HOOKV86.dwOldVec, esi
 	lea edx, [edx+256*8+eax*8]
 	mov ebx, edx
-	mov [ecx+eax*8+0],bx
-	shr ebx,16
-	mov [ecx+eax*8+6],bx
 
+;--- generate thunk code
+	push ecx
 	mov byte ptr [edx], 06Ah		;push byte
 	mov byte ptr [edx+1], al
 	add edx,2
@@ -936,8 +943,15 @@ endif
 	sub ecx, edx
 	sub ecx, 5						; v5.82: adjust size of "jmp near32"
 	mov dword ptr [edx+1], ecx
+	pop ecx
 
-	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: modifying Int bitmap",10>
+;--- set IDT vector to thunk code
+	mov [ecx+eax*8].GATE.wOfsLo, bx
+	shr ebx, 16
+	mov [ecx+eax*8].GATE.wOfsHi, bx
+
+
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: modifying Int bitmap",10>
 	mov ebx, [dwTSSbase]
 	movzx ecx, [ebx].TSSSEG.tsOfs
 	add ebx, ecx
@@ -948,7 +962,7 @@ endif
 	pop esi
 	pop ebx
 @@done:
-	@dprintf ?JLMDBG, <"Hook_V86_Int_chain: exit ok",10>
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: exit ok",10>
 	clc
 	ret
 	align 4
@@ -989,7 +1003,7 @@ ifdef _DEBUG
 	jz skiplog
 @@:
 endif
-	@dprintf ?JLMDBG, <"v86_hook: int=%X",10>, ax
+	@dprintf ?V86HOOKDBG, <"v86_hook: int=%X",10>, ax
 skiplog:
 
 	mov edx, [ecx+eax*8].HOOKV86.dwOldVec
@@ -1227,6 +1241,14 @@ FreePage proc
 	ret
 	align 4
 FreePage endp
+
+;--- esi=V86TOPM struct
+
+V86ToPM proc public
+	mov eax, [VCPI_Call_Table]
+	jmp dword ptr [eax+12*4]	; VCPI_V86ToPM
+	align 4
+V86ToPM endp
 
 ;--- to simplify memory management,
 ;--- a "mapping" page table is maintained which
@@ -1735,7 +1757,7 @@ ifdef _DEBUG
 finalint2f proc
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh
 	jz done
-	@dprintf ?JLMDBG, <"finalint2f: ax=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
+	@dprintf ?INT2FHOOKDBG, <"finalint2f: ax=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
 done:
 	stc
 	ret
@@ -1744,6 +1766,7 @@ endif
 
 ;--- a hook proc must be prefixed by the flat address
 ;--- of the variable where the previous value is stored
+;--- AX=???
 
 	dd offset prevint2f
 Int2fHook proc
@@ -1752,12 +1775,13 @@ ifdef _DEBUG
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh	;that happens pretty often, so don't log it
 	jz @F
 endif
-	@dprintf ?JLMDBG, <"Int2fHook: client_ax=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EAX
+	@dprintf ?INT2FHOOKDBG, <"Int2fHook: ax=%X, client_ax=%X",10>, ax, word ptr [ebp].Client_Reg_Struc.Client_EAX
 @@:
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 1684h
 	jnz not_ours
-	@dprintf ?JLMDBG, <"Int2FHook: ax=1684h detected, ID=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EBX
+	@dprintf ?INT2FHOOKDBG, <"Int2FHook: ax=1684h detected, device scan, BX=ID=%X",10>, word ptr [ebp].Client_Reg_Struc.Client_EBX
 	mov edx, offset ddb_list
+	mov ax, word ptr [ebp].Client_Reg_Struc.Client_EBX 	;v5.85 added
 @@nextitem:
 	cmp ax, [edx].VxD_Desc_Block.DDB_Req_Device_Number
 	jz found
@@ -1767,6 +1791,7 @@ endif
 	xor eax, eax
 	jmp @F
 found:
+	@dprintf ?INT2FHOOKDBG, <"Int2FHook: found Device=%X",10>, word ptr [edx].VxD_Desc_Block.DDB_Req_Device_Number
 	mov byte ptr [ebp].Client_Reg_Struc.Client_EAX, 0	;v5.82: set AL to 0 if ok
 	mov eax, [edx].VxD_Desc_Block.DDB_V86_API_CSIP
 @@:

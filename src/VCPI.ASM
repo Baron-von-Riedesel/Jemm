@@ -13,6 +13,7 @@
 
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
+    include vcpi.inc        ;VCPI definitions
     include debug.inc
 
 ?CLEARTB    equ 1   ;std 1, 1=clear "busy" flag in client's TSS descriptor
@@ -63,8 +64,13 @@ VCPI_Call_Table label dword
     Dd VCPI_WriteDR
     Dd VCPI_GetMappings ; 0ah
     Dd VCPI_SetMappings
-;   Dd VCPI_V86toPM     ; 0ch
-VCPI_MAX equ ($ - VCPI_Call_Table) / 4
+
+;--- v5.85: VCPI_V86toPM wasn't activated in this table, because the label
+;--- is used directly (see EMS.ASM). Now it's part of the table, so JLoad knows
+;--- the label and JLMs may callout to a VCPI client. 
+    Dd VCPI_V86toPM     ; 0ch
+;VCPI_MAX equ ($ - VCPI_Call_Table) / 4
+
 ;
 ; AX=DE00: VCPI presence detection
 ;  return BH = 1 (major version), BL = 0 (minor version)
@@ -341,34 +347,34 @@ VCPI_SetMappings ENDP
 
 VCPI_V86toPM    PROC public
 
-    @dprintf ?VCPIXDBG, <"VCPI rm, ax=DE0C, esi=%X cr3=%X cs:eip=%X:%X",10>, esi, dword ptr [esi].V862PM.swCR3,\
-        word ptr [esi].V862PM.swCSEIP+4, dword ptr [esi].V862PM.swCSEIP
+    @dprintf ?VCPIXDBG, <"VCPI rm, ax=DE0C, esi=%X cr3=%X cs:eip=%X:%X",10>, esi, dword ptr [esi].V86TOPM.dwCR3,\
+        word ptr [esi].V86TOPM.dfCSEIP+4, dword ptr [esi].V86TOPM.dfCSEIP
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX   ;restore client value
     mov ebp,[ebp].Client_Reg_Struc.Client_EBP   ;restore client value
 if ?VCPITMPSS
     mov ax, V86_STACK_SEL           ; some poorly written VCPI clients expect
     mov ss, eax                     ; hiword(esp) to be cleared.
 endif
-    mov eax,[esi].V862PM.swCR3      ; set client's context *first*
+    mov eax,[esi].V86TOPM.dwCR3     ; set client's context *first*
     mov cr3,eax
 
-    mov eax,[esi].V862PM.swIDTOFFS  ; set up client's IDT
+    mov eax,[esi].V86TOPM.dwIDTOFFS ; set up client's IDT
     lidt fword ptr [eax]
-    mov eax,[esi].V862PM.swGDTOFFS  ; set up client's GDT
-    movzx esp,[esi].V862PM.swTR
+    mov eax,[esi].V86TOPM.dwGDTOFFS ; set up client's GDT
+    movzx esp,[esi].V86TOPM.wTR
     lgdt fword ptr [eax]
 if ?CLEARTB    
     mov eax,[eax+2]                 ; EAX == linear address of client's GDT
     and ds:[esp+eax].DESCRIPTOR.bAttr,NOT 2; clear task busy bit in TSS descriptor
 endif
     ltr sp                          ; set up client's TSS
-    lldt [esi].V862PM.swLDTR        ; set up client's LDT
+    lldt [esi].V86TOPM.wLDTR        ; set up client's LDT
 if ?VCPITMPSS
     mov esp,?HLPSTKSIZE
 else
     mov esp,?BASE+?HLPSTKSIZE
 endif
-    jmp [esi].V862PM.swCSEIP        ; jump to client's entry point
+    jmp [esi].V86TOPM.dfCSEIP       ; jump to client's entry point
 
 VCPI_V86toPM    ENDP
 
@@ -542,11 +548,16 @@ if ?SAFEMODE
     add esp,8+8
 endif
     pop ecx
+if 1
     pop esi
     pop edi
     mov cr3, ecx    ; restore client context *first* and
     mov ss, edi     ; then restore client SS:ESP, thus client's GDT
     mov esp, esi    ; need not be located in shared address space
+else
+    lss esp,[esp]   ; problem with this code: LSS loads descriptor for SS from client GDT,
+    mov cr3, ecx	; and that GDT might be accessible only AFTER CR3 is restored.
+endif
     mov [esp].PUSHADS.rEDX,edx
     mov byte ptr [esp].PUSHADS.rEAX+1,ah
     popad

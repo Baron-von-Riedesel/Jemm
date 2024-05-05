@@ -166,10 +166,11 @@ exit:
 SetDDB endp
 
 ;--- search a JLM
+;--- ECX=VMMS
 ;--- to find a JLM, it must have an associated DDB with an ID
 ;--- out: NC: EAX=module handle
 ;---       C: eax=return code
-;--- ECX is preserved
+;--- if NC, ECX is preserved
 
 SearchJLM proc
 
@@ -188,8 +189,10 @@ SearchJLM proc
 	ret
 error2:
 	@dprintf ?PEDBG, <"SearchJLM: device not found",10>
+	jmp @F
 error:
 	@dprintf ?PEDBG, <"SearchJLM: no DDB",10>
+@@:
 	mov cx,2      ;not found
 	stc
 	ret
@@ -208,7 +211,7 @@ SearchJLM endp
 ;---    ESI=DDB
 
 LoadJLM proc
-	@dprintf ?PEDBG, <"LoadJLM enter",10>
+	@dprintf ?PEDBG, <"LoadJLM enter, ecx=%X, calling SearchJLM",10>, ecx
 	pushad
 	call SearchJLM	;already loaded?
 	jnc error3
@@ -247,7 +250,7 @@ LoadJLM proc
 	xor eax, eax
 	mov edi, [esp].PUSHADS.rEBX
 	call ReadFile
-	jc error
+	jc error2a
 	add edi, [edi+3Ch]
 	movzx ecx, [edi].IMAGE_NT_HEADERS.FileHeader.NumberOfSections
 	add edi, sizeof IMAGE_NT_HEADERS
@@ -281,12 +284,15 @@ LoadJLM proc
 	popad
 	ret
 error3:
+	@dprintf ?PEDBG, <"LoadJLM: JLM already loaded",10>
 	stc
 	popad
 	mov cx,0B7h	;already exists
 	ret
 error2:
 	add esp,4*4
+error2a:
+	@dprintf ?PEDBG, <"LoadJLM: ReadFile error2",10>
 error:
 	stc
 	popad

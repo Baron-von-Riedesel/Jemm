@@ -70,21 +70,6 @@ PTF_USER    equ 4
 PTF_WT      equ 8
 PTF_4MB     equ 80h
 
-if ?VCPI
-
-; VCPI switch from V86 to protected mode data structure
-
-V862PM  STRUCT
-swCR3       DD  ?   ; client's CR3 value
-swGDTOFFS   DD  ?   ; offset of client's GDTR value
-swIDTOFFS   DD  ?   ; offset of client's IDTR value
-swLDTR      DW  ?   ; client's LDTR value
-swTR        DW  ?   ; client's TR value
-swCSEIP     DF  ?   ; entry point in client
-V862PM  ENDS
-
-endif
-
 ;--- EMS constants
 
 ;-- 32M max EMS memory (in 16K EMS page units), always even

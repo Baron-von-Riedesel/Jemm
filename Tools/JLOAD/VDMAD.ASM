@@ -10,6 +10,7 @@
 
 	include jemm.inc
 	include jemm32.inc
+	include vds.inc
 	include jlm.inc
 	include jload32.inc
 	include debug.inc

@@ -9,7 +9,7 @@ endm
 ;--- .text$01: shared page - accessible by VCPI clients (global vars, code )
 ;--- .text$01w: exception strings
 ;--- .text$01x: GDT/IDT if ?SHAREDGDT/?SHAREDIDT=1
-;--- .text$02: ???
+;--- .text$02: VCPI mode switch routines
 ;--- .text$03: normal code/data
 ;--- .text$04: init code, not copied to extended memory
 

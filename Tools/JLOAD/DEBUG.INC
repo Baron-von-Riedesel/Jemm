@@ -24,9 +24,15 @@ endif
 ifndef ?DMADBG
 ?DMADBG  = 0	;trace DMA handling
 endif
+ifndef ?V86HOOKDBG
+?V86HOOKDBG  = 0	;trace v86 hook chain handling
+endif
+ifndef ?INT2FHOOKDBG
+?INT2FHOOKDBG  = 0	;trace Int2F hook handling
+endif
 
 ifdef _DEBUG
-?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG + ?JLMDBG + ?DMADBG
+?TRACE = ?INITDBG + ?PEDBG + ?IODBG + ?PAGEDBG + ?JLMDBG + ?DMADBG + ?V86HOOKDBG + ?INT2FHOOKDBG
 else
 ?TRACE = 0
 endif

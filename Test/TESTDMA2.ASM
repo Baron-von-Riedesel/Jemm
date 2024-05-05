@@ -1,12 +1,14 @@
 
 ;--- test FD read in UMB
-;--- using Int 25h
+;--- using Int 13h
 
 	.286
 	.model small
 	.stack 2048
 	.dosseg
 	.386
+
+?SIZE equ 1000h
 
 CStr macro text:vararg
 local sym
@@ -21,6 +23,31 @@ lf equ 10
 	.code
 
 	include printf.inc
+
+writefile proc c pName:ptr, pBuffer:ptr far16, wSize:word
+	mov dx, pName
+	xor cx, cx
+	mov ax,3c00h
+	int 21h
+	jc fail1
+	mov bx, ax
+	push ds
+	lds dx, pBuffer
+	mov cx, wSize
+	mov ax, 4000h
+	int 21h
+	pop ds
+	jc fail2
+	mov ah, 3Eh
+	int 21h
+	ret
+fail1:
+	invoke printf, CStr("create file failed",10)
+	ret
+fail2:
+	invoke printf, CStr("write file failed",10)
+	ret
+writefile endp
 
 main proc c
 
@@ -45,8 +72,7 @@ local wSeg:word
 	mov ax, 5803h		;umb link restore
 	int 21h
 
-
-	mov bx, 100h		; allocate 4 kB
+	mov bx, ?SIZE shr 4	; allocate mem block
 	mov ah, 48h
 	int 21h
 	jc exit
@@ -54,25 +80,26 @@ local wSeg:word
 
 	mov es, ax
 	xor di, di
-	mov cx, 1000h
+	mov cx, ?SIZE
 	mov al, 00
 	rep stosb
 
-	push ds
-	mov ds, wSeg		; ds:bx=transfer buffer
+	push es
+	mov es, wSeg		; es:bx=transfer buffer
 	mov bx, 0
-	mov cx, 8			; 8 sectors to read
-	mov al, 0			; al=0 -> A:
-	mov dx, 0			; start sector #
-	int 25h
+	mov cx, 1			; cl[0-5]: sector#; ch+cl[6-7]:cylinder
+	mov dh, 0			; dh=head
+	mov dl, 0			; dl=0 -> A:
+	mov ax, 0200h or (?SIZE shr 9)	; al=# of sectors to read
+	int 13h
+	pop es
 	jc error
-	add sp, 2
-	pop ds
 	invoke printf, CStr("reading drive A: ok",10)
+	mov ax, wSeg
+	invoke writefile, CStr("~XXX.TMP"), ax::bx, (?SIZE shr 9)*200h
 	jmp exit
 error:
-	add sp, 2
-	pop ds
+	movzx ax, ah
 	invoke printf, CStr("reading drive A: failed, error code=%X",10), ax
 exit:
 	mov bx, stat1

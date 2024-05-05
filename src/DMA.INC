@@ -6,9 +6,9 @@ DMA_REQUEST        equ 9	; W b0+1: channel, b2: 1=enable?, b3-7:rsvd
 DMA_SINGLEMASK     equ 10	; W b0+1: channel to mask, b2: 0=clear/1=mask, b3-7:rsvd
 DMA_MODE           equ 11	; W b0+1: channel, b2-7:see below
 DMA_FLIPFLOP       equ 12	; W
-DMA_IMM_RESET      equ 13	; R immediate / W master reset
-DMA_MASK_RESET     equ 14	; W master enable
-DMA_MULTIMASK      equ 15	; W master mask b0-3: channel
+DMA_IMM_RESET      equ 13	; R immediate / W master reset (masks all 4 channels)
+DMA_MASK_RESET     equ 14	; W master enable (unmasks all 4 channels)
+DMA_MULTIMASK      equ 15	; W b0-3: 1=channel[0-3] masked, 0=channel[0-3] unmasked
 
 ;--- bits in DMA_MODE
 DMA_MODE_OPERATION equ 1100b; "op" bits 2+3

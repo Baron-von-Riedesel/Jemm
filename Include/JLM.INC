@@ -136,6 +136,10 @@ VMM_Service _Allocate_GDT_Selector
 VMM_Service _Free_GDT_Selector
 VMM_Service Get_DDB
 
+;--- added in v5.85
+
+VMM_Service V86ToPM		; jump to VCPI client, esi->V86toPM struct, ebp->client regs
+
 ;--- equates for the page memory functions
 
 ;_PageReserve() page parameter:

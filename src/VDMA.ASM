@@ -8,7 +8,7 @@
 
 ;--- IN, although trapped, returns the true value of the port.
 ;--- OUT stores the values to be written, and also does an OUT with unmodified ax/al reg.
-;--- only if the DMA op is fully initialized, Dma_CheckChannel()
+;--- if a DMA channel is unmasked, Dma_CheckChannel()
 ;--- is called and will do a translation, if required.
 
 
@@ -37,7 +37,11 @@ DMAF_ENABLED    equ 1   ;1=channel is enabled (=unmasked)
 
 DMAG_HiLoFlag1  EQU 0   ; addressing Hi-Byte, DMA controller #1
 DMAG_HiLoFlag2  EQU 1   ; addressing Hi-Byte, DMA controller #2
-DMAG_NeedBuffer EQU 2   ; if DMA buffer is required
+
+;--- if DMA buffer is required
+;--- this flag isn't really used currently; instead,
+;--- flag RFL_COPYBUFFER in bRFlags is set & queried.
+;DMAG_NeedBuffer EQU 2
 
 ;--- int 13h/40h DMA auto translation
 DmaTargetAdr    DD  0   ; Original adress for DMA
@@ -300,7 +304,6 @@ Dma_IsChannelUnmasked endp
 ;--- bit 2=1 -> enable channel mask (=channel inactive)
 
 Dma_SetSMask proc
-    out dx, al
     and [DmaChn+EDI*sizeof DMAREQ].bFlags,not DMAF_ENABLED
     test al,4
     jnz exit
@@ -309,8 +312,11 @@ if 0
     mov ecx,[dwRFlags]
     and byte ptr [ecx],not RFL_DMAOP
 endif
+    push eax
     call Dma_CheckChannel
+    pop eax
 exit:
+    out dx, al
     ret
 Dma_SetSMask endp
 
@@ -326,8 +332,8 @@ if ?MMASK
 ;--- al=value to be written to port (bits 0-3)
 
 Dma_SetMMask proc
-    out dx, al
     mov cl,4
+    push eax
 @@nextcnl:
 ;   test [DmaChn+EDI*sizeof DMAREQ].bFlags,DMAF_ENABLED
 ;   jnz @@skipchannel       ;channel is already active
@@ -344,6 +350,8 @@ Dma_SetMMask proc
     inc edi
     dec cl
     jnz @@nextcnl
+    pop eax
+    out dx, al		; the OUT must be done AFTER Dma_checkchannel
     ret
 
 Dma_SetMMask ENDP
@@ -354,9 +362,9 @@ if ?ALT_TRAPHDL
 
 ;--- v5.85: check some ISA 8-bit DMA ports for channel 2 even
 ;--- if an external i/o trap handler has been installed.
-;--- actually, just ports A,B,C,F are checked,
-;--- but generally, writes to ports 4/5 and 81h ( page register for channel 2 )
-;--- should also be checked.
+;--- actually, just ports A,B,C,F are checked (D/E mask/unmask all channels!),
+;--- but generally, writes to ports 4 (and 5?) and 81h ( page register for channel 2 )
+;--- should also be checked. 
 
 ISA_DMA_Traphandler proc public
 	cmp [DmaChn+2*sizeof DMAREQ].cDisable,0	;ISA DMA translation disabled for channel 2?
@@ -420,7 +428,7 @@ endif
 ; A DMA-Channel is unmasked, so a check can (and has to) take place.
 ;
 ; In: EDI: Channelnumber 0..7
-; modifies ECX, ESI, EBX
+; modifies ECX, ESI, EBX, AL
 ;
 ; Generally, this code assumes that DMA writes that are done within an INT13/INT40
 ; are done because a FD/HD op uses ISA DMA, no matter what DMA channel is modified.
@@ -458,9 +466,10 @@ endif
     MOV SI,[DmaChn+EDI*sizeof DMAREQ].BaseAdr   ; is simple
 @@Chk:
 
-;--- now ESI holds the start address (linear!)
+;--- here: ESI=start address (linear!), ECX=size
+;--- check if a buffer is needed.
 
-    BTR [DmaGblFlags], DMAG_NeedBuffer  ; Initialise.
+;    BTR [DmaGblFlags], DMAG_NeedBuffer  ; Initialise.
 
 ;--- Is the block occupying contiguous physical pages?
 ;--- Or does it cross a 64kB/128 kB boundary?
@@ -477,16 +486,16 @@ endif
     @dprintf ?DMADBG, <"block not contiguous or crosses 64k border, DMA buffer needed!",10>
 
     MOV ESI,[DMABuffStartPhys]      ; get DMA Buffer physical address
-    BTS [DmaGblFlags], DMAG_NeedBuffer
+;    BTS [DmaGblFlags], DMAG_NeedBuffer	; flag is set, but nowhere queried, so actually it's not really used
     cmp ecx, [DMABuffSize]
-    jbe @@blocksizeok
+    jbe @F
     mov ecx, [DMABuffSize]          ; error: DMA buffer overflow    
-@@blocksizeok:
-    call @@SetX
+@@:
+    call @@SetX                     ; use ESI to set DMA registers page & offset
     MOV AL,[DmaChn+EDI*sizeof DMAREQ].bMode  ; copy data into buffer required?
     and al,DMA_MODE_OPERATION
     cmp al,1000b	; 1000b = DMA_MODE_OP_READ!
-    JNZ @@IsRead	; is "JNZ" really correct here?
+    JNZ @@IsRead	; todo: explain why "JNZ" is correct here
 
     @dprintf ?DMADBG, <"Dma_CheckChannel: copy into DMA buffer",10>
 
@@ -497,7 +506,9 @@ endif
     call MoveMemory
     pop edi
     RET
+
 @@IsRead:
+
 if ?HOOK13
     mov eax,[dwRFlags]
   if 1
@@ -510,12 +521,15 @@ if ?HOOK13
 else
     or [bDiskIrq],1
 endif
+
+;--- store values, needed for "copy out of buffer" after disk i/o has been done
+
     MOV [DmaTargetLen],ECX
     MOV [DmaTargetAdr],EBX          ; save linear address of block
 @@Bye:
     RET
 
-;--- set DMA base address and page register
+;--- use value in ESI to set DMA base address and page register
 ;--- modifies ESI, EAX
 
 @@Set:
@@ -654,7 +668,7 @@ Dma_IsContiguous ENDP
 ; wanted target/location.
 ; * If ?HOOK13 is 1, this is triggered by an v86-breakpoint in real-mode int 13
 ; * and int 40 handlers. First the original int 13 / 40 is done, and
-; * then, if the DMA buffer was used, things are copied from this buffer
+; * then, if the DMA buffer was used, things are copied out of this buffer
 ; * to the target linear address.
 ; * if ?HOOK13 is 0, this is called by Int 15h handler, ax=9101h.
 
