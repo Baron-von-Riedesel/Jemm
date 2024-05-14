@@ -12,9 +12,7 @@ _DATA ends
 
 	.model tiny
 	.dosseg
-
 	.386
-
 	option casemap:none
 	option proc:private
 
@@ -197,7 +195,7 @@ _DATA ends
 CCONST segment
 
 dUsage  db "JLoad v",?VERSIONHIGH+'0',".",@CatStr(!",%?VERSIONLOW/10,%?VERSIONLOW mod 10,!")
-		db " Copyright japheth 2008-2022",13,10
+		db " Copyright japheth 2008-2024",13,10
 		db "JLoad loads JLMs (Jemm Loadable Modules) into Jemm's address space.",13,10
 		db "It can be run as a DOS device driver or from the command line.",13,10
 		db "usage:",13,10
@@ -1064,11 +1062,14 @@ endif
 	test [fOption],FOPTION_QUIET
 	jnz @@nodispsuccess
 @@:
+;--- todo: register CL has been set somewhere if ax==0. Describe the details!
 	.if ([vmms.wFlags] & JLF_UNLOAD)
 		.if (ax)
 			mov cx,DStr("' unloaded successfully.",13,10)
 		.else
 			.if (cl == 2)
+				test [fOption],FOPTION_QUIET
+				jnz @@nodispsuccess
 				mov cx,DStr("' isn't loaded.",13,10)
 			.else
 				mov cx,DStr("' failed to unload.",13,10)
@@ -1079,6 +1080,8 @@ endif
 			mov cx,DStr("' loaded successfully.",13,10)
 		.else
 			.if (cl == 0B7h)
+				test [fOption],FOPTION_QUIET
+				jnz @@nodispsuccess
 				mov cx,DStr("' already loaded.",13,10)
 			.else
 				mov cx,DStr("' failed to load.",13,10)
@@ -1194,13 +1197,6 @@ endif
 	mov dx,DStr("virtualized environment detected",13,10)
 	call errorout
 @@:
-	mov ax,0DEF0h		; 386SWAT?
-	int 67h
-	and ah,ah
-	setz al
-	shl al,JLF_R0DEBUG_BIT
-	or byte ptr [vmms.wFlags],al
-
 	call LoadModule		;load / unload module!
 exit:
 	mov bx,hJemm

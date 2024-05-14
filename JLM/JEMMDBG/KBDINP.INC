@@ -1,5 +1,6 @@
 
-;--- poll keyboard (US keys)
+;--- poll keyboard (US/GR keys)
+;--- ds/es=flat, cs=flat
 
 ifndef KEYS
 KEYS textequ <KBD_US>
@@ -67,8 +68,8 @@ nokey:
 	ret
 nopoll:
 	push eax
-	mov ax,cs:[BUFSTA]	; char in buffer?
-	cmp ax,cs:[BUFEND]
+	mov ax,ds:[BUFSTA]	; char in buffer?
+	cmp ax,ds:[BUFEND]
 	pop eax
 	ret
 
@@ -91,8 +92,8 @@ setkbdbiosvars proc
 	mov bl,80h
 	shr bl,cl
 	mov ch,bh
-;	and byte ptr ss:[KBDSTAT+1],not 4 ;reset Sys-Req
-	mov ax, cs:[KBDSTAT]
+;	and byte ptr ds:[KBDSTAT+1],not 4 ;reset Sys-Req
+	mov ax, ds:[KBDSTAT]
 	and ah, not 4			; reset sys-req
 	test ch, 80h			; key released or pressed?
 	jz @F
@@ -106,20 +107,20 @@ setkbdbiosvars proc
 setflags:        
 	cmp cl,4				; RSHIFT,LSHIFT,CTRL,ALT?
 	jnb @F
-	mov ss:[KBDSTAT+1],ah
-	xor ss:[KBDSTAT],ah
+	mov ds:[KBDSTAT+1],ah
+	xor ds:[KBDSTAT],ah
 	jmp donestat
 @@:
-	mov ss:[KBDSTAT],al
+	mov ds:[KBDSTAT],al
 donestat:
 	and ch,7Fh
 	cmp ch,38h				;Alt key?
 	jnz @F
-	cmp cs:[lastk],0E0h		;last key 0E0? 
+	cmp ds:[lastk],0E0h		;last key 0E0? 
 	jnz @F
-	and byte ptr ss:[496h],not 8	;AltGr
+	and byte ptr ds:[496h],not 8	;AltGr
 	and ah,08
-	or ss:[496h],ah
+	or ds:[496h],ah
 @@:  
 	cmp ch,52h				;INSERT IS a key!
 	jz nostd
@@ -137,7 +138,7 @@ setkbdbiosvars endp
 GetKbdChar proc
 	call GetKbdStatus
 	jz nokey
-	mov al,ss:[lastk]
+	mov al,ds:[lastk]
 	test al,80h
 	jnz nokey			;key released, no further processing
 	cmp al,39h			;space?
@@ -150,7 +151,7 @@ GetKbdChar proc
 	cmp al,36h
 	ja getkbdxchar
 	mov ebx, offset normalk
-	mov ah, cs:[KBDSTAT]
+	mov ah, ds:[KBDSTAT]
 	test ah,3			;shift pressed
 	jz @F
 	mov ebx, offset shiftk
@@ -161,13 +162,13 @@ GetKbdChar proc
 @@:
 	test ah,8			;alt pressed?
 	jz @F
-	test byte ptr cs:[496h],8	;AltGr pressed?
+	test byte ptr ds:[496h],8	;AltGr pressed?
 	jz getkbdxchar2
 	mov ebx, offset altgrk
 @@:
 	movzx eax,al
 	add ebx, eax
-	mov bl,byte ptr cs:[ebx]
+	mov bl,byte ptr ds:[ebx]
 	and bl,bl
 	jz getkbdxchar
 	mov al,bl

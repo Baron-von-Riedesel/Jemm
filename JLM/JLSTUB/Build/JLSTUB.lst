@@ -1,0 +1,520 @@
+JWasm v2.18, May  7 2024
+JLSTUB.ASM
+
+                                ;--- MZ stub to run jload.exe
+                                ;--- to be assembled with Masm or JWasm
+                                ;--- it's a derivate of dpmildxx... 
+
+ = 600                          ?MINMEM	 = 600h		;min free paragraphs for JLOAD.EXE
+ = 44                           MAXDIR   = 64+4		;max length of a directory path (including 00h)
+ = 50                           MAXPATH  = MAXDIR+12
+ = 1                            ?BESAFE  = 1		;1=check if JLoad.exe looks ok.
+ = 1                            ?DOSMEMCHK = 1		;0=check for sufficient DOS memory
+
+                                	.286
+
+                                ifdef __JWASM__
+                                	option MZ:40h
+                                endif
+
+ = D                            cr		equ 13
+ = A                            lf		equ 10
+
+00000000                        mzhdr struct
+00000000                          e_magic           WORD      ?		;+0
+00000002                          e_cblp            WORD      ?		;+2
+00000004                          e_cp              WORD      ?		;+4
+00000006                          e_crlc            WORD      ?		;+6		number of relocation records
+00000008                          e_cparhdr         WORD      ?		;+8
+0000000A                          e_minalloc        WORD      ?		;+10
+0000000C                          e_maxalloc        WORD      ?		;+12
+0000000E                          e_ss              WORD      ?		;+14
+00000010                          e_sp              WORD      ?		;+16
+00000012                          e_csum            WORD      ?		;+18
+00000014                          e_ip              WORD      ?		;+20
+00000016                          e_cs              WORD      ?		;+22
+00000018                          e_lfarlc          WORD      ?		;+24	begin relocation records
+0000001A                        mzhdr ends
+
+
+0000                            _TEXT   segment public 'CODE'
+
+ = [bp+00h]                     szPgm   equ [bp+00h]     ;execute program name ("JLOAD.EXE")
+ = [bp-MAXPATH]                 szParm  equ [bp-MAXPATH] ;application name (from environment)
+
+0000                            launch proc
+
+0000 33D2                       	xor DX,DX
+0002 B120                       	mov cl,20h
+0004 B43F                       	mov ah,3Fh		;read the MZ header
+0006 CD21                       	int 21h
+0008 7303E9DD00                 	jc readerror
+
+                                if ?BESAFE
+
+                                ;--- additional tests
+
+000D 33F6                       	xor si,si
+000F 8B04                       	mov ax, [si].mzhdr.e_magic
+0011 3D4D5A                     	cmp ax,"ZM"
+0014 7403E9CC00                 	jnz formerror
+0019 8B4406                     	mov ax, [si].mzhdr.e_crlc	; no of relocation entries
+001C 8BF8                       	mov di,ax
+001E 23C0                       	and ax,ax
+0020 7420                       	jz norelocs
+0022 50                         	push ax
+0023 33C9                       	xor cx,cx
+0025 8B5418                     	mov dx,[si].mzhdr.e_lfarlc	; begin relocations
+0028 B80042                     	mov ax,4200h
+002B CD21                       	int 21h
+002D 59                         	pop cx
+002E C1E102                     	shl cx,2					; 4 byte each reloc
+0031 2BE1                       	sub sp,cx
+0033 8BD4                       	mov dx,sp
+0035 1E                         	push ds
+0036 16                         	push ss
+0037 1F                         	pop ds
+0038 B43F                       	mov ah,3Fh					; read relocs at SS:SP
+003A CD21                       	int 21h
+003C 1F                         	pop ds
+003D 7303E9A300                 	jc formerror
+0042                            norelocs:
+0042 8B4408                     	mov ax,[si].mzhdr.e_cparhdr	; size of header in paragraphs
+0045 FF740E                     	push [si].mzhdr.e_ss
+0048 FF7410                     	push [si].mzhdr.e_sp
+004B 8B7414                     	mov si, [si].mzhdr.e_ip
+004E C1E004                     	shl ax,4
+0051 8BD0                       	mov dx,ax
+0053 33C9                       	xor cx,cx
+0055 B80042                     	mov ax,4200h
+0058 CD21                       	int 21h
+005A 33D2                       	xor dx,dx
+                                endif
+
+                                ;--- read JLoad.exe binary
+
+005C B43F                       	MOV AH,3Fh
+005E B90060                     	mov cx,?MINMEM shl 4
+0061 CD21                       	INT 21h
+0063 7303E98200                 	JC readerror	;---> error "read error"
+                                if ?BESAFE        
+0068 3BC1                       	cmp ax,cx		;JLOAD binary must be < 24 kB
+006A 7379                       	jnc formerror
+                                endif
+006C B43E                       	mov ah,3Eh
+006E CD21                       	int 21h
+
+0070 5A                         	pop dx
+0071 5D                         	pop bp
+
+                                if ?BESAFE
+0072 8BCF                       	mov cx,di		;some relocs to resolve?
+0074 E317                       	jcxz norelocs2
+0076 8BFC                       	mov di,sp
+0078 8CD8                       	mov ax,ds
+007A                            @@:
+007A 368B5D02                   	mov bx,ss:[di+2]
+007E C1E304                     	shl bx,4		;size of loader is <= 24 kB, so no overflow possible
+0081 36031D                     	add bx,ss:[di+0]
+0084 0107                       	add [bx],ax
+0086 83C704                     	add di,4
+0089 E2EF                       	loop @B
+008B 8BE7                       	mov sp,di
+008D                            norelocs2:
+                                endif
+
+                                ;--- fill JLoad's PSP - don't overwrite possible cmdline arguments
+
+008D B451                       	mov ah,51h
+008F CD21                       	int 21h
+0091 56                         	push si
+0092 8BF4                       	mov si, sp
+0094 83C602                     	add si, 2
+0097 BF8000                     	mov di, 80h
+009A 268A0D                     	mov cl, es:[di]
+009D B500                       	mov ch, 0
+009F 47                         	inc di
+00A0 E312                       	jcxz nocmdl
+00A2 2BE1                       	sub sp, cx
+00A4 8BDC                       	mov bx, sp
+00A6 51                         	push cx
+00A7 57                         	push di
+00A8                            @@:
+00A8 268A05                     	mov al, es:[di]
+00AB 368807                     	mov ss:[bx], al
+00AE 47                         	inc di
+00AF 43                         	inc bx
+00B0 E2F6                       	loop @B
+00B2 5F                         	pop di
+00B3 59                         	pop cx
+00B4                            nocmdl:
+00B4 B020                       	mov al,' '
+00B6 AA                         	stosb
+00B7                            @@:
+00B7 36AC                       	lodsb ss:[si]
+00B9 AA                         	stosb
+00BA 22C0                       	and al, al
+00BC 75F9                       	jnz @B
+00BE 4F                         	dec di
+00BF E307                       	jcxz @F
+00C1 8BF4                       	mov si, sp
+00C3 F336A4                     	rep movsb es:[di], ss:[si]
+00C6 8BE6                       	mov sp, si
+00C8                            @@:
+00C8 26C6050D                   	mov byte ptr es:[di],13
+00CC 8BC7                       	mov ax, di
+00CE BF8000                     	mov di, 80h
+00D1 2BC7                       	sub ax, di	; might actually be larger than 127 bytes ... ignore for now.
+00D3 AA                         	stosb
+
+00D4 5E                         	pop si
+
+                                ;--- setup SS:SP
+
+00D5 8CC0                       	mov ax, es
+00D7 03C5                       	add ax, bp
+00D9 83C010                     	add ax, 10h
+00DC 8ED0                       	mov ss, ax
+00DE 8BE2                       	mov sp, dx
+
+00E0 1E                         	push ds
+00E1 56                         	push si
+
+00E2 06                         	push es
+00E3 1F                         	pop ds
+00E4 CB                         	retf
+00E5                            launch endp
+
+                                if ?BESAFE
+00E5                            formerror:
+00E5 BA0000                     	mov dx,offset dFormError
+00E8 EB03                       	jmp error1
+                                endif
+
+00EA                            readerror:
+00EA BA0000                     	mov dx,offset dReadError
+00ED                            error1:
+                                if 0
+                                endif
+00ED                            errorX: 				;<--- errors
+00ED 0E                         	push cs
+00EE 1F                         	pop ds
+00EF E80B00                     	call DispError
+00F2 BA0000                     	MOV DX,offset dFatal
+00F5 E80500                     	call DispError
+00F8 B8F04C                     	mov ax,4CF0h	;error code F0h
+00FB CD21                       	int 21h
+00FD                            DispError:				;display error msg in DX
+00FD B409                       	MOV AH,09h
+00FF CD21                       	INT 21h
+0101 C3                         	ret
+
+0102 202D206C6F6164696E         dFatal		db ' - loading aborted',cr,lf,'$'
+0117 72656164206572726F         dReadError	db "read error",'$'
+                                if ?BESAFE
+0122 696E76616C6964204A         dFormError	db "invalid JLoad.exe",'$'
+                                endif
+
+0134                            endcopy label byte
+
+0134                            start proc
+
+                                ;--- setup stack at end of memory block
+
+0134 FC                         	cld
+0135 A10200                     	mov ax,ds:[0002]
+                                ife ?DOSMEMCHK        
+                                endif
+0138 83E830                     	sub ax,30h
+013B 8ED0                       	mov ss,ax
+013D BCB002                     	mov sp,300h-MAXPATH
+
+                                ;--- setup BP stack frame
+
+0140 8BEC                       	mov BP,SP
+0142 83EC50                     	sub SP,MAXPATH
+
+                                ;--- fill szParm with application name
+
+0145 8BF4                       	mov SI,SP    		;SI=szParm
+0147 06                         	push es				;save PSP
+0148 268E062C00                 	mov es,es:[002Ch]	;ES=environment
+014D E82300                     	CALL GetAppName		;get name to SS:SI ( SI modified! )
+
+0150 0E                         	push cs
+0151 1F                         	pop ds
+
+                                ;--- search "PATH=", DI=NULL if it doesn't exist
+
+0152 E83900                     	CALL SearchPath
+0155 8BF7                       	MOV SI,DI			;set SI to start of PATH= value
+
+                                ;--- fill szPgm (search JLOAD)
+
+0157 16                         	push SS
+0158 1F                         	pop DS
+0159 E84C00                     	CALL SearchJLoad
+015C BA0000                     	MOV DX,offset dNotFnd
+015F 728C                       	JB errorX  			;---> error "not found"
+
+                                ;--- copy the final code to end of memory block
+
+0161 B90000                     	mov cx,offset endcopy
+0164 16                         	push ss
+0165 07                         	pop es
+0166 33FF                       	xor di,di
+0168 33F6                       	xor si,si
+016A 2E                         	db 2Eh			;CS prefix
+016B F3A4                       	rep movsb
+
+016D 07                         	pop es			;restore PSP
+
+016E 1E                         	push ds
+016F 51                         	push cx			;CX is 0
+
+0170 0E                         	push cs
+0171 1F                         	pop ds
+0172 CB                         	retf
+
+0173                            start endp
+
+                                ;--- search name of app in environment
+                                ;--- the name may be a full path or not
+                                ;--- depending on caller
+                                ;--- in: ES=environment, SS:SI=dest
+                                ;--- modifies AX,CX,SI,DI
+
+0173                            GetAppName proc
+0173 2BFF                       	SUB DI,DI
+0175 B000                       	mov al,00
+0177 B9FFFF                     	mov cx,-1
+017A                            @@:
+017A F2AE                       	repnz scasb		;search end of environ (00,00)
+017C AE                         	scasb
+017D 75FB                       	jnz @B
+017F 47                         	inc di			;skip 0001
+0180 47                         	inc di
+
+0181                            @@:
+0181 268A05                     	mov al,es:[di]
+0184 368804                     	mov ss:[si],al
+0187 46                         	inc si
+0188 47                         	inc di
+0189 22C0                       	and al,al
+018B 75F4                       	jnz @B
+018D C3                         	RET
+018E                            GetAppName endp
+
+                                ;--- search PATH= in Environment
+                                ;--- In: ES=environment
+                                ;--- Out: DI-> behind "PATH=" or NULL
+                                ;--- modifies AX,CX,SI,DI
+
+018E                            SearchPath proc
+018E 2BFF                       	SUB DI,DI
+0190                            nextitem:
+0190 BE0000                     	MOV SI,offset szPath
+0193 B90500                     	MOV CX,SIZPATH
+0196 F3A6                       	REPZ CMPSB
+0198 740D                       	JZ found
+019A B000                       	mov al,00
+019C B57F                       	mov ch,7Fh
+019E F2AE                       	repnz scasb
+01A0 263A05                     	cmp al,es:[di]
+01A3 75EB                       	JNZ nextitem
+01A5 2BFF                       	sub di,di
+01A7                            found:
+01A7 C3                         	RET
+01A8                            SearchPath endp
+
+                                ;--- search JLOAD, first in current Dir, then scan PATH
+                                ;--- Input: ES=environ, SI=address PATH variable or 0000 (no PATH exists)
+                                ;--- Output: NC if found, C if error
+                                ;--- full loader path in szPgm
+                                ;--- modifies AX,BX,CX,DX,SI,DI
+
+01A8                            SearchJLoad proc
+01A8 8D7E00                     	lea DI,[bp+00h]
+01AB 8BD7                       	mov dx,di
+01AD                            nextentry:					;<----
+01AD 56                         	PUSH SI
+01AE BE0000                     	mov si,offset ldrname	;Name "JLOAD.EXE"
+01B1 B90900                     	mov cx,SIZLDRNAME
+01B4                            @@:
+01B4 2E                         	db 2Eh		;CS prefix
+01B5 AC                         	lodsb
+01B6 8805                       	mov [di],al
+01B8 47                         	inc di
+01B9 E2F9                       	loop @B
+01BB 880D                       	mov [di],cl
+
+01BD B8003D                     	MOV AX,3D00h			;open JLOAD.EXE
+01C0 CD21                       	INT 21h
+01C2 5E                         	POP SI
+01C3 7328                       	JNB ldrfound			;jmp if found!
+01C5 23F6                       	AND SI,SI
+01C7 F9                         	stc
+01C8 7424                       	JZ notfound				;PATH not defined, so we are done
+01CA 8BFA                       	MOV DI,DX
+01CC B94400                     	mov cx,MAXDIR
+01CF                            @@:
+01CF 268A04                     	mov al,es:[si]
+01D2 8805                       	mov [di],al
+01D4 46                         	inc si
+01D5 47                         	inc di
+01D6 3C3B                       	CMP AL,';'
+01D8 7406                       	JZ @F
+01DA 3C00                       	CMP AL,00
+01DC E0F1                       	LOOPNZ @B				;PATH done
+01DE 33F6                       	XOR SI,SI
+01E0                            @@:
+01E0 4F                         	DEC DI
+01E1 807DFF5C                   	CMP Byte Ptr [DI-01],'\'
+01E5 74C6                       	JZ nextentry
+01E7 C6055C                     	MOV Byte Ptr [DI],'\'
+01EA 47                         	INC DI
+01EB EBC0                       	JMP nextentry
+01ED                            ldrfound:
+01ED 93                         	XCHG ax,bx				;=MOV BX,AX
+                                ;	MOV AH,3Eh				;close file
+                                ;	INT 21h
+                                ;	CLC
+01EE                            notfound:
+01EE C3                         	RET
+01EF                            SearchJLoad endp
+
+01EF 504154483D                 szPath  db   'PATH='
+ = 5                            SIZPATH equ $ - szPath
+
+01F4 43616E27742066696E         dNotFnd db "Can't find "
+01FF                            ldrname	label byte
+01FF 4A4C4F41442E455845         	db 'JLOAD.EXE'
+ = 9                            SIZLDRNAME equ $ - ldrname
+0208 24                         	db '$'
+
+                                ife ?DOSMEMCHK
+                                endif
+
+0209                            _TEXT ends
+
+                                if ?DOSMEMCHK
+0000                            _BSS segment public 'DATA'
+0000 000000000000000000         	db (?MINMEM+14h) * 16 dup (?)
+6140                            _BSS ends
+                                endif
+
+0000                            STACK segment stack 'STACK'
+0000                            STACK ends
+
+                                	end start
+
+
+Binary Map:
+
+Segment                  Pos(file)     RVA  Size(fil) Size(mem)
+---------------------------------------------------------------
+<header>                        0        0        40         0
+_TEXT                          40        0       209       209
+_BSS                            0      210         0      6140
+STACK                           0     6350         0         0
+---------------------------------------------------------------
+                                                 249      6350
+
+
+Macros:
+
+                N a m e                 Type
+
+@CatStr  . . . . . . . . . . . .        Func
+@Environ . . . . . . . . . . . .        Func
+@InStr . . . . . . . . . . . . .        Func
+@SizeStr . . . . . . . . . . . .        Func
+@SubStr  . . . . . . . . . . . .        Func
+
+
+Structures and Unions:
+
+                N a m e                 Size/Ofs   Type
+
+mzhdr  . . . . . . . . . . . . .              1A
+  e_magic  . . . . . . . . . . .               0   Word
+  e_cblp . . . . . . . . . . . .               2   Word
+  e_cp . . . . . . . . . . . . .               4   Word
+  e_crlc . . . . . . . . . . . .               6   Word
+  e_cparhdr  . . . . . . . . . .               8   Word
+  e_minalloc . . . . . . . . . .               A   Word
+  e_maxalloc . . . . . . . . . .               C   Word
+  e_ss . . . . . . . . . . . . .               E   Word
+  e_sp . . . . . . . . . . . . .              10   Word
+  e_csum . . . . . . . . . . . .              12   Word
+  e_ip . . . . . . . . . . . . .              14   Word
+  e_cs . . . . . . . . . . . . .              16   Word
+  e_lfarlc . . . . . . . . . . .              18   Word
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+STACK  . . . . . . . . . . . . .        16 Bit   0000     Para    Stack   'STACK'
+_BSS . . . . . . . . . . . . . .        16 Bit   6140     Para    Public  'DATA'
+_TEXT  . . . . . . . . . . . . .        16 Bit   0209     Para    Public  'CODE'
+
+
+Procedures, parameters and locals:
+
+                N a m e                 Type     Value    Segment  Length
+
+GetAppName . . . . . . . . . . .        P Near   0173     _TEXT    001B Public   
+  L&_0006  . . . . . . . . . . .        L Near   0181     _TEXT
+  L&_0005  . . . . . . . . . . .        L Near   017A     _TEXT
+SearchJLoad  . . . . . . . . . .        P Near   01A8     _TEXT    0047 Public   
+  L&_0008  . . . . . . . . . . .        L Near   01CF     _TEXT
+  notfound . . . . . . . . . . .        L Near   01EE     _TEXT
+  L&_0009  . . . . . . . . . . .        L Near   01E0     _TEXT
+  L&_0007  . . . . . . . . . . .        L Near   01B4     _TEXT
+  nextentry  . . . . . . . . . .        L Near   01AD     _TEXT
+  ldrfound . . . . . . . . . . .        L Near   01ED     _TEXT
+SearchPath . . . . . . . . . . .        P Near   018E     _TEXT    001A Public   
+  found  . . . . . . . . . . . .        L Near   01A7     _TEXT
+  nextitem . . . . . . . . . . .        L Near   0190     _TEXT
+launch . . . . . . . . . . . . .        P Near   0000     _TEXT    00E5 Public   
+  L&_0004  . . . . . . . . . . .        L Near   00C8     _TEXT
+  L&_0002  . . . . . . . . . . .        L Near   00A8     _TEXT
+  L&_0003  . . . . . . . . . . .        L Near   00B7     _TEXT
+  L&_0001  . . . . . . . . . . .        L Near   007A     _TEXT
+  nocmdl . . . . . . . . . . . .        L Near   00B4     _TEXT
+  norelocs . . . . . . . . . . .        L Near   0042     _TEXT
+  norelocs2  . . . . . . . . . .        L Near   008D     _TEXT
+start  . . . . . . . . . . . . .        P Near   0134     _TEXT    003F Public   
+
+
+Symbols:
+
+                N a m e                 Type       Value     Attr
+
+?BESAFE  . . . . . . . . . . . .        Number             1h 
+?DOSMEMCHK . . . . . . . . . . .        Number             1h 
+?MINMEM  . . . . . . . . . . . .        Number           600h 
+DispError  . . . . . . . . . . .        L Near            FDh _TEXT 
+MAXDIR . . . . . . . . . . . . .        Number            44h 
+MAXPATH  . . . . . . . . . . . .        Number            50h 
+SIZLDRNAME . . . . . . . . . . .        Number             9h 
+SIZPATH  . . . . . . . . . . . .        Number             5h 
+cr . . . . . . . . . . . . . . .        Number             Dh 
+dFatal . . . . . . . . . . . . .        Byte[21]         102h _TEXT 
+dFormError . . . . . . . . . . .        Byte[18]         122h _TEXT 
+dNotFnd  . . . . . . . . . . . .        Byte[11]         1F4h _TEXT 
+dReadError . . . . . . . . . . .        Byte[11]         117h _TEXT 
+endcopy  . . . . . . . . . . . .        Byte             134h _TEXT 
+error1 . . . . . . . . . . . . .        L Near            EDh _TEXT 
+errorX . . . . . . . . . . . . .        L Near            EDh _TEXT 
+formerror  . . . . . . . . . . .        L Near            E5h _TEXT 
+ldrname  . . . . . . . . . . . .        Byte             1FFh _TEXT 
+lf . . . . . . . . . . . . . . .        Number             Ah 
+readerror  . . . . . . . . . . .        L Near            EAh _TEXT 
+szParm . . . . . . . . . . . . .        Text   [bp-MAXPATH]
+szPath . . . . . . . . . . . . .        Byte[5]          1EFh _TEXT 
+szPgm  . . . . . . . . . . . . .        Text   [bp+00h]
+
+JLSTUB.ASM: 418 lines, 2 passes, 2 ms, 0 warnings, 0 errors

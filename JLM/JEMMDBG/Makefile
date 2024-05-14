@@ -1,11 +1,18 @@
 
-# create JemmDbg.exe and JDbgBrk.exe
-# tools used: jwasm & jwlink
-# needs Debug/X's DebugR variant ( see DEBUGRDIR below ).
-#
-# run "nmake aux=1"        for a variant that uses a serial connection. 
-# run "nmake vio=1 kbd=1"  for a variant that uses low-level vio/kbd access.
-#
+# create JemmDbg.exe
+# tools used: jwasm & jwlink & nmake (from MS MS-DOS 4.0 sources)
+# needs Debug/X's DebugR/DebugRV variants ( see DEBUGRDIR below ).
+
+# video and keyboard i/O may be selected by:
+# run "nmake vio=1"        for a variant that uses low-level vio output.
+# run "nmake kbd=1"        for a variant that uses low-level kbd access.
+
+# kbd=1 needs a language ( US and GR are supplied ):
+# run "nmake kbd=1 klang=gr" ; for low-level kbd access, German translation.
+
+# to select DebugR (non v86-mode variant) instead of DebugRV:
+# run "nmake v86=0"
+
 # jwasm's option -pe cannot be used, since the DDB cannot be exported then;
 # so jwlink is necessary ( it may create slightly larger binaries ).
 
@@ -13,68 +20,76 @@
 DEBUG=0
 !endif
 
+!ifndef V86
+V86=1
+!endif
+
+!if $(V86)
+DEBUGR=DebugRV.bin
+!else
+DEBUGR=DebugR.bin
+!endif
+
 DEBUGRDIR=\projects\debug\build
 
 !ifndef AUX
-AUX=0
+AUX=1
 !endif
 !ifndef VIO
-VIO=0
+VIO=1
 !endif
 !ifndef KBD
-KBD=0
+KBD=1
 !endif
 !ifndef KLANG
-KLANG=US
+KLANG=GR
 !endif
 
 !if $(AUX)
 AOPT=-DAUXIO=1
-srcdep=auxio.inc
+srcdep=$(srcdep) auxio.inc
 !else
+AOPT=-DAUXIO=0
+!endif
+
 !if $(VIO)
 AOPT=-DVIOOUT=1
-srcdep=vioout.inc
+srcdep=$(srcdep) vioout.inc
 !endif
 !if $(KBD)
 AOPT=$(AOPT) -DKBDIN=1 -DKEYS=KBD_$(KLANG)
-srcdep=$(srcdev) kbdinp.inc
-!endif
+srcdep=$(srcdep) kbdinp.inc
 !endif
 
 !if $(DEBUG)
 AOPTD=-D_DEBUG
+srcdep=$(srcdep) dprintf.inc
 !else
 AOPTD=
 !endif
 
-ALL: JemmDbg.exe JDbgBrk.exe
+OUTD=Build
 
-JemmDbg.exe: JemmDbg.obj jlstub.bin
-	@jwlink format win pe hx dll ru native f JemmDbg.obj n JEMMDBG.EXE op q,m,stub=jlstub.bin export _ddb.1
+ALL: $(OUTD) $(OUTD)\JemmDbg.exe
 
-JemmDbg.obj: JemmDbg.asm DebugR.bin $(srcdep)
-	@jwasm -coff -nologo $(AOPT) $(AOPTD) -Fl -Sg -I..\..\Include JemmDbg.asm 
+$(OUTD):
+	@if not exist $(OUTD)\NUL @mkdir $(OUTD)
 
-JDbgBrk.exe: JDbgBrk.asm jlstub.bin
-!if 1
-	@jwasm -nologo -coff -Fl -I..\..\Include JDbgBrk.asm 
-	@jwlink format win pe hx ru native f JDbgBrk.obj n JDBGBRK.EXE op q,m,stub=jlstub.bin,stack=0x1000,heap=0x1000
-!else
-	@jwasm -nologo -pe -Fl -I..\..\Include JDbgBrk.asm 
-	@pestub -n -s JDbgBrk.exe jlstub.bin
-	@patchpe -x -y:1 -s:0x1000 -h:0x1000 JDbgBrk.exe
-!endif
+$(OUTD)\JemmDbg.exe: $(OUTD)\JemmDbg.obj $(OUTD)\jlstub.bin
+	@jwlinkd.exe @jemmdbg.lnk
 
-jlstub.bin: jlstub.asm
-	@jwasm -nologo -mz -Fl -Fo=jlstub.bin jlstub.asm
+$(OUTD)\JemmDbg.obj: JemmDbg.asm $(OUTD)\$(DEBUGR) $(srcdep)
+	@jwasmd.exe -coff -nologo -DV86=$(V86) $(AOPT) $(AOPTD) -Fl$(OUTD)\ -Fo$(OUTD)\ -Sg -I..\..\Include JemmDbg.asm 
 
-DebugR.bin: $(DEBUGRDIR)\DebugR.bin
-	@copy $(DEBUGRDIR)\DebugR.bin
+$(OUTD)\jlstub.bin: ..\JLSTUB\Build\JLSTUB.BIN
+	@copy ..\JLSTUB\Build\JLSTUB.BIN $(OUTD)\
+
+$(OUTD)\$(DEBUGR): $(DEBUGRDIR)\$(DEBUGR)
+	@copy $(DEBUGRDIR)\$(DEBUGR) $(OUTD)\
 
 clean:
-	@del *.obj
-	@del *.map
-	@del *.lst
-	@del *.bin
-	@del *.exe
+	@del $(OUTD)\*.exe
+	@del $(OUTD)\*.bin
+	@del $(OUTD)\*.lst
+	@del $(OUTD)\*.map
+	@del $(OUTD)\*.obj

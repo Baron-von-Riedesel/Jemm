@@ -14,35 +14,32 @@ else
 endif
 endm
 
-if 0
 ;--- i64toa(long long n, char * s, int base);
 ;--- convert 64-bit long long to string
 
-i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
+;--- number: eax
+;--- esi=outbuf ptr
+;--- ebx=base
 
+di64toa proc stdcall
+
+	push edi
 	mov ch,0
-	mov edi, base
-	mov eax, dword ptr number+0
-	mov esi, dword ptr number+4
+	mov edi, ebx
+	mov ebx, esi
 	cmp edi,-10
 	jne @F
 	neg edi
-	and esi,esi
+	and eax,eax
 	jns @F
-	neg esi
 	neg eax
-	sbb esi,0
 	mov ch,'-'
 @@:
-	mov ebx,outb
-	add ebx,22
+	add ebx,11
 	mov byte ptr [ebx],0
-@@nextdigit:
 	dec ebx
-	xor edx,edx
-	xchg eax,esi
-	div edi
-	xchg eax,esi
+@@nextdigit:
+	xor edx, edx
 	div edi
 	add dl,'0'
 	cmp dl,'9'
@@ -50,20 +47,27 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 	add dl,7+20h
 @@:
 	mov [ebx],dl
-	mov edx, eax
-	or edx, esi
+	dec ebx
+	and eax, eax
 	jne @@nextdigit
 	cmp ch,0
 	je @F
-	dec ebx
 	mov [ebx],ch
+	dec ebx
 @@:
+	inc ebx
 	mov eax,ebx
+	pop edi
 	ret
 
-i64toa endp
+di64toa endp
 
-endif
+	.data
+szTmp db 12 dup(?)
+	.code
+
+;--- dprintf uses low-level I/O in any case
+;--- SS is unknown.
 
 dprintf proc c fmt:ptr, args:vararg
 
@@ -71,9 +75,14 @@ local flag:byte
 local longarg:byte
 local size_:dword
 local fillchr:dword
-local szTmp[24]:byte
 
 	pushad
+	mov eax, ss
+	lar eax, eax
+	bt eax, 22
+	jc @F
+	movzx ebp, bp
+@@:
 	cld
 	lea edi,args
 @@L335:
@@ -144,14 +153,14 @@ formatitem:
 	pop eax
 	jmp done
 handle_c:
-	mov eax,[edi]
+	mov eax,ss:[edi]
 	add edi, 4
 @@:
 	call handle_char
 	retn
 
 handle_s:
-	mov esi,[edi]
+	mov esi,ss:[edi]
 	add edi,4
 	jmp print_string
 handle_d:
@@ -164,23 +173,13 @@ handle_u:
 handle_x:
 	mov ebx, 16
 @@:
-	xor edx,edx
-	mov eax,[edi]
+	mov eax,ss:[edi]
 	add edi,4
-	cmp longarg,1
-	jnz @F
-	mov edx,[edi]
-	add edi,4
-	jmp printnum
-@@:
-	and ebx,ebx
-	jns @F
-	cdq
-@@:
-printnum:
 	lea esi, szTmp
-	invoke i64toa, edx::eax, esi, ebx
+	call di64toa	; eax=number, esi=ptr, ebx=base
 	mov esi, eax
+	call print_string
+	retn
 
 print_string:		;print string ESI, size EAX
 	mov eax, esi
@@ -213,7 +212,7 @@ print_string:		;print string ESI, size EAX
 
 
 handle_char:
-if AUXIO
+if 0;AUXIO
 	call AuxPutChar
 else
 	call VioPutChar

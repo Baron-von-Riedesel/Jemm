@@ -143,6 +143,7 @@ if ?FASTBOOT
 pSavedVecs      dd 0    ;vectors saved during startup
 ;dwInt19Org     dd 0    ;original int 19 vector saved by DOS
 endif
+pV86Hooks       dd offset _ret	; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
 
 ;-- byte vars (variable)
 
@@ -170,6 +171,7 @@ endif
 
 RunEmuInstr:
 EmuInstr    DB  90h,90h,90h ; run self-modifying code here
+_ret:
             ret
 
 ;--- place rarely modified data here
@@ -754,6 +756,8 @@ V86_Monitor PROC public
     CMP EBP, ?TOS - size V86FRAME           ; int/irq in v86 mode?
     JNZ @@IRQOREXC
 
+;--- simple INT in v86-mode
+
 if ?V86DBG
   if ?SELINTLOG
     bt cs:[logintbm],ecx
@@ -763,6 +767,12 @@ if ?V86DBG
         [ebp].V86FRAME.fEIP, ebp
 @@:
 endif
+
+;--- v5.85: are there hooks installed?
+;--- prior to v5.85, Jload did install hooks by directly 
+;--- modifying the IDT - that was not a very good idea.
+
+    call ss:[pV86Hooks]
 
 ;--- simulate an int in v86 mode
 
@@ -792,7 +802,7 @@ endif
 
     @v86popreg
     add ESP,4           ; skip int#
-    IRETD                   ; return to v86-mode
+    IRETD               ; return to v86-mode
 
     align 4
 
@@ -991,7 +1001,7 @@ endif
     call PrintString
 @@:
 
-if ?I41SUPP
+if 0;?I41SUPP	; v5.85 this is no longer useful, since DebugRV exists that supports v86 mode exceptions
 	mov ax, 4Fh
 	int 41h
 	cmp ax, 0F386h           ; kernel debugger present?
@@ -2067,14 +2077,16 @@ Exec_Int proc
 
 Exec_Int endp   ;fall through
 
+;--- Resume_Exec actually runs the v86 code
+
 Resume_Exec proc public
     push [dwStackCurr]
     pushad
     mov [dwStackCurr],esp
     mov esp,ebp
-    @v86popreg
+    @v86popreg          ; load GPRs with their v86 values
     add ESP,4+4         ; skip call return + error code
-    IRETD
+    IRETD               ; and jump to v86 mode
     align 4
 Resume_Exec endp
 
@@ -2680,6 +2692,7 @@ vmm_service_table label VMM_SERV_TABLE
     dd V86_Monitor
     dd offset dwStackCurr
     dd MoveMemory
+    dd offset pV86Hooks	;v5.85
 
 endif
 

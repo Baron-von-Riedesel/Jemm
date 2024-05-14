@@ -1,6 +1,7 @@
 
 ;--- input/output COMx
 ;--- very simple implementation.
+;--- ds/es=flat, cs=flat, ss=unknown
 
 _XONXOFF_	= 1
 XON 		= 11h
@@ -9,7 +10,7 @@ EOT 		= 03H
 
 	.data
 
-wPort   dw 0	; 0=COM1, 1=COM2, ...
+wComNo  dw -1	; 0=COM1, 1=COM2, ...
 wCsrPos dw 0
 
 	.code
@@ -20,9 +21,8 @@ wCsrPos dw 0
 AuxPutChar proc
 
 	pushad
-	movzx ebx, cs:[wPort]
-	shl ebx, 1
-	mov bx, cs:[bx+400h]
+	movzx ebx, [wComNo]
+	mov bx, [ebx*2+400h]
 	lea dx, [bx+5]		;LSR - Line Status Register
 	mov cx, -1
 	xchg al, ah
@@ -63,20 +63,20 @@ setcsrpos:
 	jz nochg
 	cmp al, 8
 	jz back
-	inc byte ptr ss:[wCsrPos]
+	inc byte ptr [wCsrPos]
 	retn
 back:
-	dec byte ptr ss:[wCsrPos]
+	dec byte ptr [wCsrPos]
 	retn
 col00:
-	mov byte ptr ss:[wCsrPos], 0
+	mov byte ptr [wCsrPos], 0
 nochg:
 	retn
 
 AuxPutChar endp
 
 AuxGetCsrPos proc
-	mov dx, cs:[wCsrPos]
+	mov dx, [wCsrPos]
 	ret
 AuxGetCsrPos endp
 
@@ -88,14 +88,13 @@ AuxGetChar proc
 	push ecx
 	push edx
 
-	movzx ebx, cs:[wPort]
-	shl ebx, 1
-	mov bx, cs:[ebx+400h]
+	movzx ebx, [wComNo]
+	mov bx, [ebx*2+400h]
 	lea dx, [bx+6]		;MSR - modem status register
 	in al, dx			;DSR - modem(=DCE) ready?
 	and al, 20h
 	jz error
-	dec dx				;LSR - Line Status Register
+	dec edx				;LSR - Line Status Register
 @@:
 	in al, dx
 	test al, 01h		;DR - Data ready?

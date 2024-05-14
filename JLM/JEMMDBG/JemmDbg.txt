@@ -1,27 +1,26 @@
 
  1. About JemmDbg
 
- JemmDbg is a ring 0 debugger for Jemm386/JemmEx. It's actually using DebugR,
- a variant of Debug/X. It can be used to debug JLMs or examine the state of
- the V86-monitor.
+  JemmDbg is a ring 0 debugger for Jemm386/JemmEx. It's actually using DebugRV,
+ a variant of the ring0 debugger core DebugR. It can be used to debug any
+ program running in the context of a v86-monitor program ( JemmEx/Jemm386),
+ in both protected-mode and v86-mode.
 
 
  2. Usage
  
- JemmDbg is a JLM and uses JLoad to load itself in the v86-monitor address
+  JemmDbg is a JLM and uses JLoad to load itself in the v86-monitor address
  context. Once JemmDbg is loaded and initialized, it will become active when
- an exception in ring 0 is detected. Alternately, one can run tool JDbgBrk,
- which emits a breakpoint instruction in ring 0, thus activating the debugger.
+
+  - an exception is detected; this includes debug exceptions and breakpoints
+  - SysReq ( Alt & Print ) is pressed
+
+  JemmDbg needs at least Jemm v5.83.
 
 
  3. Features & Restrictions
 
- - JemmDbg will ignore any exception caused in V86-mode, so it cannot be used
-   to debug normal DOS software. However, the v86-monitor ( JemmEx/Jemm386 )
-   will detect the presence of a kernel debugger and stop with a breakpoint
-   if a "true" exception 06/0Ch/0Dh/0Eh happens in v86-mode.
-
- - JemmDbg does not affect protected-mode software that runs as VCPI client
+ - JemmDbg does not handle protected-mode software that runs as VCPI client
    ( DOS extenders ). Those install their very own address context and IDT,
    which JemmDbg doesn't try to access or modify.
 
@@ -37,11 +36,17 @@
    arguments just behind the Int 20h. So if an Int 20h is seen, one has to
    either avoid the T(race) cmd [using G(o)] or set TM 1.
 
- - JemmDbg uses the mode switching routines of the v86-monitor for its I/O.
-   So - unlike WDeb386, for example - it isn't a "standalone" binary. It's
-   possible to create a variant that doesn't switch modes for I/O, but rather
-   uses a serial connection or direct access to video and keyboard ( see
-   Makefile for details ).
+ - I/O handling:
+    With cmdline option /C[1-4] one may switch I/O to a serial port.
+   If this option isn't used, low-level video and keyboard access are used
+   as default. It's possible for JemmDbg to use the mode switching routines
+   of the v86-monitor (to call BIOS function INT 10h/16h), but in may cases
+   this isn't acceptable for low-level debugging.
+    These are the options regarding I/O handling of JemmDbg:
+   
+    "nmake vio=0"       (disables low-level video output; BIOS int 10h used)
+    "nmake kbd=0"       (disables low-level keyboard input; BIOS int 16h used)
+    "nmake klang=gr"    (low-level keyboard input; GR layout used instead of US)
 
 
  4. License

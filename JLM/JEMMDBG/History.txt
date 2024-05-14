@@ -1,4 +1,7 @@
 
+  05/2024: v1.2
+    - using DebugRV
+  
   02/2023: v1.1
     - keyb_gr.in: added missing '{[]}' keys.
 

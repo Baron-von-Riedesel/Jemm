@@ -1,26 +1,8 @@
 
-;--- simple printf() implementation
-
-handle_char proc
-
-	mov dl,al
-	cmp al,10
-	jnz @F
-	mov dl,13
-	call @F
-	mov dl,10
-@@:
-	mov ah,2
-	int 21h
-	ret
-
-handle_char endp
-
 ;--- ltob(long n, char * s, int base);
 ;--- convert long to string
-;--- outb is expected to be onto stack
 
-ltob PROC stdcall uses edi number:dword, outb:word, base:word
+ltob PROC stdcall uses edi edx number:dword, outb:ptr, base:word
 
 	mov ch,0
 	movzx edi, base
@@ -60,9 +42,9 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 
 ltob ENDP
 
-;--- ds=dgroup, ss don't need to be dgroup
+;--- hiword(eax) is modified if numbers are rendered!
 
-printf PROC c uses si di bx fmt:ptr byte, args:VARARG
+printf PROC c fmt:ptr, args:VARARG
 
 local size_:word
 local flag:byte
@@ -70,6 +52,7 @@ local longarg:byte
 local fill:byte
 local szTmp[12]:byte
 
+	pusha
 	lea di,[fmt+2]
 @@L335:
 	mov si,[fmt]
@@ -82,7 +65,7 @@ nextchar:
 	call handle_char
 	jmp nextchar
 done:
-	xor ax,ax
+	popa
 	ret
 
 formatitem:
@@ -105,20 +88,15 @@ formatitem:
 	mov [fill],cl
 	mov bx,dx
 
-nextdigit:
-	cmp BYTE PTR [si],'0'
-	jb digitsdone
-	cmp BYTE PTR [si],'9'
-	ja digitsdone
-	lodsb
-	sub al,'0'
-	cbw
-	imul cx,bx,10		;cx = bx * 10
-	add ax,cx
-	mov bx,ax
-	jmp nextdigit
+	.while byte ptr [si] >= '0' && byte ptr [si] <= '9'
+		lodsb
+		sub al,'0'
+		cbw
+		imul cx,bx,10		;cx = bx * 10
+		add ax,cx
+		mov bx,ax
+	.endw
 
-digitsdone:
 	mov [size_],bx
 	cmp BYTE PTR [si],'l'
 	jne @F
@@ -141,8 +119,10 @@ digitsdone:
 	je handle_s
 	cmp al,'u'
 	je handle_u
-	mov al,'%'
-	jmp @@L359
+	cmp al,0
+	jnz @@L359
+	pop ax
+	jmp done
 handle_c:
 	mov ax,ss:[di]
 	add di,2
@@ -213,6 +193,24 @@ output_string:	;display string at ds:si
 		call handle_char
 		dec bx
 	.endw
+	retn
+
+handle_char:
+	cmp al,lf
+	jnz @F
+	mov al,cr
+	call @F
+	mov al,lf
+@@:
+	mov dx, cs
+	cmp dx, CSR0
+	jnz @F
+	call VioPutChar
+	retn
+@@:
+	mov dl, al
+	mov ah, 2
+	int 21h
 	retn
 
 printf ENDP

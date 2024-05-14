@@ -13,6 +13,8 @@ normalk label byte
 	db "zxcvbnm,./"			;2C-35
 k56n db "\"        			;56
 
+;--- SHIFT key modifier
+
 shiftk label byte
 	db 0,1Bh				;00-01
 	db '!@#$%^&*()_+'		;02-0D
@@ -25,8 +27,12 @@ shiftk label byte
 	db 'ZXCVBNM<>?'			;2C-35
 k56s db "|"        			;56
 
+;--- R-ALT key modifier
+
 altgrk	db 36h+1 dup (0)		;00-35, 56
         
+;--- CTRL key modifier
+
 ctrlk label byte
 	db 0,1Bh											;00-01
 	db 0Ch dup (0)										;02-0D

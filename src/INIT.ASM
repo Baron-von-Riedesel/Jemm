@@ -218,6 +218,8 @@ externdef V86IDT:near
 endif
 
 ;--- set int EAX to value of ECX
+;--- used for Ints 41h, 67h, 15h, 06h, 10h
+;--- called during Init().
 
 SetIDTEntry proc
 if ?SHAREDIDT

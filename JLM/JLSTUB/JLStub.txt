@@ -1,0 +1,10 @@
+
+ 1. About JLStub
+
+  JLStub is NOT a JLM. It's a stub, supposed to be added to other binaries.
+ Currently it's used by JemmDbg. It's purpose is to avoid having to type
+ "jload jemmdbg.dll" - instead, the stub is added to jemmdbg.exe (just a
+ renamed jemmdbg.dll). When JemmDbg.exe is launched, the stub takes over,
+ searches for jload.exe and runs it, so one can start JemmDbg simply by
+ typing "JemmDbg".
+

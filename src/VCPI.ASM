@@ -88,6 +88,11 @@ VCPI_Presence   ENDP
 ;  out: [es:di] page table filled
 ;       di: first uninitialized page table entry (advanced by 4K)
 ;      ebx: offset to server's protect mode code segment
+; The VCPI docs tell that the physical page that receives this
+; zero page table must NOT be altered after this call, to allow
+; the server to modify PTEs. However, this seems an error in the
+; documentation, since the host does not "manage" VCPI clients,
+; hence has no idea what "interface" is the current one.
 
 VCPI_GetInterface   PROC
     movzx edi,WORD PTR [ebp].Client_Reg_Struc.Client_DS
@@ -337,23 +342,26 @@ VCPI_SetMappings ENDP
 
 ; VCPI switch V86 mode to protected mode
 ; inp: AX=DE0C
-;     ESI -> linear address of "v86 to protected-mode switch" data
+;     ESI -> linear address of "v86 to protected-mode switch" data,
+;            must be in first MB.
 ; out: GDTR, IDTR, LDTR, TR loaded for client
 ;     SS:ESP=?HLPSTKSIZE (must provide at least 16 byte space for client)
 ;     HIWORD(ESP) is cleared
-; modifies EAX, SS:ESP
+; modifies EAX, SS:ESP (ESI may also be altered according to VCPI docs)
 ;
 
 
-VCPI_V86toPM    PROC public
+VCPI_V86toPM PROC public
 
     @dprintf ?VCPIXDBG, <"VCPI rm, ax=DE0C, esi=%X cr3=%X cs:eip=%X:%X",10>, esi, dword ptr [esi].V86TOPM.dwCR3,\
         word ptr [esi].V86TOPM.dfCSEIP+4, dword ptr [esi].V86TOPM.dfCSEIP
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX   ;restore client value
     mov ebp,[ebp].Client_Reg_Struc.Client_EBP   ;restore client value
 if ?VCPITMPSS
-    mov ax, V86_STACK_SEL           ; some poorly written VCPI clients expect
-    mov ss, eax                     ; hiword(esp) to be cleared.
+;--- some poorly written VCPI clients expect hiword(esp) to be zero!
+;--- So we provide a small 128 byte stack.
+    mov ax, V86_STACK_SEL
+    mov ss, eax
 endif
     mov eax,[esi].V86TOPM.dwCR3     ; set client's context *first*
     mov cr3,eax
@@ -364,6 +372,7 @@ endif
     movzx esp,[esi].V86TOPM.wTR
     lgdt fword ptr [eax]
 if ?CLEARTB    
+;--- the "busy" flag of the TSS must be cleared, according to VCPI docs!
     mov eax,[eax+2]                 ; EAX == linear address of client's GDT
     and ds:[esp+eax].DESCRIPTOR.bAttr,NOT 2; clear task busy bit in TSS descriptor
 endif
@@ -376,7 +385,7 @@ else
 endif
     jmp [esi].V86TOPM.dfCSEIP       ; jump to client's entry point
 
-VCPI_V86toPM    ENDP
+VCPI_V86toPM ENDP
 
     align 4
 

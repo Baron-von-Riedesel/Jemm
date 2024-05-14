@@ -335,9 +335,10 @@ pYield                  dd ?
 pVDS_Call_Table         dd ?
 pVCPI_Call_Table        dd ?
 pIO_Trap_Table          dd ?
-pV86_Monitor            dd ?
-pStackCurr              dd ?
-pMoveMemory             dd ?
+pV86_Monitor            dd ?	; linear address of V86_Monitor() (obsolete with ppV86Hooks)
+pStackCurr              dd ?	; linear address of dwStackCurr
+pMoveMemory             dd ?	; linear address of MoveMemory()
+ppV86Hooks              dd ?	; linear address of pV86Hooks variable (since v5.85)
 VMM_SERV_TABLE ends
 endif
 

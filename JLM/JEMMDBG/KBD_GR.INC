@@ -13,6 +13,8 @@ normalk label byte
 	db "yxcvbnm,.-"			;2C-35
 	db "<"        			;36 ( key 56h )
 
+;--- SHIFT key modifier
+
 shiftk label byte
 	db 0,1Bh				;00-01
 	db '!"$%&/()=?`'		;02-0D
@@ -25,11 +27,11 @@ shiftk label byte
 	db 'YXCVBNM;:_'			;2C-35
 	db ">"        			;36 ( key 56h )
 
+;--- R-ALT key modifier
+
 altgrk label byte
-;   org altgrk + 0Ch
-;   db '\'					;0C
 	org altgrk + 08h
-	db '{[]}\'
+	db '{[]}\'				;08-0C
 	org altgrk + 10h
 	db '@'					;10
 	org altgrk + 1Bh
@@ -37,6 +39,8 @@ altgrk label byte
 	org altgrk + 36h
 	db '|'					;36 ( key 56h )
         
+;--- CTRL key modifier
+
 ctrlk label byte
 	db 0,1Bh											;00-01
 	db 0Ch dup (0)										;02-0D

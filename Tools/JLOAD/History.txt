@@ -1,6 +1,7 @@
 
  v5.85:
    - debug displays now done with @dprintf().
+   - V86 hooks won't modify IDT anymore.
 
  v5.84:
    - trap handling changed: Jemm's IO trap table is no longer imported,

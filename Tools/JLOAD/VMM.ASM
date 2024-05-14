@@ -28,7 +28,6 @@ BPDYN	ends
 
 HOOKV86 struc
 dwHook	 dd ?
-dwOldVec dd ?
 HOOKV86 ends
 
 ;	.data
@@ -43,8 +42,10 @@ bprm	 		dd 0	;real-mode address of first bp
 dwTSSbase		dd 0	;start TSS of monitor
 
 lpHooks			dd 0	;page for hooks (int chain, faults, ...)
-lpV86_Monitor	dd 0
-lpStackCurr		dd 0
+lpV86_Monitor	dd 0	;address V86_Monitor() function in Jemm
+lpStackCurr		dd 0	;address of dwStackCurr variable in Jemm
+ppV86Hooks		dd 0	;v5.85: address of pV86Hooks variable in Jemm
+retaddr			dd 0	;v5.85: return address to V86_Monitor 
 
 ScratchPTE		dd 0	;PTE used to simplify page memory management
 oldiohandler	dd 0	;saved Jemm's IO handler
@@ -57,6 +58,10 @@ prevint2f       dd 0
 else
 prevint2f       dd offset finalint2f
 trueprevint2f   dd 0
+endif
+if ?KD
+public bKDdetected
+bKDdetected		db 0
 endif
 
 ;--- generic "control block" returned by Get_Cur_VM_Handle
@@ -121,7 +126,7 @@ MoveMemory  		dd 0
 					dd _Allocate_GDT_Selector ; v5.83
 					dd _Free_GDT_Selector ; v5.83
 					dd Get_DDB ; v5.83
-					dd V86ToPM ; v5.86
+					dd V86ToPM ; v5.85
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 
@@ -174,8 +179,19 @@ InitVMM proc public
 	mov lpV86_Monitor, eax
 	lodsd
 	mov lpStackCurr, eax
-	lodsd					;new for v5.69
-	mov MoveMemory, eax
+	lodsd
+	mov MoveMemory, eax		;new for v5.69
+	lodsd
+	mov ppV86Hooks, eax		;new for v5.85
+
+if ?KD
+	mov ax, 4Fh
+	int 41h
+	cmp ax, 0F386h
+	jnz @F
+	or [bKDdetected], 1
+@@:
+endif
 
 ;--- init the mapping page for memory management
 
@@ -206,7 +222,7 @@ InitVMM proc public
 	mov eax, dword ptr [ecx].VMMS.emx08.e08_IDTR+2
 	mov [g_dwIDT], eax
 
-;--- install a int 20h handler
+;--- install a int 20h handler in IDT
 
 	mov esi, eax
 	add esi, 20h*8
@@ -440,6 +456,7 @@ Build_Int_Stack_Frame proc
 Build_Int_Stack_Frame endp
 
 ;--- in: EDI = save buffer
+;---     EBP = client_reg_struc
 ;--- no return value
 
 Save_Client_State proc
@@ -845,29 +862,20 @@ Set_PM_Int_Vector endp
 ;--- eax = int#
 ;--- esi = hook proc
 
-;--- what is done here?
-;--- when the first hook is installed, a 4 kB page is allocated.
-;--- the first 2048 bytes of this page hold 256 HOOKV86 entries
-;--- where the last installed hook proc and the original value
-;--- of the IDT are saved.
-;--- the second 2048 bytes hold 256 code fragments, with this structure:
-;--- +2048: push 0        ;int 0 hook
-;---        jmp v86_hook
-;---        db 0          ;used to save bit status of interrupt table
-;--- +2056: push 1        ;int 1 hook
-;---        jmp v86_hook
-;---        db 0
+;--- v5.85:
+;---  IDT is no longer touched
+;---  instead the new ppV86Hooks variable is used to set V86Hooks
+;---  this makes the thunk code generation obsolete.
+;--- sizeof HOOKSTR is now 4 (256*4=1024), the following 32 bytes are used to store
+;--- the VME bitmap.
 
-GATE struct
-wOfsLo dw ?
-wSel   dw ?
-wAttr  dw ?
-wOfsHi dw ?
-GATE ends
 
 Hook_V86_Int_Chain proc
 	cmp eax,100h
 	jnc @@error
+
+;--- the "hook" page already allocated?
+
 	cmp [lpHooks],0
 	jnz @@isallocated
 	push eax
@@ -891,13 +899,18 @@ Hook_V86_Int_Chain proc
 	and eax, eax
 	jz @@error2
 	mov [lpHooks], ecx
+
+;--- v5.85: set the pV86Hooks variable in Jemm32
+	mov eax, [ppV86Hooks]
+	mov [eax], offset v86_hook
+
 	pop eax
 @@isallocated:
 	mov edx,[lpHooks]
-	cmp dword ptr [edx+eax*8],0
+	cmp [edx+eax*4].HOOKV86.dwHook,0	; 4=sizeof HOOKV86 struct
 	jz @@newhook
-	mov ecx,[edx+eax*8].HOOKV86.dwHook
-	mov [edx+eax*8].HOOKV86.dwHook, esi
+	mov ecx,[edx+eax*4].HOOKV86.dwHook
+	mov [edx+eax*4].HOOKV86.dwHook, esi
 	mov eax, [esi-4]
 	mov [eax], ecx
 	jmp @@done
@@ -908,8 +921,8 @@ Hook_V86_Int_Chain proc
 	stc
 	ret
 @@newhook:
-	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: new hook",10>
-	mov [edx+eax*8].HOOKV86.dwHook, esi
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: new hook, eax=%X",10>, eax
+	mov [edx+eax*4].HOOKV86.dwHook, esi
 	push ebx
 	push esi
 
@@ -918,47 +931,21 @@ if 0
 	mov dword ptr [ecx], 0
 endif
 
-;--- the IDT is modified. EAX=Int#
-;--- 1. store the current offset in IDT in HOOKV86.dwOldVec
-;--- 2. set the offset in IDT to the thunk code for this int
-;--- 3. generate the thunk code: "push #int" & "jmp near32 v86hook"
-;--- 4. modify the int bitmap in TSS
+;--- now set the bit in the TSS for the VME
+;--- store the old state in [edx+1024] (behind the HOOKSTR items)
 
-	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: modifying IDT",10>
-	mov ecx, [g_dwIDT]
-	mov si, [ecx+eax*8].GATE.wOfsHi
-	shl esi, 16
-	mov si, [ecx+eax*8].GATE.wOfsLo
-	mov [edx+eax*8].HOOKV86.dwOldVec, esi
-	lea edx, [edx+256*8+eax*8]
-	mov ebx, edx
-
-;--- generate thunk code
-	push ecx
-	mov byte ptr [edx], 06Ah		;push byte
-	mov byte ptr [edx+1], al
-	add edx,2
-	mov byte ptr [edx], 0E9h		;jmp near32
-	mov ecx, offset v86_hook
-	sub ecx, edx
-	sub ecx, 5						; v5.82: adjust size of "jmp near32"
-	mov dword ptr [edx+1], ecx
-	pop ecx
-
-;--- set IDT vector to thunk code
-	mov [ecx+eax*8].GATE.wOfsLo, bx
-	shr ebx, 16
-	mov [ecx+eax*8].GATE.wOfsHi, bx
-
-
-	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: modifying Int bitmap",10>
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: modifying Int bitmap, eax=%X",10>, eax
 	mov ebx, [dwTSSbase]
 	movzx ecx, [ebx].TSSSEG.tsOfs
 	add ebx, ecx
 	sub ebx, 32    ;=256/8
 	bts [ebx],eax
-	setc byte ptr [edx+5]	;save previous bit state
-
+	jc @F
+	btr [edx+1024], eax
+	jmp bitset
+@@:
+	bts [edx+1024], eax
+bitset:
 	pop esi
 	pop ebx
 @@done:
@@ -972,29 +959,52 @@ Hook_V86_Int_Chain endp
 ;--- installing a hook proc for a v86 int creates the following code:
 ;--- push byte ptr int#
 ;--- jmp near32 v86_hook
+;--- so this code is jumped to directly from IDT
+
+;--- v5.85: IDT is no longer modified, no thunks are generated
+;--- instead: v86_hook is called directly from inside V86_Monitor in Jemm38.asm
+;--- with this stack:
+;--- + 0 return address
+;--- + 4 V86FRAME
+;--- ebp->V86frame
+;--- DS and ES are still 0000!
+;--- return to V86_Monitor must preserve ECX!
 
 v86_hook proc
 
-;--- ?TOS: top of ring0 stack
-;--- IRETDV86: struct of an IRETD in v86 mode ( eip, cs, efl, esp, ss, es, ds, fs, gs )
-	cmp esp, ?TOS - (sizeof IRETDV86 + 4)
-	jnz @@nov86
-
-	push 0					;adjust to match Client_Reg_Struc ()
-	pushad
-	mov ebp,esp 			;ebp -> Client_Reg_Struc
+	mov eax, [ebp].V86FRAME.fIntNo
+	mov edx, ss:[lpHooks]
+	cmp ss:[edx+eax*4].HOOKV86.dwHook, 0
+	jnz @F
+	ret
+@@:
 	push ss
 	pop ds
 	push ss
 	pop es
+
+	pop [retaddr]		; save returm address to V86_Monitor
+
+;--- convert V86FRAME to Client_Reg_Struc
+;--- means making room for the Client_Int member
+;--- (it's never used)
+;--- todo: get rid of the Client_Int member!
+
+	mov esi, esp
+	sub esp, 4
+	mov ebp, esp 			;ebp -> Client_Reg_Struc
+	mov edi, esp
+	push ecx
+	mov ecx, 8
 	cld
+	rep movsd
+	pop ecx
+	push ss:[retaddr]
+
 	mov eax,[lpStackCurr]
-	mov ecx,[lpHooks]
 	mov esp,[eax]
 
-;--- get the old vector in IDT and store it in int# member of client struct
-
-	movzx eax,byte ptr [ebp].Client_Reg_Struc.Client_Error  ; eax=int#
+	mov eax,ecx	; eax=int#
 
 ifdef _DEBUG
 	cmp ax, 2Fh
@@ -1002,22 +1012,37 @@ ifdef _DEBUG
 	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh
 	jz skiplog
 @@:
-endif
-	@dprintf ?V86HOOKDBG, <"v86_hook: int=%X",10>, ax
+	@dprintf ?V86HOOKDBG, <"v86_hook: int=%X",10>, eax
 skiplog:
+endif
 
-	mov edx, [ecx+eax*8].HOOKV86.dwOldVec
-	mov [ebp].Client_Reg_Struc.Client_Int, edx
+	push ecx
 	call CallV86Hooks  ; expects eax=int#
-	mov esp,ebp
+	pop edx
+
+;--- returns: C=int not handled, back to V86_monitor
+;---  NC: int handled, go back to V86 mode directly
+
+	jnc int_handled
+
+;--- to return to V86_Monitor, we have to revert the Client_Reg_Struc
+;--- back to V86FRAME
+	mov eax, [ebp-4]	;get return address
+	lea edi, [ebp+32]
+	lea esi, [edi-4]
+	std
+	mov ecx, 8
+	rep movsd
+	cld
+	lea ebp, [edi+4]
+	mov esp, ebp
+	mov ecx, edx
+	jmp eax
+int_handled:
+	mov esp, ebp
 	popad
-	jnc @@done
-	ret 4   ; exit by jumping to old vector
-@@done:
-	add esp,4+4
+	add esp, 4+4
 	iretd
-@@nov86:
-	jmp cs:[lpV86_Monitor]
 	align 4
 v86_hook endp
 
@@ -1029,10 +1054,9 @@ v86_hook endp
 ;--- ebp = client
 ;--- out: NC if interrupt has been serviced.
 
-
 CallV86Hooks proc
 	mov ecx,[lpHooks]
-	mov ecx, [ecx+eax*8].HOOKV86.dwHook
+	mov ecx, [ecx+eax*4].HOOKV86.dwHook
 @@nexthook:
 	push ecx
 	push eax
@@ -1044,6 +1068,12 @@ CallV86Hooks proc
 	mov ecx,[edx]
 	and ecx, ecx
 	jnz @@nexthook
+ifdef _DEBUG
+	cmp eax, 2Fh
+	jz @F
+	@dprintf ?V86HOOKDBG, <"CallV86Hooks: no hook proc handled int %X",10>, eax
+@@:
+endif
 	stc
 @@done:
 	ret
@@ -1054,11 +1084,12 @@ CallV86Hooks endp
 ;--- esi = hook proc
 
 Unhook_V86_Int_Chain proc
+	@dprintf ?V86HOOKDBG, <"Unhook_V86_Int_Chain: int=%X",10>, eax
 	cmp eax,100h
 	jnc @@error
 	mov ecx,[lpHooks]
 	jecxz @@error
-	mov edx,[ecx+eax*8]
+	mov edx,[ecx+eax*4].HOOKV86.dwHook
 	and edx,edx
 	jz @@error
 	xor ecx,ecx
@@ -1080,14 +1111,14 @@ Unhook_V86_Int_Chain proc
 	mov ecx,[lpHooks]
 	and edx, edx
 	jz @@islast
-	lea ecx,[ecx+eax*8]
+	lea ecx,[ecx+eax*4]
 @@notfirst:
 	mov [ecx],edx
 	ret
 @@islast:
-	mov [ecx+eax*8].HOOKV86.dwHook,edx
-	cmp byte ptr [ecx+eax*8+2048+7],0
-	jnz @@nobitres
+	mov [ecx+eax*4].HOOKV86.dwHook,edx
+	bt [ecx+1024], eax
+	jc @@nobitres
 	push ebx
 	mov ebx, [dwTSSbase]
 	movzx edx, [ebx].TSSSEG.tsOfs
@@ -1096,11 +1127,7 @@ Unhook_V86_Int_Chain proc
 	btr [ebx],eax
 	pop ebx
 @@nobitres:
-	mov ecx,[ecx+eax*8].HOOKV86.dwOldVec
-	mov edx, [g_dwIDT]
-	mov [edx+eax*8+0],cx
-	shr ecx,16
-	mov [edx+eax*8+6],cx
+	clc
 	ret
 	align 4
 Unhook_V86_Int_Chain endp
@@ -1243,8 +1270,19 @@ FreePage proc
 FreePage endp
 
 ;--- esi=V86TOPM struct
+;--- ebp=client reg struc
+;--- both structures have to be copied into first MB
 
 V86ToPM proc public
+	mov edi, ?BASE+10h
+	mov ecx, 6	; size of VCPI_V86toPM struct
+	cld
+	rep movsd
+	mov esi, ebp
+	mov cl, sizeof Client_Reg_Struc shr 2
+	rep movsd
+	mov esi, ?BASE+10h
+	lea edi, [esi+6*4]
 	mov eax, [VCPI_Call_Table]
 	jmp dword ptr [eax+12*4]	; VCPI_V86ToPM
 	align 4

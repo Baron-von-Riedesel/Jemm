@@ -8,7 +8,7 @@
 	option casemap:none
 
 ifndef AUXIO
-AUXIO equ 0
+AUXIO equ 1
 endif
 ifndef VIOOUT
 VIOOUT equ 0
@@ -41,35 +41,39 @@ endm
 
 ddb VxD_Desc_Block < 0, 0, DEVICE_ID, 1, 0, 0, "JEMMDBG", 0, 0, 0 >
 
-hModuleStat dd 0
+hModuleStat dd 0	;???
 dwFlat dd 0
 dwDS16 dd 0
 dfDebugger label fword
-	dd 0
+	dd 0	; the offset of debugger init is 00000000
 dwCS16 dd 0
 dfGetR0Stk label fword
-	dd 3
+	dd 3	; the offset is 00000003
 	dd 0
 dwEAX dd 0
 dwEDX dd 0
 dwScratch dd 0
-dfSsEsp df 0
+dwOldEsp dd 0
+dwOldSs  dd 0
+ifdef _DEBUG
+dwReenterI10 dd 0
+dwReenterI16 dd 0
+endif
 
 _DATA16 segment para FLAT public 'DATA'
 
 start16 label byte
-	incbin <DebugR.bin>
+if V86
+	incbin <Build\DebugRV.bin>
+else
+	incbin <Build\DebugR.bin>
+endif
 SIZEBIN16 equ $ - offset start16
 	db MEMADD dup (?)
 
 _DATA16 ends
 
 	.CODE
-
-GetModuleHandle proc hhandle:dword
-	mov eax, hModuleStat
-	ret
-GetModuleHandle endp
 
 	include printf.inc
 ifdef _DEBUG
@@ -80,13 +84,17 @@ endif
 
 if AUXIO
 	include auxio.inc
-else
- if VIOOUT
+endif
+
+if VIOOUT
 	include vioout.inc
- endif
- if KBDIN
+elseifdef _DEBUG
+	include vioout.inc
+endif
+if KBDIN
 	include kbdinp.inc
- endif
+elseifdef _DEBUG
+	include kbdinp.inc
 endif
 
 MEMADD equ 500h
@@ -103,7 +111,7 @@ _eax dd ?
 PUSHADS ends
 
 ;--- debugger callback
-;--- run an Int 10h
+;--- write char to output device
 
 callint10 proc far
 	push ds
@@ -111,17 +119,18 @@ callint10 proc far
 	mov ds, cs:[dwFlat]
 	mov es, [dwFlat]
 
-;--- switch to Jemm's stack
-
-	mov dword ptr [dfSsEsp], esp
-	mov word ptr [dfSsEsp+4], ss
-	mov [dwEAX], eax
-	mov [dwEDX], edx
-	call [dfGetR0Stk]
-	mov ss, dx
-	mov esp, eax
-	mov eax, [dwEAX]
-	mov edx, [dwEDX]
+if AUXIO
+	cmp [wComNo], -1
+	jz not_aux
+	cmp ah, 3
+	jz @F
+	call AuxPutChar
+	jmp exit
+@@:
+	call AuxGetCsrPos
+	jmp exit
+not_aux:
+endif
 
 if VIOOUT
 	cmp ah, 3
@@ -131,20 +140,39 @@ if VIOOUT
 @@:
 	call VioGetCsrPos
 done:
-elseif AUXIO
+
+else
+
+ ifdef _DEBUG
+	cmp [dwReenterI10], 1
+	jb is_ok
 	cmp ah, 3
 	jz @F
-	call AuxPutChar
-	jmp done
+	call VioPutChar
+	jmp exit
 @@:
-	call AuxGetCsrPos
-done:
-else
+	call VioGetCsrPos
+	jmp exit
+is_ok:
+	inc [dwReenterI10]
+ endif
+;--- switch to Jemm's stack
+
+	mov [dwOldEsp], esp
+	mov [dwOldSs], ss
+	mov [dwEAX], eax
+	mov [dwEDX], edx
+	call [dfGetR0Stk]
+	mov ss, edx
+	lea esp, [eax-40h]	; due to bug in Jemm!
+	mov eax, [dwEAX]
+	mov edx, [dwEDX]
+	push [dwOldSs]
+	push [dwOldEsp]
 	pushad
-	push ebx
 	@VMMCall Get_Cur_VM_Handle
 	mov ebp, [ebx].cb_s.CB_Client_Pointer
-	pop ebx
+	mov ebx, [esp].PUSHADS._ebx
 
 	push [ebp].Client_Reg_Struc.Client_EAX
 	push [ebp].Client_Reg_Struc.Client_EBX
@@ -168,19 +196,25 @@ else
 	pop [ebp].Client_Reg_Struc.Client_ECX
 	pop [ebp].Client_Reg_Struc.Client_EBX
 	pop [ebp].Client_Reg_Struc.Client_EAX
+ if 0;def _DEBUG
+	mov ebp, esp
+	@dprintf "callint10: old ss:esp=%X:%X %X:%X", [ebp+sizeof PUSHADS+4], [ebp+sizeof PUSHADS+0], [dwOldSs], [dwOldEsp]
+ endif
 	popad
+	lss esp, [esp]	;and switch back to Debug's stack
+ ifdef _DEBUG
+	dec [dwReenterI10]
+ endif
 endif
-
-;--- switch back to Debug's stack
-
-	lss esp, [dfSsEsp]
+exit:
 	pop es
 	pop ds
 	ret
+
 callint10 endp
 
 ;--- debugger callback
-;--- run an Int 16h
+;--- get a char from input device
 
 callint16 proc far
 
@@ -188,22 +222,39 @@ callint16 proc far
 	push es
 	mov ds, cs:[dwFlat]
 	mov es, [dwFlat]
-	mov dword ptr [dfSsEsp], esp
-	mov word ptr [dfSsEsp+4], ss
+if AUXIO
+	cmp [wComNo], -1
+	jz not_aux
+	call AuxGetChar
+	jmp exit
+not_aux:
+endif
+
+if KBDIN
+	call KbdGetChar
+else
+
+ ifdef _DEBUG
+	cmp [dwReenterI16], 1
+	jb is_ok
+	call KbdGetChar
+	jmp exit
+is_ok:
+	inc [dwReenterI16]
+ endif
+
+	mov [dwOldEsp], esp
+	mov [dwOldSs], ss
 	mov [dwEAX], eax
 	mov [dwEDX], edx
 	call [dfGetR0Stk]
-	mov ss, dx
-	mov esp, eax
+	mov ss, edx
+	lea esp, [eax-40h]	; due to bug in Jemm!
 	mov eax, [dwEAX]
 	mov edx, [dwEDX]
-
+	push [dwOldSs]
+	push [dwOldEsp]
 	pushad
-if KBDIN
-	call KbdGetChar
-elseif AUXIO
-	call AuxGetChar
-else
 	@VMMCall Get_Cur_VM_Handle
 	mov ebp, [ebx].cb_s.CB_Client_Pointer
 
@@ -217,10 +268,18 @@ else
 
 	mov ax, word ptr [ebp].Client_Reg_Struc.Client_EAX
 	pop [ebp].Client_Reg_Struc.Client_EAX
-endif
 	mov word ptr [esp].PUSHADS._eax, ax
+ if 0;def _DEBUG
+	mov ebp, esp
+	@dprintf "callint16: old ss:esp=%X:%X", [ebp+sizeof PUSHADS+4], [ebp+sizeof PUSHADS+0]
+ endif
 	popad
-	lss esp, [dfSsEsp]
+	lss esp, [esp]	;and switch back to Debug's stack
+ ifdef _DEBUG
+	dec [dwReenterI16]
+ endif
+endif
+exit:
 	pop es
 	pop ds
 	ret
@@ -249,9 +308,54 @@ endif
 
 	option stackbase:esp
 
-;--- main. esi=cmdline
+;--- install. esi=JLCOMM
 
-main proc c
+install proc c
+
+	mov [dwFlat], ds
+	mov esi, [esi].JLCOMM.lpCmdLine
+	@dprintf "install: cmdl=%s", esi
+
+;--- scan the cmdline
+
+nextchar:
+	lodsb
+	and al, al
+	jz done_cmdl
+	cmp al, '/'
+	jz is_opt
+	cmp al, '-'
+	jnz nextchar
+is_opt:
+	lodsb
+	and al, al
+	jz disp_help
+	or al,20h
+	cmp al,'c'
+	jz is_copt
+	jmp disp_help
+is_copt:
+	lodsb
+	and al, al
+	jz disp_help
+	cmp al,'1'
+	jb disp_help
+	cmp al,'4'
+	ja disp_help
+	sub al,'1'
+	movzx ebx, al
+	cmp word ptr ds:[ebx*2+400h], 0
+	jz comport_invalid
+	mov wComNo, bx
+	jmp nextchar
+disp_help:
+	invoke printf, CStr("Usage: JemmDbg [/C1|2|3|4]",13,10)
+	jmp failed
+comport_invalid:
+	inc ebx
+	invoke printf, CStr("COM%u doesn't exist",13,10), ebx
+	jmp failed
+done_cmdl:
 
 ;--- get GDT descriptor for 16-bit code
 
@@ -313,8 +417,6 @@ main proc c
 
 	invoke printf, CStr("GDT selectors for code/data/scratch: %X/%X/%X",13,10), dwCS16, dwDS16, dwScratch
 
-	mov [dwFlat], ds
-
 	mov eax, [dwScratch]
 	shl eax, 16
 	mov ax, word ptr [dwDS16]
@@ -358,16 +460,16 @@ endif
 	ret
 errorcs:
 	invoke printf, CStr("Allocate_GDT_selector() [code] failed",13,10)
-	jmp @F
+	jmp failed
 errords:
 	invoke printf, CStr("Allocate_GDT_selector() [data] failed",13,10)
-	jmp @F
+	jmp failed
 errorsc:
 	invoke printf, CStr("Allocate_GDT_selector() [scratch] failed",13,10)
-@@:
+failed:
 	xor eax, eax
 	ret
-main endp
+install endp
 
 DLL_PROCESS_DETACH equ 0
 DLL_PROCESS_ATTACH equ 1
@@ -384,7 +486,7 @@ DllMain proc stdcall uses esi edi hModule:dword, dwReason:dword, dwRes:dword
 ifdef _DEBUG
 	invoke printf, CStr("Cmdline: %s",13,10), [esi].JLCOMM.lpCmdLine
 endif
-	call main
+	call install
 	jmp done
 @@:
 	xor eax, eax	; refuse to uninstall

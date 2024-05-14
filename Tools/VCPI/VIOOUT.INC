@@ -1,11 +1,5 @@
 
-;--- protected-mode code for vio output
-;--- ds=es=flat, cs=flat, ss=unknown
-
-cr equ 13
-lf equ 10
-bs equ 8	; backspace
-PAUSEKEY equ 1
+;--- vio output for 16-bit protected-mode
 
 @getcursorpos macro
 	movzx ebx, byte ptr ds:[462h];page
@@ -22,13 +16,16 @@ endm
 
 VioPutChar proc
 
-wCols textequ <di>
-bChar textequ <dh>
-bRows textequ <dl>
+local	wCols:word
+local	bChar:byte
+local	bRows:byte
 
+	push ds
 	pushad
 
 	mov bChar, al
+	mov dx, FLATSEL
+	mov ds, dx
 	mov ch, ds:[0484h]			; rows-1
 	mov cl, ds:[044Ah]			; cols
 	mov bRows, ch
@@ -68,15 +65,10 @@ bRows textequ <dl>
 	add bx, cx
 	jmp char_done
 @@:
-	cmp al, bs
-	jnz @F
-	sub bx, 2
-	jmp char_done
-@@:
 	movzx ebx, bx
 	mov ds:[ebx+esi], al
-	inc ebx
-	inc ebx
+	inc bx
+	inc bx
 char_done:
 	mov al, bRows
 	inc al
@@ -85,21 +77,19 @@ char_done:
 	cmp bx, ax
 	jc @F
 	call scrollup
-	mov ebx, eax
+	mov bx, ax
 @@:
-	mov eax, ebx
-	push eax
+	mov ax, bx
+	push ax
 	mov cx, wCols
-	shr eax, 1
+	shr ax, 1
 	div cl
 	xchg al, ah
 	@setcursorpos
-	pop eax
+	pop ax
 	call cursorset
-if PAUSEKEY
-	call checkpause
-endif
 	popad
+	pop ds
 	ret
 
 cursorset:
@@ -115,61 +105,29 @@ cursorset:
 	retn
 
 scrollup:			;scroll up one line
-	cld
-	movzx ecx, wCols
+	push es
+	push ds
+	pop es
 	mov edi, esi
-	push edi
-	movzx esi, cx
+	push di
+	movzx esi, wCols
 	lea esi, [esi*2+edi]
+	mov cl, byte ptr wCols
 	mov al, bRows
 	mul cl
-	push ecx
 	movzx ecx, ax
-	shr ecx,1
-	rep movsd
-	pop ecx
-	push edi
+	shr cx,1
+	rep movsd es:[edi], ds:[esi]
+	push di
+	mov cx, wCols
 	mov eax,07200720h
-	push ecx
-	shr ecx, 1
-	rep stosd
-	pop ecx
-	pop eax
-	pop edi
-	sub eax, edi
-	mov edi, ecx		; restore "wCols"
+	shr cx, 1
+	rep stosd es:[edi]
+	pop ax
+	pop di
+	sub ax, di
+	pop es
 	retn
 
-wCols textequ <>
-bChar textequ <>
-bRows textequ <>
-
 VioPutChar endp
-
-if PAUSEKEY
-checkpause proc
-	in al,64h		;key from keyboard arrived?
-	test al,1
-	jz no
-	in al,60h
-	cmp al,45h		;PAUSE key?
-	jnz no
-@@:
-	in al,64h
-	test al,1
-	jz @B
-	in al,60h
-	test al,80h
-	jnz @B
-no:
-	ret
-checkpause endp
-endif
-
-
-VioGetCsrPos proc uses ebx
-	@getcursorpos
-	mov dx, bx
-	ret
-VioGetCsrPos endp
 

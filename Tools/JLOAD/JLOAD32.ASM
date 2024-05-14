@@ -20,6 +20,10 @@
 
 DATA_	segment dword public 'CODE'
 
+if ?KD
+externdef bKDdetected:byte
+endif
+
 ;--- variables
 
 g_dwIDT		dd 0	;linear address IDT
@@ -476,6 +480,15 @@ VPUTCHR PROC
 	PUSHAD
 	push ss
 	pop ds
+ if ?KD
+	test bKDdetected,1
+	jz @F
+	mov dl, al
+	xor ax, ax
+	int 41h
+	jmp exit
+@@:
+ endif
 if ?USEMONO    
 	mov edi,0B0000h
 	mov ebx,7
@@ -526,6 +539,7 @@ endif
 	CALL @@SCROLL_SCREEN
 @@OLDLINE:
 	MOV DS:[EBX*2+450h],DX
+exit:
 	POPAD
 	pop ds
 	RET

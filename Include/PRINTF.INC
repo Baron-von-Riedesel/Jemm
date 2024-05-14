@@ -56,14 +56,14 @@ local longarg:byte
 local size_:dword
 local fillchr:dword
 local szTmp[24]:byte
+local crs:Client_Reg_Struc
 
 	pushad
 	mov ebp, [ebp]
-	sub esp, sizeof Client_Reg_Struc
-	mov edi, esp
+	lea edi, crs
 	@VMMCall Save_Client_State
 	@VMMCall Begin_Nest_Exec
-	mov ebp, [esp+sizeof Client_Reg_Struc+2*4]	;restore EBP
+	mov ebp, [esp+2*4]	;restore EBP
 	cld
 	lea edi,args
 @@L335:
@@ -79,9 +79,8 @@ nextchar:
 done:
 	mov ebp, [ebp]
 	@VMMCall End_Nest_Exec
-	mov esi, esp
+	lea esi, crs
 	@VMMCall Restore_Client_State
-	add esp, sizeof Client_Reg_Struc
 	popad
 	ret
 

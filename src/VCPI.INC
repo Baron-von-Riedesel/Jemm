@@ -8,5 +8,6 @@ dwIDTOFFS   DD  ?   ; offset of client's IDTR value
 wLDTR       DW  ?   ; client's LDTR value
 wTR         DW  ?   ; client's TR value
 dfCSEIP     DF  ?   ; entry point in client
+            DW  ?
 V86TOPM  ENDS
 

@@ -274,8 +274,6 @@ ends
 
 JLF_UNLOAD  equ 1   ;set if JLM is to be unloaded
 JLF_DRIVER  equ 2   ;set if JLoad is loaded as driver in config.sys
-JLF_R0DEBUG equ 4   ;set if a ring 0 debugger (386SWAT) is present
 
 JLF_UNLOAD_BIT  equ 0
 JLF_DRIVER_BIT  equ 1
-JLF_R0DEBUG_BIT equ 2
