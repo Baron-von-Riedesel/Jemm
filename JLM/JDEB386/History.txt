@@ -1,6 +1,8 @@
 
   05/2024: v1.2
     - using DebugRV
+    - I/O thru serial line is now always included.
+    - default now low-level video/keyboard access.
   
   02/2023: v1.1
     - keyb_gr.in: added missing '{[]}' keys.

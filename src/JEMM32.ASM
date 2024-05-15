@@ -876,7 +876,7 @@ HandleException proc
     jnz @@is32
     movzx esp,sp                ; make sure ESP is valid
 @@is32:
-    @v86popreg
+    @v86popreg                  ; that's actually just a POPAD
 
     cmp dword ptr [esp],8       ; exc #8?
     jnc errorcode_pushed
@@ -890,6 +890,9 @@ errorcode_pushed::              ; <--- entry exc 06 v86
     mov ES, eax
     cld
 
+;--- since it's an exception in ring0, the Client_Reg_Struc
+;--- may miss all fields beyond Client_Reg_EFlags!
+
     @dprintf ?EXCDBG, <"Exception dump, exception %X at cs:eip=%X:%X",10>, [ebp].Client_Reg_Struc.Client_Int,\
         [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
 
@@ -898,9 +901,9 @@ errorcode_pushed::              ; <--- entry exc 06 v86
     mov byte ptr [exc_ds],' '   ;used as flag (see below)
     lar eax, [ebp].Client_Reg_Struc.Client_CS
     and ah,60h
-    jnz @@isring3
+    jnz @@isring3	; well, ring3 code is not supposed to run in Jemm's context...
     mov ebx, ss
-    lea ecx,[ebp + Client_Reg_Struc.Client_ESP] ;is this correct?
+    lea ecx,[ebp + Client_Reg_Struc.Client_ESP] ;in ring 0, esp & ss are also missing
     jmp @@isring0
 @@isv86:
 

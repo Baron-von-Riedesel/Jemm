@@ -956,25 +956,21 @@ bitset:
 Hook_V86_Int_Chain endp
 
 ;--- the generic v86 hook proc
-;--- installing a hook proc for a v86 int creates the following code:
-;--- push byte ptr int#
-;--- jmp near32 v86_hook
-;--- so this code is jumped to directly from IDT
-
-;--- v5.85: IDT is no longer modified, no thunks are generated
-;--- instead: v86_hook is called directly from inside V86_Monitor in Jemm38.asm
-;--- with this stack:
+;--- v5.85: this code has been rewritten. IDT is no longer modified,
+;--- no thunks are generated. Instead, v86_hook is called directly
+;--- from inside V86_Monitor in Jemm38.asm.
+;--- stack on entry:
 ;--- + 0 return address
 ;--- + 4 V86FRAME
 ;--- ebp->V86frame
+;--- ecx=int#
 ;--- DS and ES are still 0000!
 ;--- return to V86_Monitor must preserve ECX!
 
 v86_hook proc
 
-	mov eax, [ebp].V86FRAME.fIntNo
 	mov edx, ss:[lpHooks]
-	cmp ss:[edx+eax*4].HOOKV86.dwHook, 0
+	cmp ss:[edx+ecx*4].HOOKV86.dwHook, 0
 	jnz @F
 	ret
 @@:
@@ -987,7 +983,7 @@ v86_hook proc
 
 ;--- convert V86FRAME to Client_Reg_Struc
 ;--- means making room for the Client_Int member
-;--- (it's never used)
+;--- (it's not used)
 ;--- todo: get rid of the Client_Int member!
 
 	mov esi, esp
@@ -1001,10 +997,13 @@ v86_hook proc
 	pop ecx
 	push ss:[retaddr]
 
-	mov eax,[lpStackCurr]
-	mov esp,[eax]
+if 0
+;--- todo: check if this is necessary
+	mov eax, [lpStackCurr]
+	mov esp, [eax]
+endif
 
-	mov eax,ecx	; eax=int#
+	mov eax, ecx	; eax=int#
 
 ifdef _DEBUG
 	cmp ax, 2Fh

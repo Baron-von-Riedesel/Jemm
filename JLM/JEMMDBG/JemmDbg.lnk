@@ -1,4 +1,0 @@
-format win pe hx dll ru native
-f Build\JEMMDBG.OBJ
-n Build\JEMMDBG.EXE
-op q,m=Build\JEMMDBG.MAP,stub=Build\jlstub.bin export _ddb.1 

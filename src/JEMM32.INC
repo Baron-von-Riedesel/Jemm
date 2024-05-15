@@ -336,23 +336,13 @@ pVDS_Call_Table         dd ?
 pVCPI_Call_Table        dd ?
 pIO_Trap_Table          dd ?
 pV86_Monitor            dd ?	; linear address of V86_Monitor() (obsolete with ppV86Hooks)
-pStackCurr              dd ?	; linear address of dwStackCurr
+pStackCurr              dd ?	; linear address of dwStackCurr (obsolete with ppV86Hooks)
 pMoveMemory             dd ?	; linear address of MoveMemory()
 ppV86Hooks              dd ?	; linear address of pV86Hooks variable (since v5.85)
 VMM_SERV_TABLE ends
 endif
 
 ;--- macros
-
-; Macro for bypassing the 386-Bug with 32-Bit-Stringoperations
-; only needed for Mask-version B3
-; AddressSize - Prefix + NOP attached
-; obsolete, since Jemm386 now runs in a 32bit code segment
-
-@BIG_NOP MACRO
-;;  DB 67h    ;  32-Bit-Prefix
-;;  NOP
-ENDM
 
 @mov_eax_cr4 macro
     db 0fh, 20h, 0E0h

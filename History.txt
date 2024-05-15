@@ -2,6 +2,7 @@
  History
 
  __.__.2024: v5.85
+
  - address region 11xxxx-3FFFFF is now only mapped as needed.
  - optional kernel-debugger-aware variant calls int 68h for deinitialization.
  - better log displays via macro @dprintf.
@@ -11,6 +12,7 @@
  - VDS: added several argument checks ( mostly DX ).
  - fix: ISA DMA ports A-F must be handled by Jemm to detect FD accesss 
    even if external handler has trapped these ports.
+ - JemmDbg renamed to JDeb386.
 
  12.02.2024: v5.84
 

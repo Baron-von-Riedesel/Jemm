@@ -1,7 +1,7 @@
 
- 1. About JemmDbg
+ 1. About JDeb386
 
-  JemmDbg is a ring 0 debugger for Jemm386/JemmEx. It's actually using DebugRV,
+  JDeb386 is a ring 0 debugger for Jemm386/JemmEx. It's actually using DebugRV,
  a variant of the ring0 debugger core DebugR. It can be used to debug any
  program running in the context of a v86-monitor program ( JemmEx/Jemm386),
  in both protected-mode and v86-mode.
@@ -9,27 +9,33 @@
 
  2. Usage
  
-  JemmDbg is a JLM and uses JLoad to load itself in the v86-monitor address
- context. Once JemmDbg is loaded and initialized, it will become active when
+  JDeb386 is a JLM and uses JLoad to load itself in the v86-monitor address
+ context. Once JDeb386 is loaded and initialized, it will become active when
 
   - an exception is detected; this includes debug exceptions and breakpoints
   - SysReq ( Alt & Print ) is pressed
 
-  JemmDbg needs at least Jemm v5.83.
+  JDeb386 needs at least Jemm v5.83.
+
+  For a description of the debugger commands see Debug.txt.
 
 
  3. Features & Restrictions
 
- - JemmDbg does not handle protected-mode software that runs as VCPI client
+ - since JDeb386 is a JLM it has no DOS memory footprint. Also, since it
+   doesn't modify the IVT, it's very hard for programs to detect it, and even
+   harder to protect against it.
+   
+ - JDeb386 does not handle protected-mode software that runs as VCPI client
    ( DOS extenders ). Those install their very own address context and IDT,
-   which JemmDbg doesn't try to access or modify.
+   which JDeb386 doesn't try to access or modify.
 
  - The Jemm386/JemmEx address context consists mostly of "free" address space;
    if the debugger tries to access memory at such addresses, page faults will
-   occur. They are reported, but shouldn't do any harm to system integrity.
+   occur. They are reported, but can be safely ignored.
  
  - JLoad installs a subset of the Win9X ring 0 API, which uses interrupt 20h
-   in protected-mode as a sort of dynamic link mechanism. JemmDbg is unaware
+   in protected-mode as a sort of dynamic link mechanism. JDeb386 is unaware
    of this API and handles Int 20h like any other software interrupt - that is,
    it might write a breakpoint instruction ( int 3 ) just behind the Int 20h.
    This should cause a GPF, since the Int 20h API expects two words as
@@ -39,10 +45,10 @@
  - I/O handling:
     With cmdline option /C[1-4] one may switch I/O to a serial port.
    If this option isn't used, low-level video and keyboard access are used
-   as default. It's possible for JemmDbg to use the mode switching routines
-   of the v86-monitor (to call BIOS function INT 10h/16h), but in may cases
+   as default. It's possible for JDeb386 to use the mode switching routines
+   of the v86-monitor (to call BIOS function INT 10h/16h), but in many cases
    this isn't acceptable for low-level debugging.
-    These are the options regarding I/O handling of JemmDbg:
+    These are the options regarding I/O handling of JDeb386:
    
     "nmake vio=0"       (disables low-level video output; BIOS int 10h used)
     "nmake kbd=0"       (disables low-level keyboard input; BIOS int 16h used)
@@ -51,6 +57,6 @@
 
  4. License
 
- JemmDbg is released under the MIT license. See license.txt for details.
+ JDeb386 is released under the MIT license. See license.txt for details.
 
  Andreas Grech

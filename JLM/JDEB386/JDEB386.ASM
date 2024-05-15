@@ -6,6 +6,7 @@
 	.386
 	.MODEL FLAT, stdcall
 	option casemap:none
+	option proc:private
 
 ifndef AUXIO
 AUXIO equ 1
@@ -39,7 +40,7 @@ endm
 
 	public ddb
 
-ddb VxD_Desc_Block < 0, 0, DEVICE_ID, 1, 0, 0, "JEMMDBG", 0, 0, 0 >
+ddb VxD_Desc_Block < 0, 0, DEVICE_ID, 1, 0, 0, "JDeb386", 0, 0, 0 >
 
 hModuleStat dd 0	;???
 dwFlat dd 0
@@ -349,7 +350,7 @@ is_copt:
 	mov wComNo, bx
 	jmp nextchar
 disp_help:
-	invoke printf, CStr("Usage: JemmDbg [/C1|2|3|4]",13,10)
+	invoke printf, CStr("Usage: JDeb386 [/C1|2|3|4]",13,10)
 	jmp failed
 comport_invalid:
 	inc ebx
@@ -455,7 +456,7 @@ if INT41
 	mov [ebx+41h*8+6], ax
 endif
 
-	invoke printf, CStr("JemmDbg loaded and initialized",13,10)
+	invoke printf, CStr("JDeb386 loaded and initialized",13,10)
 	mov eax, 80000001h	; bit 31=1: suppress JLoad msg
 	ret
 errorcs:

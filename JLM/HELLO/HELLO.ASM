@@ -15,7 +15,6 @@ szText  db "Hello, world!", 13,10,0
 
 _main   proc
 
-		int 3
         push esi
         @VMMCall Begin_Nest_Exec     ;start nested execution
         mov esi, offset szText

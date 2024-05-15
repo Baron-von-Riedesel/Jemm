@@ -1,5 +1,5 @@
 
-# create JemmDbg.exe
+# create JDeb386.exe
 # tools used: jwasm & jwlink & nmake (from MS MS-DOS 4.0 sources)
 # needs Debug/X's DebugR/DebugRV variants ( see DEBUGRDIR below ).
 
@@ -29,6 +29,8 @@ DEBUGR=DebugRV.bin
 !else
 DEBUGR=DebugR.bin
 !endif
+
+NAME=JDeb386
 
 DEBUGRDIR=\projects\debug\build
 
@@ -70,16 +72,19 @@ AOPTD=
 
 OUTD=Build
 
-ALL: $(OUTD) $(OUTD)\JemmDbg.exe
+ALL: $(OUTD) $(OUTD)\$(NAME).exe
 
 $(OUTD):
 	@if not exist $(OUTD)\NUL @mkdir $(OUTD)
 
-$(OUTD)\JemmDbg.exe: $(OUTD)\JemmDbg.obj $(OUTD)\jlstub.bin
-	@jwlinkd.exe @jemmdbg.lnk
+$(OUTD)\$(NAME).exe: $(OUTD)\$(NAME).obj $(OUTD)\jlstub.bin
+	@jwlinkd.exe format win pe hx dll ru native @<<
+f Build\$(NAME).OBJ n Build\$(NAME).EXE
+op q,m=Build\$(NAME).MAP,stub=Build\jlstub.bin export _ddb.1 
+<<
 
-$(OUTD)\JemmDbg.obj: JemmDbg.asm $(OUTD)\$(DEBUGR) $(srcdep)
-	@jwasmd.exe -coff -nologo -DV86=$(V86) $(AOPT) $(AOPTD) -Fl$(OUTD)\ -Fo$(OUTD)\ -Sg -I..\..\Include JemmDbg.asm 
+$(OUTD)\$(NAME).obj: $(NAME).asm $(OUTD)\$(DEBUGR) $(srcdep)
+	@jwasmd.exe -coff -nologo -DV86=$(V86) $(AOPT) $(AOPTD) -Fl$(OUTD)\ -Fo$(OUTD)\ -Sg -I..\..\Include $(NAME).asm 
 
 $(OUTD)\jlstub.bin: ..\JLSTUB\Build\JLSTUB.BIN
 	@copy ..\JLSTUB\Build\JLSTUB.BIN $(OUTD)\
