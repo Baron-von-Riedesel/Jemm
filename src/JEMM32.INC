@@ -282,30 +282,6 @@ Client_FS   dd ?    ;+68
 Client_GS   dd ?    ;+72
 Client_Reg_Struc ends
 
-;--- stack frame in V86 monitor for IRQs and software INTs
-;--- consists of PUSHAD, Int# + v86-IRETD frame
-
-V86FRAME struct
-fEDI    dd ?
-fESI    dd ?
-fEBP    dd ?
-        dd ?
-fEBX    dd ?    ;+4
-fEDX    dd ?    ;+0
-fECX    dd ?    ;+0
-fEAX    dd ?    ;+8
-fIntNo  dd ?    ;+12
-fEIP    dd ?    ;+16
-fCS     dd ?    ;+20
-fEFL    dd ?    ;+24
-fESP    dd ?    ;+28
-fSS     dd ?    ;+32
-fES     dd ?    ;+36
-fDS     dd ?    ;+40
-fFS     dd ?    ;+44
-fGS     dd ?    ;+48
-V86FRAME ends
-
 ;--- entry in IO trap table
 ;--- this is for the default port trap handler;
 ;--- it handles byte ports only.

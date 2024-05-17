@@ -161,11 +161,6 @@ endif
 ;--- ESI -> Jemminit
 
 Debug_Init proc public
-
-if ?KD
-	cmp [esi].JEMMINIT.kdseg,0
-	setnz [bKD]
-endif
 	ret
 Debug_Init endp
 

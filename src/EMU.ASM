@@ -104,7 +104,7 @@ endif
 
 @@twoeat:
     add esp,4+4         ; eat return address and error code
-    add [esp].IRETDV86.vEIP,2   ; jump over instruction
+    add [esp].IRETDV86._Eip,2   ; jump over instruction
     iretd
 
     align 4

@@ -33,7 +33,7 @@ pCopyInBuf	dd ?	;copy in  EDI -> DDS, DX, ECX, modifies EBX!
 pCopyOutBuf dd ?	;copy out EDI -> DDS, DX, ECX, modifies EBX!
 VDSCALL ends
 
-DATA_	segment dword public 'CODE'
+	.data
 
 ddb_0004 VxD_Desc_Block <    0,1,4,1,0,0,"        ",0,0,0,0,0,0,0,offset vdmad_services,?NUMSERV0004>
     
@@ -50,8 +50,6 @@ vdmad_services label dword
 	dd Copy_To_Buffer		;new v5.69
 	dd Copy_From_Buffer		;new v5.69
 ?NUMSERV0004 equ ($ - vdmad_services)/4        
-
-DATA_	ends
 
 	.code
 

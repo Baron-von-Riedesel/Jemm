@@ -97,17 +97,13 @@ COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\vdma.
 !if $(DEBUG)
 OUTD1=build\$(NAME1)D
 OUTD2=build\$(NAME2)D
-OUTD3=build\$(NAME3)D
 COFFDEP1=$(COFFMODS:.\=build\JEMM386D\)
 COFFDEP2=$(COFFMODS:.\=build\JEMMEXD\)
-COFFDEP3=$(COFFMODS:.\=build\JEMMEXLD\)
 !else
 OUTD1=build\$(NAME1)
 OUTD2=build\$(NAME2)
-OUTD3=build\$(NAME3)
 COFFDEP1=$(COFFMODS:.\=build\JEMM386\)
 COFFDEP2=$(COFFMODS:.\=build\JEMMEX\)
-COFFDEP3=$(COFFMODS:.\=build\JEMMEXL\)
 !endif
 
 
@@ -137,19 +133,13 @@ LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 {src\}.asm{$(OUTD2)}.obj:
 	@$(ASM) -c -nologo -coff -Cp -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
 
-{src\}.asm{$(OUTD3)}.obj:
-	@$(ASM) -c -nologo -coff -Cp -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl$(OUTD3)\ -Fo$(OUTD3)\ $<
-
-ALL: $(OUTD1) $(OUTD2) $(OUTD3) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE $(OUTD3)\$(NAME3).EXE
+ALL: $(OUTD1) $(OUTD2) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE
 
 $(OUTD1):
 	@mkdir $(OUTD1)
 
 $(OUTD2):
 	@mkdir $(OUTD2)
-
-$(OUTD3):
-	@mkdir $(OUTD3)
 
 $(OUTD1)\$(NAME1).EXE: $(OUTD1)\jemm16.obj $(OUTD1)\init16.obj
 	cd $(OUTD1)
@@ -161,19 +151,11 @@ $(OUTD2)\$(NAME2).EXE: $(OUTD2)\jemm16.obj $(OUTD2)\init16.obj
 	@$(LINK16)
 	cd ..\..
 
-$(OUTD3)\$(NAME3).EXE: $(OUTD3)\jemm16.obj $(OUTD3)\init16.obj
-	cd $(OUTD3)
-	@$(LINK16)
-	cd ..\..
-
 $(OUTD1)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD1)\ -Fo$(OUTD1)\ src\init16.asm
 
 $(OUTD2)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ src\init16.asm
-
-$(OUTD3)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Sg -Fl$(OUTD3)\ -Fo$(OUTD3)\ src\init16.asm
 
 !if $(MASM)
 $(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug.inc Makefile
@@ -193,12 +175,8 @@ $(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\jemm32.bin src\jemm.inc src\jemm16.
 	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
 
 $(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
+	$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
 
-$(OUTD3)\jemm16.obj: src\jemm16.asm $(OUTD3)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
-	cd $(OUTD3)
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl ..\..\src\jemm16.asm
-	cd ..\..
 !endif
 
 $(OUTD1)\jemm32.bin: $(COFFDEP1)
@@ -211,16 +189,9 @@ $(OUTD2)\jemm32.bin: $(COFFDEP2)
 	@$(LINK32)
 	cd ..\..
 
-$(OUTD3)\jemm32.bin: $(COFFDEP3)
-	cd $(OUTD3)
-	@$(LINK32)
-	cd ..\..
-
 $(COFFDEP1): $(32BITDEPS)
 
 $(COFFDEP2): $(32BITDEPS)
-
-$(COFFDEP3): $(32BITDEPS)
 
 clean:
 	@if exist $(OUTD1)\*.obj erase $(OUTD1)\*.obj
@@ -235,10 +206,3 @@ clean:
 	@if exist $(OUTD2)\*.exe erase $(OUTD2)\*.exe
 	@if exist $(OUTD2)\*.bin erase $(OUTD2)\*.bin
 	@if exist $(OUTD2)\_jemm32.inc erase $(OUTD2)\_jemm32.inc
-	@if exist $(OUTD3)\*.obj erase $(OUTD3)\*.obj
-	@if exist $(OUTD3)\*.lst erase $(OUTD3)\*.lst
-	@if exist $(OUTD3)\*.map erase $(OUTD3)\*.map
-	@if exist $(OUTD3)\*.exe erase $(OUTD3)\*.exe
-	@if exist $(OUTD3)\*.bin erase $(OUTD3)\*.bin
-	@if exist $(OUTD3)\_jemm32.inc erase $(OUTD3)\_jemm32.inc
-

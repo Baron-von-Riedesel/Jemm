@@ -62,8 +62,9 @@ MAXBLOCKSIZE equ 40000h ; std=256 kB
 ;--- macros
 
 @v86pushreg macro
+    sub esp, 4      ; v5.85: added ( to make V86FRAME "match" Client_Reg_Struc )
     PUSHAD
-    MOV EBP,ESP
+    MOV EBP,ESP		; ebp -> Client_Reg_Struc
     endm
 @v86popreg macro
     POPAD
@@ -140,10 +141,13 @@ dwRFlags        dd  0   ; linear address bRFlags
 endif
 dwRSeg          dd  0   ; resident segment
 if ?FASTBOOT
-pSavedVecs      dd 0    ;vectors saved during startup
-;dwInt19Org     dd 0    ;original int 19 vector saved by DOS
+pSavedVecs      dd 0    ; vectors saved during startup
+;dwInt19Org     dd 0    ; original int 19 vector saved by DOS
 endif
-pV86Hooks       dd offset _ret	; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
+
+;--- next 2 vars must be consecutive
+pV86Hooks       dd 0    ; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
+dwHookProc      dd 0
 
 ;-- byte vars (variable)
 
@@ -171,7 +175,6 @@ endif
 
 RunEmuInstr:
 EmuInstr    DB  90h,90h,90h ; run self-modifying code here
-_ret:
             ret
 
 ;--- place rarely modified data here
@@ -337,7 +340,7 @@ endif
     mov [ebx+1*8+4], ecx
     call @@invlpgFF
     popad
-    and byte ptr [esp].IRETDV86.vEFL+1,not 1    ;TF=0
+    and byte ptr [esp].IRETDV86._Efl+1,not 1    ;TF=0
     iretd
 @@invlpgFF:
 if ?INVLPG
@@ -729,7 +732,25 @@ endif
 ; inp: the cpu has set DS,ES,FS,GS==NULL if switch from v86 mode!
 ;  [ESP+0] = INT#
 
+;--- stack frame in V86 monitor for IRQs and software INTs
+
+V86FRAME struct
+        PUSHADS <>
+        dd ?
+_IntNo  dd ?	; note that int# in V86FRAME differs from Client_Int in Client_Reg_Struc!
+        IRETDV86 <>
+V86FRAME ends
+
 V86_Monitor PROC public
+
+;--- Three cases are considered:
+
+;--- case 1: exception in V86 mode
+;--- pushes a IRETDV86 + error code
+;--- and the IDT entries have pushed the INT#
+
+    CMP ESP, ?TOS - (sizeof IRETDV86 + 8)    ; exception in v86 mode?
+    JZ V86_Exception
 
     @v86pushreg
 
@@ -744,16 +765,13 @@ V86_Monitor PROC public
 ;-- at the very least cleared HiWord(ESP) so EBP will point to a
 ;-- valid frame.
 
-    MOVZX ECX,byte ptr [EBP].V86FRAME.fIntNo  ;load 1 byte ONLY!
+    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
 
-; Three cases are considered:
-; - INT executed in V86 mode     EBP = ?TOS - size V86FRAME
-; - exception in V86 mode        EBP = ?TOS - size Client_Reg_Struc
-; - EXC/IRQ (HLT) in v86 monitor EBP < ?TOS - size Client_Reg_Struc
+;--- case 2 & 3:
+; - INT executed in V86 mode     EBP = ?TOS - sizeof V86FRAME
+; - EXC/IRQ (HLT) in v86 monitor EBP < ?TOS - sizeof V86FRAME
 
-    CMP EBP, ?TOS - size Client_Reg_Struc   ; exception in v86 mode?
-    JZ V86_Exception
-    CMP EBP, ?TOS - size V86FRAME           ; int/irq in v86 mode?
+    CMP EBP, ?TOS - sizeof V86FRAME         ; int/irq in v86 mode?
     JNZ @@IRQOREXC
 
 ;--- simple INT in v86-mode
@@ -763,8 +781,7 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @dprintf ?V86DBG, <"Int in v86-mode, #=%X, CS:EIP=%X:%X EBP=%X",10>, cx, word ptr [ebp].V86FRAME.fCS,\
-        [ebp].V86FRAME.fEIP, ebp
+    @dprintf ?V86DBG, <"Int in v86-mode, #=%X, CS:EIP=%X:%X EBP=%X",10>, cx, word ptr [ebp].V86FRAME._Cs,[ebp].V86FRAME._Eip, ebp
 @@:
 endif
 
@@ -772,19 +789,31 @@ endif
 ;--- prior to v5.85, Jload did install hooks by directly 
 ;--- modifying the IDT - that was not a very good idea.
 
-    call ss:[pV86Hooks]
-
+	mov edx, ss:[pV86Hooks]
+	cmp edx, 0
+	jz @F
+	cmp dword ptr ss:[edx+4*ecx], 0
+	jz @F
+	mov eax, ss
+	mov ds, eax
+	mov es, eax
+	mov eax, ecx
+	mov ecx, [edx+4*ecx]
+	call [dwHookProc]
+	jnc int_handled
+	MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo
+@@:
 ;--- simulate an int in v86 mode
 
-    MOV ESI,[EBP].V86FRAME.fEIP
-    MOV EDI,[EBP].V86FRAME.fCS
-    MOV EDX,[EBP].V86FRAME.fEFL
-    MOV EAX,[EBP].V86FRAME.fESP
+    MOV ESI,[EBP].V86FRAME._Eip
+    MOV EDI,[EBP].V86FRAME._Cs
+    MOV EDX,[EBP].V86FRAME._Efl
+    MOV EAX,[EBP].V86FRAME._Esp
     shl ecx,2
-    MOVZX EBX, word ptr [EBP].V86FRAME.fSS
+    MOVZX EBX, word ptr [EBP].V86FRAME._Ss
     SUB AX, 6                   ; Create space for IRET frame
     SHL EBX,4
-    MOV [EBP].V86FRAME.fESP,EAX
+    MOV [EBP].V86FRAME._Esp,EAX
     MOVZX EAX,AX                  ; use LOWORD(ESP) only!
     ADD EBX,EAX
 
@@ -795,13 +824,13 @@ endif
     MOV SS:[EBX+4],DX
     MOV EAX,SS:[ECX]            ; route call to vector in real-mode IVT
     AND DH, NOT (1 or 2)        ; Clear IF+TF as it is done in real-mode
-    MOV word ptr [EBP].V86FRAME.fEIP,AX
+    MOV word ptr [EBP].V86FRAME._Eip,AX
     SHR EAX, 16
-    MOV [EBP].V86FRAME.fCS, EAX
-    MOV [EBP].V86FRAME.fEFL, EDX
-
+    MOV [EBP].V86FRAME._Cs, EAX
+    MOV [EBP].V86FRAME._Efl, EDX
+int_handled:
     @v86popreg
-    add ESP,4           ; skip int#
+    add ESP,4+4         ; skip int#
     IRETD               ; return to v86-mode
 
     align 4
@@ -818,45 +847,43 @@ if ?V86DBG
     jnc @F
   endif
     @dprintf ?V86DBG, <"V86 IRQ/EXC, #=%X EBP=%X, CS:EIP=%X:%X, EFL=%X, SS:ESP=%X:%X",10>, cx,\
-        ebp, word ptr [ebp].V86FRAME.fCS, [ebp].V86FRAME.fEIP, [ebp].V86FRAME.fEFL, word ptr [ebp].V86FRAME.fSS, [ebp].V86FRAME.fESP
+        ebp, word ptr [ebp].V86FRAME._Cs, [ebp].V86FRAME._Eip, [ebp].V86FRAME._Efl, word ptr [ebp].V86FRAME._Ss, [ebp].V86FRAME._Esp
 @@:
 endif
 if ?NMI
     cmp ecx,2       ;NMI?
     JZ @@isnmi
 endif
-    cmp word ptr [ebp].V86FRAME.fCS,FLAT_CODE_SEL
+    cmp word ptr [ebp].V86FRAME._Cs, FLAT_CODE_SEL
     JNZ ring0_exc
 
 ;--- IRQs in ring 0 will only occur "controlled".
 ;--- This simplifies identifying them (Jemm doesn't reprogram the PICs!)
 
-    lea eax,[esp + 8*4 + 3*4 + 4]   ;PUSHAD + IRET32 + INT#
+    lea eax,[esp + 8*4 + 3*4 + 4 + 4]   ;PUSHAD + IRET32 + INT# +X
     cmp eax,[dwStackR0]             ;is ESP that of an IRQ?
     jnz ring0_exc
 @@isnmi:
-    mov ebp, ?TOS - size Client_Reg_Struc
+    mov ebp, ?TOS - sizeof Client_Reg_Struc
     push ecx
     call Begin_Nest_Exec
     pop eax
     call Exec_Int
     call End_Nest_Exec
     @v86popreg
-    add ESP,4           ; skip int#
+    add ESP,4+4         ; skip int#
     IRETD
     align 4
 
-V86_Monitor     ENDP
+V86_Monitor ENDP
 
 ;--- breakpoint: handle exc 06 in v86-mode
 
 Int06_V86Entry proc
     call Simulate_Iret
     mov [ebp].Client_Reg_Struc.Client_Int,6
-Int06_V86EntryX::
     mov esp,ebp
-    @v86popreg
-    jmp errorcode_pushed
+    jmp handle_exception_ebp
 Int06_V86Entry endp
 
 ;--- handle exceptions (ring 0 protected-mode and v86-mode)
@@ -877,13 +904,15 @@ HandleException proc
     movzx esp,sp                ; make sure ESP is valid
 @@is32:
     @v86popreg                  ; that's actually just a POPAD
+    add esp, 4                  ; v5.85: skip the "filler" dword
 
     cmp dword ptr [esp],8       ; exc #8?
-    jnc errorcode_pushed
+    jnc @F
     push dword ptr [esp]        ; emulate error code for exc 0-7 
 ;    mov dword ptr [esp+4],0
-errorcode_pushed::              ; <--- entry exc 06 v86
-    @v86pushreg
+@@:
+    pushad
+handle_exception_ebp::          ; <--- entry exc 06 v86
 
     mov ax, FLAT_DATA_SEL
     mov ds, eax
@@ -975,8 +1004,9 @@ endif
     @v86popreg
     push ds
     pop ss
-    mov esp, ?TOS - size Client_Reg_Struc + 8*4
-    @v86pushreg
+    mov esp, ?TOS - sizeof Client_Reg_Struc + sizeof PUSHADS
+    pushad
+    mov ebp, esp
 
 ;--- reinit ring 0 stack
 
@@ -1003,22 +1033,13 @@ endif
     push offset exc_str2
     call PrintString
 @@:
-
-if 0;?I41SUPP	; v5.85 this is no longer useful, since DebugRV exists that supports v86 mode exceptions
-	mov ax, 4Fh
-	int 41h
-	cmp ax, 0F386h           ; kernel debugger present?
-	jnz @F
-	int 3
-@@:
-endif
     push offset exc_str2a    ; "press ESC ..."
     call PrintString
 
     call Begin_Nest_Exec
 @@waitkey:
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, 00
-    mov byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, 30h    ;IOPL=3 (to be safe)
+    mov byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, V86IOPL shl 4 ;set IOPL=3 (to be safe)
 if ?SAFEKEYBOARD    
     mov eax,[OldInt16]
     xchg eax,ds:[16h*4]  ;make sure we have a safe keyboard
@@ -1048,12 +1069,30 @@ endif
 
 HandleException endp
 
+if ?BPOPC ne 0F4h
+;--- true IDT 06 entry
+Int06_Entry proc
+    push 0              ;exc 06 has no error code, set a dummy one
+    push 6
+    pushad
+    mov ebp, esp        ; ebp -> Client_Reg_Struc
+    mov eax, ss
+    mov ds, eax
+    jmp @@Is_BP
+    align 4
+Int06_Entry endp
+endif
+
 ;--- exception in V86 mode
-;--- EBP->Client_Reg_Struc
-;--- CX=int#
 
 V86_Exception proc
 
+	pushad
+	mov ebp, esp
+
+;--- now ebp -> Client_Reg_Struc
+
+	mov ecx, [ebp].Client_Reg_Struc.Client_Int
 if ?V86DBG
 ;--- this happens quite often, so better activate selectively
   if ?SELINTLOG
@@ -1074,6 +1113,10 @@ endif
     CMP ECX,0DH             ; general protection exception?
     JNZ @@V86_TEST_EXC      ; no, check further
 @@Is_BP:
+
+;--- a monitor "bp" ( used to switch back from v86 to protected-mode )
+;--- EAX=flat selector
+
     MOV ES,EAX
     MOVZX ESI,word ptr [EBP].Client_Reg_Struc.Client_CS
     mov ecx,[EBP].Client_Reg_Struc.Client_EIP
@@ -1082,7 +1125,7 @@ endif
 
 ; check what triggered the GPF. Possible reasons are:
 
-; - HLT opcode, which then might be:
+; - "bp" opcode (HLT or ARPL), which then might be:
 ;   + a "Breakpoint" if CS:EIP points into the breakpoint table.
 ;     call the breakpoint handler proc then.
 ;   + other HLTs. Is handled by running HLT in ring 0 inside the monitor.
@@ -1107,17 +1150,6 @@ endif
     add ESP,4+4         ; skip int# + error code
     IRETD
 
-if ?BPOPC ne 0F4h
-    align 4
-Int06_Entry::
-    push 0       ;exc 06 has no error code, set a dummy one
-    push 6
-    @v86pushreg
-    mov eax, ss
-    mov ds, eax
-    jmp @@Is_BP
-endif
-
 @@No_BP:
 if ?BPOPC ne 0F4h
     jmp V86_Exc0D
@@ -1135,7 +1167,7 @@ endif
 if 0
 ;--- doing a HLT with interrupts disabled will freeze the machine
 ;--- (or at least wait for a NMI). MS Emm386 does so. Should Jemm as well?
-    test byte ptr [ESP].IRETDV86.vEFL+2,2
+    test byte ptr [ESP].IRETDV86._Efl+2,2
     jz @@run_hlt
 endif
     call EnableInts
@@ -1143,7 +1175,7 @@ endif
     HLT
     CLI
     call DisableInts
-    mov esp,?TOS - size IRETDV86
+    mov esp,?TOS - sizeof IRETDV86
     iretd                       ; will it ever hit this?
 
 @@NoBPOPC:
@@ -1178,18 +1210,21 @@ endif
     je ExtendedOp
     mov cl,0
     mov edi, esi
-    cmp al,0F3h
+    cmp al,0F3h					; REP prefix?
     setz ch
     jnz @@norepprefix
     inc esi
     mov al,[esi]
 @@norepprefix:
-    cmp al,66h
+    cmp al,66h                  ; 66 prefix
     setz ah
     jnz @@nosizeprefix
     inc esi
     mov al,[esi]
 @@nosizeprefix:
+
+;--- what about the remaining prefixes? 64,65,67,26,2E,36,3E?
+
     cmp al,6Ch
     JB V86_Exc0D
     cmp al,6Fh                  ; string IO ?
@@ -1233,12 +1268,14 @@ endif
 ;--- unhandled v86-mode exception xxh occured
 
 @@V86_EXC_NOT0D0E:
-
-;--- unhandled v86-mode exception 0Dh occured
-
 if ?V86EXC0D
 	jmp noexcrtn
 endif
+
+;--- unhandled v86-mode exception 0Dh occured.
+;--- the emulated "special register" moves,
+;--- I/O instructions and HLT have been handled here...
+
 V86_Exc0D::
 
 if ?V86EXC0D
@@ -1260,7 +1297,7 @@ endif
 if ?SKIPINT06
     movzx eax,word ptr ds:[6*4+2]
     cmp eax,[dwRSeg]
-    jz Int06_V86EntryX
+    jz handle_exception_ebp
 endif
 
 ;--- simulate invalid opcode interrupt in v86 mode
@@ -1270,7 +1307,7 @@ v86excrtn:
     call [vmm_service_table.pSimulate_Int]
     @v86popregX
     add ESP,4+4         ; remove error code + old calling address
-    IRETD                   ; return to virtual 86-Mode
+    IRETD               ; return to virtual 86-Mode
 
     align 4
 
@@ -1609,9 +1646,9 @@ isint10:
     push 10h
     jmp V86_Monitor
 maybeexc10:
-    movzx eax, word ptr [esp+4].IRETDV86.vCS
+    movzx eax, word ptr [esp+4].IRETDV86._Cs
     shl eax, 4
-    add eax, [esp+4].IRETDV86.vEIP
+    add eax, [esp+4].IRETDV86._Eip
     mov al,cs:[eax]
     cmp al,9Bh      ;WAIT?
     jz @F
@@ -2020,7 +2057,7 @@ Simulate_Iret proc public
     shr edx,16
     mov [EBP].Client_Reg_Struc.Client_CS, edx
 if 1
-    or ch,30h   ;to be safe, set IOPL=3 for v86
+    or ch, V86IOPL shl 4  ;to be safe, set IOPL=3 for v86
 endif
     mov word ptr [EBP].Client_Reg_Struc.Client_EFlags,cx
     ADD [EBP].Client_Reg_Struc.Client_ESP,3*2
@@ -2165,6 +2202,8 @@ endif
 ;
 Int15_Entry PROC public
 
+;--- probably good to check if coming from v86-mode?
+
     cmp ax,4F53h    ;DEL pressed?
     jz @@isdel
 ife ?HOOK13
@@ -2190,10 +2229,10 @@ if ?A20PORTS
  if 0
     call A20_Set ;al=0|1
     mov ah,0
-    and [esp].IRETDV86.vEFL, not 1
+    and [esp].IRETDV86._Efl, not 1
  else
     mov ah,86h
-    or [esp].IRETDV86.vEFL, 1
+    or [esp].IRETDV86._Efl, 1
  endif
     iretd
 endif
@@ -2205,9 +2244,8 @@ endif
     CMP AL,1100B            ; If not,  continue working
     POP EAX
     JNZ @@v86mon
-    push 0
-    push 0                   ; push dummy values to get a Client_Reg_Struc frame
-    @v86pushreg
+    push 0                  ; "int#"
+    @v86pushreg             ; ebp->Client_Reg_Struc
     push ss
     pop ds
     push ss

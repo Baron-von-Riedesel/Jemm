@@ -37,7 +37,9 @@ externdef End_Nest_Exec:dword
 
 externdef VDS_Call_Table:dword
 externdef ddb_0004:VxD_Desc_Block
-externdef oldint20:dword
+externdef dfOldint20:fword
 externdef g_dwIDT:dword
-
+if ?KD
+externdef bKDdetected:byte
+endif
 

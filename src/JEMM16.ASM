@@ -927,6 +927,12 @@ endif
 	mov [pStratOfs],offset BPSTRAT
 
 if ?KD
+
+;--- check for kernel debugger presence.
+;--- issue INT 68h, ah=43h and if debugger responds,
+;--- tell it about certain GDT selectors and get the
+;--- protected-mode entry.
+
 	mov ax,3500h or D386_RM_Int
 	int 21
 	mov ax, es		; int 68h vector 0000:0000?
@@ -946,6 +952,7 @@ if ?KD
 	int D386_RM_Int
 	cmp ax, D386_Id
 	jnz @F
+	@dprintf ?INITRMDBG, <"InitJemm: kernel debugger detected",10>
 	mov ah, D386_Prepare_PMode
 	mov al, 0
 	mov cx, GDT_SEL+8
@@ -955,12 +962,13 @@ if ?KD
 	int D386_RM_Int
 	mov jemmini.kdofs, edi
 	mov jemmini.kdseg, es
+	@dprintf ?INITRMDBG, <"InitJemm: kernel debugger pm entry: %X:%lX",10>, es, edi
 	cmp word ptr [bp+4], EXECMODE_EXE
 	jnz @F
 	mov ah, 51h
 	int 21h
 	mov es, bx
-	or byte ptr es:[7fh], 1		; use PSP:7Fh as "kd flag"
+	or byte ptr es:[7fh], 1		; use PSP:7Fh as "kd flag" (if jemm is loaded as .EXE)
 @@:
 endif
 
@@ -971,22 +979,22 @@ endif
 	and sp,not 3	; ensure the 32-bit stack is dword aligned
 	xor ax,ax
 	push ax
-	push gs	; IRETDV86.vGS
+	push gs	; IRETDV86._Gs
 	push ax
-	push fs	; IRETDV86.vFS
+	push fs	; IRETDV86._Fs
 	push ax
-	push ds	; IRETDV86.vDS
+	push ds	; IRETDV86._Ds
 	push ax
-	push es	; IRETDV86.vES
+	push es	; IRETDV86._Es
 	push ax
-	push ss	; IRETDV86.vSS
+	push ss	; IRETDV86._Ss
 	push ax
-	push dx	; IRETDV86.vESP
-	pushd 00023002h ;IRETDV86.vEFL (VM=1, IOPL=3, NT=0, IF=0)
+	push dx	; IRETDV86._Esp
+	pushd 20002h or ( V86IOPL shl 12 ) ;IRETDV86.vEFL (VM=1, NT=0, IF=0) IOPL=3
 	push ax
-	push cs	; IRETDV86.vCS
+	push cs	; IRETDV86._Cs
 	push ax
-	push offset backinv86	; IRETDV86.vEIP
+	push offset backinv86	; IRETDV86._Eip
 	movzx ebp,sp
 
 ;--- set a GDTR on the stack

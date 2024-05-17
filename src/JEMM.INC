@@ -47,8 +47,10 @@ if ?KD
 GDT_SEL         equ 48h
 endif
 
-?BPOPC          equ 0F4h            ; opcode used for breakpoints (HLT)
-;?BPOPC         equ 063h            ; this should also work (ARPL)
+?BPOPC          equ 0F4h    ; opcode used for breakpoints (HLT)
+;?BPOPC         equ 063h    ; this should also work (ARPL)
+
+V86IOPL         equ 3       ; IOPL for v86-mode
 
 SMAP equ 534d4150h
 
@@ -322,15 +324,15 @@ UMB_ALLOCATED equ 80h	;flag in wSize+1
 ;--- stack frame expected by ring0-IRETD to switch to v86-mode
 
 IRETDV86 struct
-vEIP    dd ?    ;+0
-vCS     dd ?    ;+4 
-vEFL    dd ?    ;+8
-vESP    dd ?    ;+12
-vSS     dd ?    ;+16
-vES     dd ?    ;+20
-vDS     dd ?    ;+24
-vFS     dd ?    ;+28
-vGS     dd ?    ;+32
+_Eip    dd ?    ;+0
+_Cs     dd ?    ;+4 
+_Efl    dd ?    ;+8
+_Esp    dd ?    ;+12
+_Ss     dd ?    ;+16
+_Es     dd ?    ;+20
+_Ds     dd ?    ;+24
+_Fs     dd ?    ;+28
+_Gs     dd ?    ;+32
 IRETDV86 ends
 
 ;--- macros

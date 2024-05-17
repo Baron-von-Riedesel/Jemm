@@ -237,13 +237,13 @@ Int67_Indirect:
 
 Int67_Entry PROC public
 
-    @emmpushreg
+    @emmpushreg     ; make EBP -> Client_Reg_Struc
 
     MOV ECX,SS      ; address everything
     MOV DS,ECX
     MOV ES,ECX
 
-    @dprintf ?V86DBG, <"Int 67h in v86-mode, CS:EIP=%X:%X EBP=%X AX=%X",10>, [ebp].V86FRAME.fCS, [ebp].V86FRAME.fEIP, ebp, ax
+    @dprintf ?V86DBG, <"Int 67h in v86-mode, CS:EIP=%X:%X EBP=%X AX=%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, ebp, ax
 
     mov ecx,[dwRSeg]
     cmp cx,ds:[67h*4+2]     ;IVT vector 67h modified?

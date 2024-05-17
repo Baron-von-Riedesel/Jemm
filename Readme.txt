@@ -46,11 +46,6 @@
  JemmEx most likely is the better choice because it will need less DOS
  memory than an external XMM + Jemm386.
 
- Currently there's a third variant supplied, JemmExL. It's a stripped down
- version of JemmEx, missing the enhanced XMS capabilities added to JemmEx
- in v5.80. Since the same effect can be achieved by setting MAXSEXT=0 (see
- below), JemmExL will be removed in future releases.
-
 
  2. Jemm's Features
 

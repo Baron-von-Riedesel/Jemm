@@ -30,11 +30,9 @@ HOOKV86 struc
 dwHook	 dd ?
 HOOKV86 ends
 
-;	.data
+	.data
 
-DATA_ segment dword public 'CODE'
-    
-oldint20 		dd 0	;saved Jemm's int 20h vector protected mode
+dfOldint20 		df 0	;saved Jemm's int 20h vector protected mode
 VDS_Call_Table	dd 0	;Jemm's VDS call table
 VCPI_Call_Table dd 0	;Jemm's VCPI call table
 IO_Trap_Table	dd 0	;Jemm's IO trap table
@@ -60,7 +58,6 @@ prevint2f       dd offset finalint2f
 trueprevint2f   dd 0
 endif
 if ?KD
-public bKDdetected
 bKDdetected		db 0
 endif
 
@@ -134,7 +131,12 @@ MoveMemory  		dd 0
 
 v86_bp	BPDYN ?MAXBP dup (<>)
 
-DATA_ ends
+GATE struct
+_ofslo dw ?
+_segm  dw ?
+_attr  dw ?
+_ofshi dw ?
+GATE ends
 
 	.code
 
@@ -226,14 +228,18 @@ endif
 
 	mov esi, eax
 	add esi, 20h*8
-	mov ax,[esi+6]
-	shl eax,16
-	mov ax,[esi+0]
-	mov [oldint20],eax
+	mov ax, [esi].GATE._ofshi
+	shl eax, 16
+	mov ax, [esi].GATE._ofslo
+	mov dword ptr [dfOldint20+0], eax
+	mov ax, [esi].GATE._segm
+	mov word ptr [dfOldint20+4], ax
 	mov eax, offset Int20_Handler
-	mov [esi+0],ax
-	shr eax,16
-	mov [esi+6],ax
+	mov [esi].GATE._ofslo, ax
+	shr eax, 16
+	mov [esi].GATE._ofshi, ax
+	mov eax, cs
+	mov [esi].GATE._segm, ax
 @@exit:
 	@dprintf ?INITDBG, <"Init exit",10>
 	ret
@@ -245,13 +251,13 @@ InitVMM Endp
 
 Int20_Handler proc
 
-	test byte ptr [esp].IRETDV86.vEFL+2,2	;called from v86-mode?
+	test byte ptr [esp].IRETDV86._Efl+2,2	;called from v86-mode?
 	jnz isv86
 	pushad
-	mov esi,[esp+8*4].IRETDV86.vEIP
+	mov esi,[esp+8*4].IRETDV86._Eip
 	mov eax,[esi]					;it is "INT 20h" followed by a dword
 	sub esi,2
-	mov [esp+8*4].IRETDV86.vEIP, esi
+	mov [esp+8*4].IRETDV86._Eip, esi
 	movzx ecx, ax
 	shr eax,16
 	mov edx, offset ddb_list
@@ -281,7 +287,7 @@ Int20_Handler proc
 	popad
 	iretd
 isv86:
-	jmp cs:[oldint20]
+	jmp cs:[dfOldint20]
 	align 4
 
 Int20_Handler endp
@@ -902,7 +908,8 @@ Hook_V86_Int_Chain proc
 
 ;--- v5.85: set the pV86Hooks variable in Jemm32
 	mov eax, [ppV86Hooks]
-	mov [eax], offset v86_hook
+	mov [eax+0], ecx
+	mov [eax+4], offset CallV86Hooks
 
 	pop eax
 @@isallocated:
@@ -955,107 +962,15 @@ bitset:
 	align 4
 Hook_V86_Int_Chain endp
 
-;--- the generic v86 hook proc
-;--- v5.85: this code has been rewritten. IDT is no longer modified,
-;--- no thunks are generated. Instead, v86_hook is called directly
-;--- from inside V86_Monitor in Jemm38.asm.
-;--- stack on entry:
-;--- + 0 return address
-;--- + 4 V86FRAME
-;--- ebp->V86frame
-;--- ecx=int#
-;--- DS and ES are still 0000!
-;--- return to V86_Monitor must preserve ECX!
-
-v86_hook proc
-
-	mov edx, ss:[lpHooks]
-	cmp ss:[edx+ecx*4].HOOKV86.dwHook, 0
-	jnz @F
-	ret
-@@:
-	push ss
-	pop ds
-	push ss
-	pop es
-
-	pop [retaddr]		; save returm address to V86_Monitor
-
-;--- convert V86FRAME to Client_Reg_Struc
-;--- means making room for the Client_Int member
-;--- (it's not used)
-;--- todo: get rid of the Client_Int member!
-
-	mov esi, esp
-	sub esp, 4
-	mov ebp, esp 			;ebp -> Client_Reg_Struc
-	mov edi, esp
-	push ecx
-	mov ecx, 8
-	cld
-	rep movsd
-	pop ecx
-	push ss:[retaddr]
-
-if 0
-;--- todo: check if this is necessary
-	mov eax, [lpStackCurr]
-	mov esp, [eax]
-endif
-
-	mov eax, ecx	; eax=int#
-
-ifdef _DEBUG
-	cmp ax, 2Fh
-	jnz @F
-	cmp word ptr [ebp].Client_Reg_Struc.Client_EAX, 168Fh
-	jz skiplog
-@@:
-	@dprintf ?V86HOOKDBG, <"v86_hook: int=%X",10>, eax
-skiplog:
-endif
-
-	push ecx
-	call CallV86Hooks  ; expects eax=int#
-	pop edx
-
-;--- returns: C=int not handled, back to V86_monitor
-;---  NC: int handled, go back to V86 mode directly
-
-	jnc int_handled
-
-;--- to return to V86_Monitor, we have to revert the Client_Reg_Struc
-;--- back to V86FRAME
-	mov eax, [ebp-4]	;get return address
-	lea edi, [ebp+32]
-	lea esi, [edi-4]
-	std
-	mov ecx, 8
-	rep movsd
-	cld
-	lea ebp, [edi+4]
-	mov esp, ebp
-	mov ecx, edx
-	jmp eax
-int_handled:
-	mov esp, ebp
-	popad
-	add esp, 4+4
-	iretd
-	align 4
-v86_hook endp
-
 ;--- call hooks for an int
 ;--- must have been ensured that there are hooks!
 ;--- a hook proc is called with:
 ;--- eax = int#
-;--- (ebx = VM)
 ;--- ebp = client
+;--- ecx = hook proc
 ;--- out: NC if interrupt has been serviced.
 
 CallV86Hooks proc
-	mov ecx,[lpHooks]
-	mov ecx, [ecx+eax*4].HOOKV86.dwHook
 @@nexthook:
 	push ecx
 	push eax
@@ -1718,19 +1633,29 @@ _PageCommitPhys proc
 	align 4
 _PageCommitPhys endp
 
-;--- in: eax->ID to find
+;--- in: eax->ID to find, if 000, edi=name
 ;--- out: eax = hModule
 
 FindDevice proc public
 	mov edx,offset ddb_list
 @@:
+	cmp ax, 0
+	jz cmpname
 	cmp ax, [edx].VxD_Desc_Block.DDB_Req_Device_Number
 	jz found
+nextdev:
 	mov edx,[edx].VxD_Desc_Block.DDB_Next
 	and edx, edx
 	jnz @B
 	stc
 	ret
+cmpname:
+	pushad
+	lea esi, [edx].VxD_Desc_Block.DDB_Name
+	mov ecx, sizeof VxD_Desc_Block.DDB_Name
+	repz cmpsb
+	popad
+	jnz nextdev
 found:
 	mov eax, edx
 	ret

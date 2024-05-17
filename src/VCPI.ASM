@@ -416,27 +416,27 @@ endif
     mov eax,[V86CR3]
 ;--- don't use [ESP+x], because SS may be 16-bit
     add esp,5*4         ; position ESP to EFL+4 on stack
-    push 23002h         ; set flags VM=1, NT=0, IOPL=3, IF=0, TF=0
+    push 20002h or (V86IOPL shl 12)  ; set flags VM=1, NT=0, IOPL=3, IF=0, TF=0
     sub esp,2*4
     mov cr3,eax
 if ?VCPIXDBG
-	mov eax,[esp].IRETDV86.vEIP
+	mov eax,[esp].IRETDV86._Eip
 	mov [dbgv.vEIP],eax
-	mov eax,[esp].IRETDV86.vCS
+	mov eax,[esp].IRETDV86._Cs
 	mov [dbgv.vCS],eax
-	mov eax,[esp].IRETDV86.vEFL
+	mov eax,[esp].IRETDV86._Efl
 	mov [dbgv.vEFL],eax
-	mov eax,[esp].IRETDV86.vESP
+	mov eax,[esp].IRETDV86._Esp
 	mov [dbgv.vESP],eax
-	mov eax,[esp].IRETDV86.vSS
+	mov eax,[esp].IRETDV86._Ss
 	mov [dbgv.vSS],eax
-	mov eax,[esp].IRETDV86.vES
+	mov eax,[esp].IRETDV86._Es
 	mov [dbgv.vES],eax
-	mov eax,[esp].IRETDV86.vDS
+	mov eax,[esp].IRETDV86._Ds
 	mov [dbgv.vDS],eax
-	mov eax,[esp].IRETDV86.vFS
+	mov eax,[esp].IRETDV86._Fs
 	mov [dbgv.vFS],eax
-	mov eax,[esp].IRETDV86.vGS
+	mov eax,[esp].IRETDV86._Gs
 	mov [dbgv.vGS],eax
 endif
     lgdt fword ptr [GDT_PTR]

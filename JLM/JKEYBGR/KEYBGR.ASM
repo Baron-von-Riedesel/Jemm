@@ -267,9 +267,10 @@ install proc uses esi edi
         @VMMCall Allocate_V86_Call_Back      ;get a v86 callback
         pop esi
         jc failed
-        mov dword ptr ds:[newvec+1], eax    ;patch the 16-bit code
+        mov edx, offset rmcode
+        mov [edx+newvec-@], eax             ;patch the 16-bit code
         mov eax, ds:[15h*4]
-        mov dword ptr ds:[oldvec+1], eax
+        mov [edx+oldvec-@], eax
 
         movzx edi,[esi].JLCOMM.wLdrCS       ;set driver attributes
         shl edi, 4
@@ -337,11 +338,19 @@ DllMain endp
 ;--- this code will be patched and then copied to DOS memory
 ;--- it will be the new v86 int 15h handler.
 
-rmcode label byte
-        db 80h,0FCh, 4Fh    ;cmp ah,4Fh
-        db 74h, 05h         ;jz $+5
-oldvec  db 0EAh, 0, 0, 0, 0 ;jmp far16 previous handler
-newvec  db 0EAh, 0, 0, 0, 0 ;jmp far16 v86-breakpoint
-sizermcode equ $ - rmcode
+    align dword
+rmcode label near
+
+_TEXT16 segment use16 dword public 'CODE'
+@:
+        cmp ah, 4Fh
+        jz @F
+        db 0EAh     ; jmp SSSS:OOOO
+oldvec  dd 0		; previous handler
+@@:
+        db 0EAh     ; jmp SSSS:0000
+newvec  dd 0		; v86-breakpoint
+sizermcode equ $ - @
+_TEXT16 ends
 
         end DllMain

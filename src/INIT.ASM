@@ -603,6 +603,7 @@ endif
 if ?I41SUPP
 ;--- set int 41h to an iretd
 ;--- no need to route this int to v86-mode - it's not executable code.
+;--- this must be done BEFORE the callout to the kernel debugger (see below).
     mov al, 41h
     movzx eax, al
     mov ecx, offset Int41_Entry
@@ -623,7 +624,10 @@ if ?KD
  endif
     call fword ptr [esi].JEMMINIT.kdofs
     pop edi
-    int 3
+    mov ax, 004Fh
+    int 41h
+    cmp ax, 0F386h
+    setz [bKD]
 @@:
 endif
 
@@ -651,7 +655,7 @@ if ?PGE
     mov [bPageMask],ah
 endif
 
-    MOV ECX,[ebp].IRETDV86.vCS
+    MOV ECX,[ebp].IRETDV86._Cs
     MOV [dwRSeg], ecx
     SHL ECX,4
     mov [dwRes],ecx
@@ -676,6 +680,7 @@ endif
     call XMS_Init	; won't use edi/ebx
 
 if ?DBGOUT
+;--- this call must be done AFTER callout to kernel debugger
     call Debug_Init
 endif
 

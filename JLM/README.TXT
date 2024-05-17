@@ -9,7 +9,6 @@
  HELLO2:   "hello world" JLM in C (MS VC, Open Watcom)
  IOTRAP:   sample how to trap IO port access.
  JCLOCK:   shows clock in text mode.
- JEMMDBG:  a ring 0 debugger for Jemm386/JemmEx.
  JKEYBGR:  German keyboard driver.
  QPIEMU:   emulates port trapping part of QPI.  
  XCDROM32: UltraDMA DVD/CD-ROM driver (GNU GPL 2).
