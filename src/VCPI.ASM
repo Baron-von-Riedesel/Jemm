@@ -13,6 +13,7 @@
 
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
+    include ems.inc         ;EMS definitions
     include vcpi.inc        ;VCPI definitions
     include debug.inc
 
@@ -111,9 +112,8 @@ VCPI_GetInterface   PROC
     add edi,esi             ; edi -> client zero page table
     @GETPTEPTR  esi,?PAGETAB0,1 ; esi -> page table for first 1M
 
-;--- Jemm must ensure that 
-;--- the VCPI_PM_ENTRY label will be in shared memory. Since this label is
-;--- now at the very beginning of V86 segment, 1 page should suffice
+;--- Jemm must ensure that label VCPI_PM_Entry will be in shared memory.
+;--- Since this label is located in .text$2, 1 page should suffice.
 
 if ?CODEIN2PAGE
     mov ecx, 440h+8 ;this is offset in page table for 112000h

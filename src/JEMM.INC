@@ -1,6 +1,8 @@
 
 ;--- common definitions for both Jemm32 and Jemm16
 
+	option casemap:none
+
 LF              EQU 0AH
 CR              EQU 0DH
 
@@ -47,8 +49,13 @@ if ?KD
 GDT_SEL         equ 48h
 endif
 
-?BPOPC          equ 0F4h    ; opcode used for breakpoints (HLT)
-;?BPOPC         equ 063h    ; this should also work (ARPL)
+;--- define v86-monitor breakpoint ( used to switch back to protected-mode )
+;--- the advantage of ARPL is that it's causing an "invalid opcode" exception,
+;--- so it won't have to be dealt with in the rather "longish" GPF handler chain.
+?BPOPC          equ 0F4h    ; default is HLT
+;?BPOPC         equ 063h    ; alternately ARPL
+
+?XMS35COMPAT    equ 1       ; 1=monitor is XMS v3.5 compatible (is aware of memory blocks beyond 4GB)
 
 V86IOPL         equ 3       ; IOPL for v86-mode
 
@@ -62,54 +69,11 @@ lenhigh  dd ?
 type_    dd ?
 E820MAP ends
 
-;--- XMS
-
-?XMS35COMPAT equ 1	;1=monitor is XMS v3.5 compatible (is aware of memory blocks beyond 4GB)
-
-XMS_HANDLE struct
-xh_flags    DB  ?
-xh_locks    DB  ?
-xh_baseK    DD  ?
-xh_sizeK    DD  ?
-XMS_HANDLE ends
-
-LPXMS_HANDLE typedef ptr XMS_HANDLE
-
-;--- XMS handle flags
-
-XMSF_FREE   equ 1   ;handle describes a free EMB
-XMSF_USED   equ 2   ;handle describes a used EMB
-XMSF_INPOOL equ 4   ;handle is free
-
-
-XMS_HANDLETABLE struct
-xht_sig         DB  ?
-xht_sizeof      DB  ?
-xht_numhandles  DW  ?
-xht_pArray      DD  ?   ;converted to linear address for 32bit code!
-XMS_HANDLETABLE ends
-
 if ?INTEGRATED
 
-ifndef ?XMS35
+ ifndef ?XMS35
 ?XMS35     equ 1    ;std=1, 1=support super-extended memory beyond 4GB
-endif
-
-XMS_MOVE struct
-  len           dd  ?       ;  +0 block length in bytes
-  src_handle    dw  ?       ;  +4 source handle
-  src_offset    dd  ?       ;  +6 offset into source
-  dest_handle   dw  ?       ; +10 destination handle
-  dest_offset   dd  ?       ; +12 offset into destination
-XMS_MOVE ends
-
-if ?XMS35
-XMS_MOVEX struct
-                XMS_MOVE <>
-  src_hi        db  ?       ; bits 32-39 of src
-  dest_hi       db  ?       ; bits 32-39 of dst
-XMS_MOVEX ends
-endif
+ endif
 
 ;--- A20 switch methods (must match order in "methods" table)
 
@@ -120,44 +84,14 @@ A20_ALWAYSON equ 3
 A20_FAST    equ 4
 A20_PORT92  equ 5
 
-if ?XMS35
+ if ?XMS35
 DRIVER_VER      equ 350h+2
 INTERFACE_VER   equ 351h
 INTERFACE_VER_MAXSEXT0 equ 300h	;xms version if MAXSEXT=0 is set
-else
+ else
 DRIVER_VER      equ 300h+29
 INTERFACE_VER   equ 300h
-endif
-
-;--- XMS error codes
-
-XMS_NOT_IMPLEMENTED             equ 80h
-XMS_VDISK_DETECTED              equ 81h
-XMS_A20_FAILURE                 equ 82h
-XMS_DRIVER_FAILURE              equ 8eh
-XMS_DRIVER_FATAL                equ 8fh
-XMS_HMA_NOT_THERE               equ 90h
-XMS_HMA_IN_USE                  equ 91h
-XMS_HMAREQ_TOO_SMALL            equ 92h
-XMS_HMA_NOT_USED                equ 93h
-XMS_A20_STILL_ENABLED           equ 94h
-XMS_ALL_MEM_ALLOCATED           equ 0a0h
-XMS_NO_HANDLE_LEFT              equ 0a1h
-XMS_INVALID_HANDLE              equ 0a2h
-XMS_INVALID_SOURCE_HANDLE       equ 0a3h
-XMS_INVALID_SOURCE_OFFSET       equ 0a4h
-XMS_INVALID_DESTINATION_HANDLE  equ 0a5h
-XMS_INVALID_DESTINATION_OFFSET  equ 0a6h
-XMS_INVALID_LENGTH              equ 0a7h
-XMS_INVALID_OVERLAP             equ 0a8h
-XMS_PARITY_ERROR                equ 0a9h
-XMS_BLOCK_NOT_LOCKED            equ 0aah
-XMS_BLOCK_LOCKED                equ 0abh
-XMS_LOCK_COUNT_OVERFLOW         equ 0ach
-XMS_LOCK_FAILED                 equ 0adh
-XMS_ONLY_SMALLER_UMB            equ 0b0h
-XMS_NO_UMB_AVAILABLE            equ 0b1h
-XMS_UMB_SEGMENT_NR_INVALID      equ 0b2h
+ endif
 
 endif
 
@@ -287,7 +221,6 @@ V86F_ALTBOOT    equ 64  ; ALTBOOT active
 ;-- 120 MB max VCPI memory (in 16 kB units)
 ;-- keep this value low for buggy VCPI clients
 ;-- that fail with large free amounts
-;-- this constant is also defined in Jemm386c.c
 
 MAXMEM16K_DEFAULT   EQU 1E00h   ; 120M in 16K blocks
 
@@ -310,7 +243,9 @@ RFL_COPYBUFFER  equ 1   ; 1=copy out of DMA buffer
 RFL_DMAOP       equ 2   ; 1=DMA op started
 
 ;--- max number of UMB blocks
-;--- this constant is also defined in Jemm386c.c
+;--- this differs significantly from how UMBs are handled by
+;--- MS Himem. With MS Himem, each UMB has a 16-byte header
+;--- (quite similarly to MCBs), and there's no UMB block limit.
 
 UMB_MAX_BLOCKS  equ 8
 
@@ -320,20 +255,6 @@ wSize   dw ?    ;size in paras, high bit used as flag free/allocated
 UMBBLK ends
 
 UMB_ALLOCATED equ 80h	;flag in wSize+1
-
-;--- stack frame expected by ring0-IRETD to switch to v86-mode
-
-IRETDV86 struct
-_Eip    dd ?    ;+0
-_Cs     dd ?    ;+4 
-_Efl    dd ?    ;+8
-_Esp    dd ?    ;+12
-_Ss     dd ?    ;+16
-_Es     dd ?    ;+20
-_Ds     dd ?    ;+24
-_Fs     dd ?    ;+28
-_Gs     dd ?    ;+32
-IRETDV86 ends
 
 ;--- macros
 

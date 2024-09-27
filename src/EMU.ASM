@@ -38,8 +38,10 @@ EmuInstr DB 90h,90h  ; run self-modifying code here
     endm
 
 ;--- emulate some privileged 0Fh opcodes (not HLT)
+;--- ebp -> client struct
 ;--- ESI -> linear address of CS:EIP
 ;--- AL==0Fh
+;--- this is not called, but jumped to
 
 ExtendedOp proc public
     mov al,[esi+1]
@@ -69,7 +71,7 @@ endif
     add [ebp].Client_Reg_Struc.Client_EIP,3 ; jump over emulated instruction
     @v86popregX
     call RunEmuInstr
-    add esp,4+4                 ; eat return address and error code
+    add esp,4+4                 ; eat error code & "int#"
     iretd
 if EMUCLTS
 @@clts:

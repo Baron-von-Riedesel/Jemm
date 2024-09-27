@@ -61,11 +61,6 @@ MAXBLOCKSIZE equ 40000h ; std=256 kB
 
 ;--- macros
 
-@v86pushreg macro
-    sub esp, 4      ; v5.85: added ( to make V86FRAME "match" Client_Reg_Struc )
-    PUSHAD
-    MOV EBP,ESP		; ebp -> Client_Reg_Struc
-    endm
 @v86popreg macro
     POPAD
     endm
@@ -122,13 +117,21 @@ endif
 dwMaxPhysMem    dd 0        ; XMS highest address (r/o)
 bpstart         dd 0        ; linear address start of bp table
 PageMapHeap     dd ?SYSLINEAR+?PAGETABSYS+6*4
-Heap4MB         dd ?PAGEDIR+4	;linear address of heap inside page directory
+
+;--- address space heap for 4MB pages.
+;--- v5.95: the heap starts at SYSBASE - 8MB ; it's usually max 4 PTEs ( 16MB ), but is
+;--- reentrant and grows downwards.
+;--- previously the heap did start at 400000h and grew upwards,
+;--- but this address region may be used by VMM's _PageReserve() function (PR_PRIVATE)
+Heap4MB         dd ?PAGEDIR + (?SYSBASE shr 20) - 2*4	;linear address of 4MB page heap inside page directory
+
 pSmallHeap      label dword ; used during Init only
 OldInt06        dd 0
 dwHeapSize      label dword ; used during Init only
 OldInt19        dd 0
 OldInt67        dd 0
-if ?SAFEKEYBOARD
+if ?SAFEKBD
+OldInt15        dd 0        ; v5.85: original INT 15h vector
 OldInt16        dd 0        ; store to have a safe keyboard input
 endif
 
@@ -222,7 +225,7 @@ endif
 if ?SHAREDIDT
     public V86IDT
 .text$01x segment para flat public 'CODE'
-V86IDT  DQ 100h dup (0)
+V86IDT  GATE 100h dup (<0,0,0,0>)
 .text$01x ends
 endif
 
@@ -745,14 +748,16 @@ V86_Monitor PROC public
 
 ;--- Three cases are considered:
 
-;--- case 1: exception in V86 mode
+;--- case 1: exception (with error code) in V86 mode
 ;--- pushes a IRETDV86 + error code
 ;--- and the IDT entries have pushed the INT#
 
     CMP ESP, ?TOS - (sizeof IRETDV86 + 8)    ; exception in v86 mode?
     JZ V86_Exception
 
-    @v86pushreg
+    sub esp, 4      ; v5.85: added ( to make V86FRAME "match" Client_Reg_Struc )
+    PUSHAD
+    MOV EBP,ESP		; ebp -> Client_Reg_Struc
 
 ;if ?V86DBG and ?V86XDBG
 ;    @dprintf ?V86DBG, <".">
@@ -882,7 +887,6 @@ V86_Monitor ENDP
 Int06_V86Entry proc
     call Simulate_Iret
     mov [ebp].Client_Reg_Struc.Client_Int,6
-    mov esp,ebp
     jmp handle_exception_ebp
 Int06_V86Entry endp
 
@@ -912,8 +916,10 @@ HandleException proc
 ;    mov dword ptr [esp+4],0
 @@:
     pushad
+	jmp @F
 handle_exception_ebp::          ; <--- entry exc 06 v86
-
+    mov esp,ebp
+@@:
     mov ax, FLAT_DATA_SEL
     mov ds, eax
     mov ES, eax
@@ -1040,15 +1046,23 @@ endif
 @@waitkey:
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, 00
     mov byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, V86IOPL shl 4 ;set IOPL=3 (to be safe)
-if ?SAFEKEYBOARD    
+if ?SAFEKBD    
+;--- v5.85: kbd interrupt may be dysfunctional because INT 15h, AH=4Fh is hooked.
+;---        hence restore INT 15h before calling INT 16h, AH=00h.
+    mov eax,[OldInt15]
+    xchg eax,ds:[15h*4]
+    push eax
+
     mov eax,[OldInt16]
     xchg eax,ds:[16h*4]  ;make sure we have a safe keyboard
     push eax
 endif
+;--- call INT 16h, AH=00 in v86-mode
     mov eax,16h
     call Exec_Int
-if ?SAFEKEYBOARD
+if ?SAFEKBD
     pop dword ptr ds:[16h*4]
+    pop dword ptr ds:[15h*4] ;v5.85: restore INT 15h      
 endif
     cmp byte ptr [ebp].Client_Reg_Struc.Client_EAX, 1Bh
     jnz @@waitkey
@@ -1144,7 +1158,7 @@ endif
     jb @@No_BP
     cmp esi, NUMBP
     jae @@No_BP
-    call [offset bptable + esi*4]
+    call [esi*4+bptable]
     mov esp,ebp
     @v86popreg
     add ESP,4+4         ; skip int# + error code
@@ -1306,7 +1320,7 @@ endif
 v86excrtn:
     call [vmm_service_table.pSimulate_Int]
     @v86popregX
-    add ESP,4+4         ; remove error code + old calling address
+    add ESP,4+4         ; skip error code & "int#" 
     IRETD               ; return to virtual 86-Mode
 
     align 4
@@ -1820,15 +1834,18 @@ MapPhysPages endp
 
 if ?XMS35COMPAT
 ;--- in: AX:ESI src physical region to map
-;--- in: DX:EDI dst physical region to map
-;--- max 4 4MB pages are set in pagedir, 2 for src, 2 for dst
-;--- the region is mapped at 400000h+x
+;---     DX:EDI dst physical region to map
+;---     EBX: ptr into page directory where the 4MB pages will be mapped
+;--- out: EBX=new Heap4M value
+;--- usually 2 4MB pages are set in pagedir, either for src or for dst,
+;--- but function is reentrant and also both src and dst may be sext.
+;--- start of the mapping region is at end of system space F8000000-800000h ( see Heap4MB )
 
 MapPhysPagesPSE proc uses ecx
 
     @dprintf ?I15DBG or ?MAPDBG, <"MapPhysPagesPSE, ax::esi=%X%08X, dx::edi=%X:%08X, ecx=%X",10>,ax,esi,dx,edi,ecx
 	mov ecx, esi
-	cmp ax,0
+	cmp ax,0		; src beyond 4GB border?
 	jnz @F
 	cmp ecx,?MEMBORDER
 	jc donesrc
@@ -1845,7 +1862,7 @@ MapPhysPagesPSE proc uses ecx
 @@:
 	mov ds:[ebx+4], eax
 	and esi,3fffffh
-	mov eax,ebx
+	mov eax,ebx			; convert PD offset to linear address
 	sub eax,?PAGEDIR
 	shl eax,20
 	add esi,eax
@@ -1853,10 +1870,10 @@ MapPhysPagesPSE proc uses ecx
 	invlpg ds:[esi]
 	invlpg ds:[esi+400000h]
 	.386p
-	lea ebx,[ebx+2*4]
+	lea ebx,[ebx-2*4]	; move backward 2*4MB
 donesrc:
 	mov ecx, edi
-	cmp dx,0
+	cmp dx,0			; dst beyond 4GB border?
 	jnz @F
 	cmp ecx,?MEMBORDER
 	jc donedst
@@ -1881,7 +1898,7 @@ donesrc:
 	invlpg ds:[edi]
 	invlpg ds:[edi+400000h]
 	.386p
-	lea ebx,[ebx+2*4]
+	lea ebx,[ebx-2*4]	; move forward 2*4MB
 donedst:
     @dprintf ?I15DBG or ?MAPDBG,<"MapPhysPagesPSE, esi=%X, edi=%X",10>, esi, edi
 	ret
@@ -1891,8 +1908,8 @@ MapPhysPagesPSE endp
 ;--- in: AX:ESI src physical region to map
 ;--- in: DX:EDI dst physical region to map
 ;--- in: ECX size
-;--- the src region is mapped at 400000h+x (x!=0 if jemm reentered)
-;--- the dst region is mapped at C00000h+x
+;--- the first region (src or dst) is mapped at F8000000h - (2*400000h + x) 
+;--- x is !=0 if both src and dst are sext mem or if jemm has been reentered while the move is running.
 
 MoveMemoryPhysEx proc public
     @dprintf ?I15DBG or ?MAPDBG, <"MoveMemoryPhysEx, ax::esi=%X%08X, dx::edi=%X%08X, ecx=%X",10>,ax,esi,dx,edi,ecx
@@ -1912,12 +1929,12 @@ move_loop:
 	push edx
 	push esi
 	push edi
-	mov ebx,Heap4MB
+	mov ebx,[Heap4MB]
 	push ebx
 	call MapPhysPagesPSE
-	mov Heap4MB, ebx
+	mov [Heap4MB], ebx
 	call MoveMemory
-	pop Heap4MB
+	pop [Heap4MB]
 	pop edi
 	pop esi
 	pop edx
@@ -2244,8 +2261,10 @@ endif
     CMP AL,1100B            ; If not,  continue working
     POP EAX
     JNZ @@v86mon
-    push 0                  ; "int#"
-    @v86pushreg             ; ebp->Client_Reg_Struc
+    sub esp, 2*4            ; room for "error code" and "int#"
+    PUSHAD
+    MOV EBP,ESP             ; ebp -> Client_Reg_Struc
+
     push ss
     pop ds
     push ss

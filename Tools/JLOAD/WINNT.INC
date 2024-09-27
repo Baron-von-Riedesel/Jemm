@@ -318,7 +318,7 @@ IMAGE_DOS_HEADER STRUCT
   e_oemid           WORD      ?		;+36
   e_oeminfo         WORD      ?		;+38
   e_res2            WORD  10 dup(?)	;+40
-  e_lfanew          DWORD      ?	;+60	
+  e_lfanew          DWORD      ?	;+60
 IMAGE_DOS_HEADER ENDS
 
 
@@ -361,14 +361,12 @@ IMAGE_FILE_MACHINE_ALPHA      equ    184h   ;// Alpha_AXP
 IMAGE_FILE_MACHINE_POWERPC    equ    1F0h   ;// IBM PowerPC Little-Endian
 
 
-
 IMAGE_DATA_DIRECTORY struct
 VirtualAddress    DWORD   ?
 Size_			  DWORD   ?
 IMAGE_DATA_DIRECTORY ends
 
 IMAGE_NUMBEROF_DIRECTORY_ENTRIES    equ 16
-
 
 
 IMAGE_OPTIONAL_HEADER  struct           ;size = 28 + 68 + 128 = 224
@@ -407,9 +405,7 @@ NumberOfRvaAndSizes     dd ?	;92
 DataDirectory IMAGE_DATA_DIRECTORY	IMAGE_NUMBEROF_DIRECTORY_ENTRIES dup (<>)	
 IMAGE_OPTIONAL_HEADER  ends
 
-
 ; Subsystem Values
-
 
 IMAGE_SUBSYSTEM_UNKNOWN       equ    0   ;/ Unknown subsystem.
 IMAGE_SUBSYSTEM_NATIVE        equ    1   ;/ Image doesn't require a subsystem.
@@ -446,7 +442,7 @@ FileHeader		IMAGE_FILE_HEADER <>
 OptionalHeader	IMAGE_OPTIONAL_HEADER <>
 IMAGE_NT_HEADERS ends
 
-
+;--- section table
 
 IMAGE_SECTION_HEADER struct
 Name_			db 8 dup (?)	;0
@@ -507,73 +503,7 @@ IMAGE_SCN_MEM_EXECUTE            equ 20000000h ; Section is executable.
 IMAGE_SCN_MEM_READ               equ 40000000h ; Section is readable.
 IMAGE_SCN_MEM_WRITE              equ 80000000h ; Section is writeable.
 
-;//
-;// Symbol format.
-;//
-
-IMAGE_SYMBOL struct
-union N
-ShortName   BYTE 8 dup (?)
-struct Name_  
-Short1  DWORD   ?	;     // if 0, use LongName
-Long1   DWORD   ?    ;     // offset into string table
-ends
-LongName DWORD 2 dup (?)
-ends
-Value			DWORD   ?	;08
-SectionNumber   WORD    ?	;12
-Type_			WORD    ?	;14
-StorageClass    BYTE    ?	;16
-NumberOfAuxSymbols BYTE ?	;17
-IMAGE_SYMBOL ends
-
-;//
-;// Section values.
-;//
-;// Symbols have a section number of the section in which they are
-;// defined. Otherwise, section numbers have the following meanings:
-;//
-
-IMAGE_SYM_UNDEFINED      equ     0     ;// Symbol is undefined or is common.
-IMAGE_SYM_ABSOLUTE       equ     -1    ;// Symbol is an absolute value.
-IMAGE_SYM_DEBUG          equ     -2    ;// Symbol is a special debug item.
-IMAGE_SYM_SECTION_MAX    equ     0FEFFh;// Values 0xFF00-0xFFFF are special
-
-;//
-;// Storage classes.
-;//
-IMAGE_SYM_CLASS_END_OF_FUNCTION     equ -1
-IMAGE_SYM_CLASS_NULL                equ 00000h
-IMAGE_SYM_CLASS_AUTOMATIC           equ 00001h
-IMAGE_SYM_CLASS_EXTERNAL            equ 00002h
-IMAGE_SYM_CLASS_STATIC              equ 00003h
-IMAGE_SYM_CLASS_REGISTER            equ 00004h
-IMAGE_SYM_CLASS_EXTERNAL_DEF        equ 00005h
-IMAGE_SYM_CLASS_LABEL               equ 00006h
-IMAGE_SYM_CLASS_UNDEFINED_LABEL     equ 00007h
-IMAGE_SYM_CLASS_MEMBER_OF_STRUCT    equ 00008h
-IMAGE_SYM_CLASS_ARGUMENT            equ 00009h
-IMAGE_SYM_CLASS_STRUCT_TAG          equ 0000Ah
-IMAGE_SYM_CLASS_MEMBER_OF_UNION     equ 0000Bh
-IMAGE_SYM_CLASS_UNION_TAG           equ 0000Ch
-IMAGE_SYM_CLASS_TYPE_DEFINITION     equ 0000Dh
-IMAGE_SYM_CLASS_UNDEFINED_STATIC    equ 0000Eh
-IMAGE_SYM_CLASS_ENUM_TAG            equ 0000Fh
-IMAGE_SYM_CLASS_MEMBER_OF_ENUM      equ 00010h
-IMAGE_SYM_CLASS_REGISTER_PARAM      equ 00011h
-IMAGE_SYM_CLASS_BIT_FIELD           equ 00012h
-
-IMAGE_SYM_CLASS_FAR_EXTERNAL        equ 00044h
-
-IMAGE_SYM_CLASS_BLOCK               equ 00064h
-IMAGE_SYM_CLASS_FUNCTION            equ 00065h
-IMAGE_SYM_CLASS_END_OF_STRUCT       equ 00066h
-IMAGE_SYM_CLASS_FILE                equ 00067h
-;// new
-IMAGE_SYM_CLASS_SECTION             equ 00068h
-IMAGE_SYM_CLASS_WEAK_EXTERNAL       equ 00069h
-IMAGE_SYM_CLASS_CLR_TOKEN           equ 0006Bh
-
+;--- relocations
 
 IMAGE_RELOCATION struct
 union 
@@ -615,6 +545,7 @@ IMAGE_REL_BASED_MIPS_JMPADDR16       equ 9
 IMAGE_REL_BASED_IA64_IMM64           equ 9
 IMAGE_REL_BASED_DIR64                equ 10
 
+;--- exports
 
 IMAGE_EXPORT_DIRECTORY  struct
 Characteristics 		dd ?
@@ -629,143 +560,6 @@ AddressOfFunctions		dd ?	;RVA "export address table" (EAT)
 AddressOfNames			dd ?	;RVA "name table" ()
 AddressOfNameOrdinals	dd ?	;RVA "ordinals table" (WORDS)
 IMAGE_EXPORT_DIRECTORY  ends
-
-IMAGE_IMPORT_DESCRIPTOR  struct
-union
-Characteristics	dd ?
-OriginalFirstThunk dd ?		;ILT: RVA to DWORD array
-ends
-TimeDateStamp	dd ?
-ForwarderChain	dd ?
-Name_			dd ?		;name of imported dll
-FirstThunk		dd ?		;pointer to IAT if not bound (modified by loader)
-IMAGE_IMPORT_DESCRIPTOR  ends
-
-IMAGE_IMPORT_BY_NAME   struct         ;element of hintname array
-Hint      dw ?           ;index to start search
-Name_     db 1 dup (?)
-IMAGE_IMPORT_BY_NAME   ends
-
-IMAGE_TLS_DIRECTORY struct
-StartAddressOfRawData	DWORD	?
-EndAddressOfRawData		DWORD	?
-AddressOfIndex			DWORD	?
-AddressOfCallBacks		DWORD	?
-SizeOfZeroFill			DWORD	?
-Characteristics			DWORD	?
-IMAGE_TLS_DIRECTORY ends
-
-PIMAGE_TLS_DIRECTORY32 typedef ptr IMAGE_TLS_DIRECTORY
-
-;--- exceptions
-
-EXCEPTION_NONCONTINUABLE equ 1h    
-EXCEPTION_MAXIMUM_PARAMETERS equ 15 
-
-EXCEPTION_RECORD STRUCT
-  ExceptionCode         DWORD      ?
-  ExceptionFlags        DWORD      ?
-  ExceptionRecord       DWORD      ?
-  ExceptionAddress      DWORD      ?
-  NumberParameters      DWORD      ?
-  ExceptionInformation  DWORD EXCEPTION_MAXIMUM_PARAMETERS dup(?)
-EXCEPTION_RECORD ENDS
-
-PEXCEPTION_RECORD typedef ptr EXCEPTION_RECORD
-PCONTEXT typedef ptr CONTEXT
-
-EXCEPTION_POINTERS	struct 
-ExceptionRecord	PEXCEPTION_RECORD	?
-ContextRecord	PCONTEXT	?
-EXCEPTION_POINTERS	ends
-
-PEXCEPTION_POINTERS typedef ptr EXCEPTION_POINTERS
-
-;------------------ resources
-
-IMAGE_RESOURCE_DIRECTORY STRUCT
-    Characteristics dd      ?
-    TimeDateStamp dd        ?
-    MajorVersion dw         ?
-    MinorVersion dw         ?
-    NumberOfNamedEntries dw ?
-    NumberOfIdEntries dw    ?
-IMAGE_RESOURCE_DIRECTORY ENDS
-
-IMAGE_RESOURCE_DIRECTORY_ENTRY STRUCT
-    union
-        rName	RECORD NameIsString:1,NameOffset:31
-        Name_ dd ?
-        Id dw ?
-    ends
-    union
-        OffsetToData dd ?
-		  rDirectory	RECORD DataIsDirectory:1,OffsetToDirectory:31
-    ends
-IMAGE_RESOURCE_DIRECTORY_ENTRY ENDS
-
-IMAGE_RESOURCE_DIRECTORY_STRING STRUCT
-    Length1 dw      ?
-    NameString db   ?
-IMAGE_RESOURCE_DIRECTORY_STRING ENDS
-
-IMAGE_RESOURCE_DIR_STRING_U STRUCT
-    Length1 dw      ?
-    NameString dw   ?
-IMAGE_RESOURCE_DIR_STRING_U ENDS
-
-IMAGE_RESOURCE_DATA_ENTRY STRUCT
-    OffsetToData dd ?
-    Size1 dd        ?
-    CodePage dd     ?
-    Reserved dd     ?
-IMAGE_RESOURCE_DATA_ENTRY ENDS
-
-;--- Thread Information Block
-;--- this structure isnt really defined in winnt.h
-;--- we used the one supplied by Matt Pietrek in a MSDN article
-
-THREAD_INFORMATION_BLOCK	struct
-pvExcept		dd ?		; 00h	
-pvStackUserTop	dd ?		; 04h start stackpointer
-pvStackUserBase	dd ?		; 08h
-UNION TIB_UNION1
-STRUCT						;win9x fields
-pvTDB			dw ?		; 0Ch
-pvThunkSS		dw ?		; 0Eh SS selector used for thunking to 16 bits
-unknown1		dd ?		; 10h
-ENDS
-STRUCT						;winnt/2k fields
-SubSystemTib	dd ?		; 0Ch
-FiberData		dd ?		; 10h
-ENDS
-ENDS
-pvArbitrary		dd ?		; 14h
-ptibSelf		dd ?		; 18h Linear address of TIB structure
-UNION
-STRUCT						;win9x fields
-TIBFlags        DW ?		; 1Ch
-Win16MutexCount	DW ?		; 1Eh
-DebugContext	DD ?		; 20h
-pCurrentPriority DD	?		; 24h
-pvQueue			DD ?		; 28h Message Queue selector
-ENDS
-STRUCT						;winnt/2k fields
-unknown2		DWORD ?		; 1Ch
-processID		DWORD ?		; 20h
-threadID		DWORD ?		; 24h
-unknown3		DWORD ?		; 28h
-ENDS
-ENDS
-pvTLSArray		DWORD ?		; 2Ch
-UNION
-STRUCT
-pProcess		DWORD ?		; 30h
-ENDS
-ENDS
-            	dd ?
-resX			db 8 dup (?)	; adjust to make it 40h bytes in size
-THREAD_INFORMATION_BLOCK	ends
 
         popcontext listing
 

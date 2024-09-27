@@ -12,7 +12,7 @@ AOPT=-c -nologo -coff -Fl$*.lst -Fo$*.obj -I..\..\Include
 OUTDIR=Release
 
 $(OUTDIR)\$(NAME).DLL: $(OUTDIR)\$(NAME).obj Makefile
-#	@link /NOLOGO/SUBSYSTEM:NATIVE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /Entry:DllMain /OPT:NOWIN98 
+#	@link /NOLOGO /SUBSYSTEM:NATIVE /DLL $*.obj /OUT:$*.DLL /MAP:$*.MAP /Entry:DllMain /OPT:NOWIN98 
 #	@\hx\bin\patchpe $*.DLL
 	@jwlink format win pe hx dll ru native file $*.obj name $*.DLL op q,MAP=$*.MAP 
 

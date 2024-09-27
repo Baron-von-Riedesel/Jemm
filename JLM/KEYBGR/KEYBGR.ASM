@@ -27,6 +27,13 @@ LEDflgs  equ 497h;  byte
 DLL_PROCESS_ATTACH  equ 1
 DLL_PROCESS_DETACH  equ 0
 
+ifdef FMTPE
+	option dotname
+.drectve segment info
+	db "-subsystem:native -dll -fixed:no"
+.drectve ends
+endif
+
         .code
 
 ;--- AltGr keys
@@ -335,13 +342,19 @@ exit:
 DllMain endp
 
 ;--- DOS 16-bit "real-mode" code.
-;--- this code will be patched and then copied to DOS memory
+;--- The code will be patched and then copied to DOS memory;
 ;--- it will be the new v86 int 15h handler.
+
+;--- It's assumed that 32-bit and 16-bin code are mixed in section .text;
+;--- then 32-bit label rmcode below can be used to address 16-bit segment _TEXT$16.
+;--- This works with jwlink or jwasm v2.19+, option -pe.
 
     align dword
 rmcode label near
 
-_TEXT16 segment use16 dword public 'CODE'
+;--- for jwasm, option -pe, it's necessary for mixing that the segment name starts with _TEXT$!
+
+_TEXT$16 segment use16 dword public 'CODE'
 @:
         cmp ah, 4Fh
         jz @F
@@ -351,6 +364,6 @@ oldvec  dd 0		; previous handler
         db 0EAh     ; jmp SSSS:0000
 newvec  dd 0		; v86-breakpoint
 sizermcode equ $ - @
-_TEXT16 ends
+_TEXT$16 ends
 
         end DllMain

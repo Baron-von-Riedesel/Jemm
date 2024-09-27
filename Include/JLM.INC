@@ -50,7 +50,7 @@ VxDCall macro name_
 ;--- macro to define a hook proc (Hook_V86_Int_Chain)
 
 HookProc macro name_, oldvect
-    jmp $+8
+;    jmp $+8   ; v5.85: removed
     jmp dword ptr [oldvect]
 name_ proc
     endm

@@ -1,6 +1,8 @@
 
 ;--- publics for Jemm32
 
+	include xms.inc
+
 @seg macro name_, align_
 name_ SEGMENT align_ FLAT public 'CODE'
 endm
@@ -43,7 +45,8 @@ externdef DmaChn:DMAREQ
 externdef bBpTab:byte
 externdef bNoPool:byte
 externdef OldInt06:dword
-if ?SAFEKEYBOARD
+if ?SAFEKBD
+externdef OldInt15:dword
 externdef OldInt16:dword
 endif
 externdef OldInt19:dword

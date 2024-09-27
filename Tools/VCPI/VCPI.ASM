@@ -58,15 +58,15 @@ kddesc label dword			;+48
  else
 		db 3*8 dup (0)
  endif
-KDSEL   equ offset kddesc - offset mygdt
+KDSEL   equ kddesc - mygdt
 endif
-SIZGDT	equ $             - offset mygdt
+SIZGDT	equ $      - mygdt
 
-CSR0	equ offset pmcs   - offset mygdt
-DSR0	equ offset pmds   - offset mygdt
-TRSEL 	equ offset pmtr   - offset mygdt
-FLATSEL	equ offset pmflat - offset mygdt
-HOSTCS	equ offset restab - offset mygdt
+CSR0	equ pmcs   - mygdt
+DSR0	equ pmds   - mygdt
+TRSEL 	equ pmtr   - mygdt
+FLATSEL	equ pmflat - mygdt
+HOSTCS	equ restab - mygdt
 
 pdgdt    label fword
          dw SIZGDT-1            ;limit GDTR

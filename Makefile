@@ -128,10 +128,10 @@ LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 32BITDEPS=src\jemm32.inc src\jemm.inc src\external.inc src\debug.inc Makefile
 
 {src\}.asm{$(OUTD1)}.obj:
-	@$(ASM) -c -nologo -coff -Cp -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<
+	@$(ASM) -c -nologo -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<
 
 {src\}.asm{$(OUTD2)}.obj:
-	@$(ASM) -c -nologo -coff -Cp -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
+	@$(ASM) -c -nologo -coff -D?SAFEKBD=1 -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
 
 ALL: $(OUTD1) $(OUTD2) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE
 

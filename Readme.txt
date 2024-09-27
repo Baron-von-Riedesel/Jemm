@@ -5,7 +5,9 @@
   2.   Jemm's Features
   3.   Commandline Options
   4.   EMS Implementation Notes
-  5.   Emulation of privileged Opcodes
+  5.   Technical Details
+  5.1  Emulation of privileged Opcodes
+  5.2  IOPL Sensitive Instructions
   6.   Errors and Warnings
   7.   Additional Tools
   7.1  UMBM
@@ -228,7 +230,9 @@
    + Int 67h, AH=5Dh, enable/disable OS/E
 
 
- 5. Emulation of privileged Opcodes
+ 5. Technical Details
+
+ 5.1. Emulation of privileged Opcodes
 
  To provide Expanded Memory an EMM Emulator like Jemm runs the cpu in
  so-called V86-mode. This mode does not allow to run privileged opcodes.
@@ -242,6 +246,12 @@
  - WRMSR
  - RDMSR
  - RDTSC
+
+ 5.2. IOPL Sensitive Instructions
+
+ Jemm runs V86-mode code with IOPL 3. That means, the instructions that are
+ sensitive to IOPL in V86-mode - CLI, STI, PUSHF, POPF, INT xx, IRET - will
+ run at full speed, without causing a GPF.
 
 
  6. Errors and Warnings
@@ -486,6 +496,9 @@
    isn't compatible with the VME option. This requirement is a strong sign
    that this extender switches to V86 mode on its own, which is a bad idea
    for a VCPI client.
+
+ þ Unlike MS Emm386, Jemm does not try to identity-map extended memory in its
+   address space. This prevents the PL0 debugger 386SWAT from "intruding".
 
  þ The FASTBOOT option can work with many versions of DOS. However,
    additional settings might be needed:

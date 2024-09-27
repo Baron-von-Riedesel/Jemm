@@ -131,12 +131,14 @@ MoveMemory  		dd 0
 
 v86_bp	BPDYN ?MAXBP dup (<>)
 
+if 0 ; defined in x86.inc
 GATE struct
-_ofslo dw ?
-_segm  dw ?
-_attr  dw ?
-_ofshi dw ?
+wOfsLo dw ?
+wSeg   dw ?
+wAttr  dw ?
+wOfsHi dw ?
 GATE ends
+endif
 
 	.code
 
@@ -228,18 +230,18 @@ endif
 
 	mov esi, eax
 	add esi, 20h*8
-	mov ax, [esi].GATE._ofshi
+	mov ax, [esi].GATE.wOfsHi
 	shl eax, 16
-	mov ax, [esi].GATE._ofslo
+	mov ax, [esi].GATE.wOfsLo
 	mov dword ptr [dfOldint20+0], eax
-	mov ax, [esi].GATE._segm
+	mov ax, [esi].GATE.wSeg
 	mov word ptr [dfOldint20+4], ax
 	mov eax, offset Int20_Handler
-	mov [esi].GATE._ofslo, ax
+	mov [esi].GATE.wOfsLo, ax
 	shr eax, 16
-	mov [esi].GATE._ofshi, ax
+	mov [esi].GATE.wOfsHi, ax
 	mov eax, cs
-	mov [esi].GATE._segm, ax
+	mov [esi].GATE.wSeg, ax
 @@exit:
 	@dprintf ?INITDBG, <"Init exit",10>
 	ret
@@ -916,6 +918,9 @@ Hook_V86_Int_Chain proc
 	mov edx,[lpHooks]
 	cmp [edx+eax*4].HOOKV86.dwHook,0	; 4=sizeof HOOKV86 struct
 	jz @@newhook
+
+;--- chain with old hook proc
+
 	mov ecx,[edx+eax*4].HOOKV86.dwHook
 	mov [edx+eax*4].HOOKV86.dwHook, esi
 	mov eax, [esi-4]
@@ -930,23 +935,36 @@ Hook_V86_Int_Chain proc
 @@newhook:
 	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: new hook, eax=%X",10>, eax
 	mov [edx+eax*4].HOOKV86.dwHook, esi
+
+;--- set the bit in TSS interrupt redirection bitmap for VME.
+;--- store the old state in [edx+1024] (behind the HOOKSTR items).
+
+;--- For hardware interrupts, this isn't needed, but shouldn't harm...
+if 0
+	cmp al, 8
+	jb @F
+	cmp al, 10h
+	jb @@done
+	cmp al, 70h
+	jb @F
+	cmp al, 78h
+	jb @@done
+@@:
+endif
+
 	push ebx
 	push esi
-
 if 0
 	mov ecx, [esi-4]
 	mov dword ptr [ecx], 0
 endif
-
-;--- now set the bit in the TSS for the VME
-;--- store the old state in [edx+1024] (behind the HOOKSTR items)
 
 	@dprintf ?V86HOOKDBG, <"Hook_V86_Int_chain: modifying Int bitmap, eax=%X",10>, eax
 	mov ebx, [dwTSSbase]
 	movzx ecx, [ebx].TSSSEG.tsOfs
 	add ebx, ecx
 	sub ebx, 32    ;=256/8
-	bts [ebx],eax
+	bts [ebx], eax
 	jc @F
 	btr [edx+1024], eax
 	jmp bitset
@@ -1065,6 +1083,7 @@ Unhook_PM_Fault endp
 	align 4
 
 ;--- _PhysIntoV86(physpg, VM, VMLinPgNum, nPages, flags)
+;--- map n physical pages into V86
 
 physpg     equ <esp+1*4>
 VM         equ <esp+2*4>
@@ -1087,7 +1106,7 @@ _PhysIntoV86 proc
 	shl esi,12
 @@nextitem:
 	mov eax, esi
-	or eax,7
+	or eax, PTF_PRESENT or PTF_RW or PTF_USER
 	stosd
 	add esi,1000h
 	loop @@nextitem
@@ -1097,13 +1116,11 @@ _PhysIntoV86 proc
 	pop edi
 	pop esi
 	ret
-@@error:
-	xor eax,eax
-	ret
 	align 4
 _PhysIntoV86 endp
 
 ;--- _LinMapIntoV86(LinPgNum, VM, VMLinPgNum, nPages, flags)
+;--- map n linear pages into V86
 
 LinPgNum  equ <esp+1*4>
 VM        equ <esp+2*4>
@@ -1130,9 +1147,6 @@ _LinMapIntoV86 proc
 @@done:
 	pop edi
 	pop esi
-	ret
-@@error:
-	xor eax,eax
 	ret
 	align 4
 _LinMapIntoV86 endp
@@ -1321,7 +1335,7 @@ _PageFree endp
 ;--- flags: ???
 ;--- out: linear address in EAX or -1
 ;--- "private" starts at 400000h
-;--- "shared" possibly at F8000000h downwards?
+;--- "shared" possibly at F8000000h downwards? (already used by 4MB page heap!)
 ;--- system at ?SYSTEMADDR (usually F8400000h)
 ;--- the first PTE will have the 
 

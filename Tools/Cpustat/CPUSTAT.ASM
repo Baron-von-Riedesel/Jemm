@@ -560,7 +560,19 @@ nextitem:
 	jz @F
 	mov dx, di
 	shl edx, 22
-	invoke printf, CStr("%8lX: %08lX (4 MB page)",lf), edx, eax
+
+;--- 4MB page PTE:
+;--- bits 22-31: address 22-31
+;--- bits 13-20: address 32-39
+;--- bit 21: 0
+;--- bit 12: PAT
+
+	mov ecx, eax
+	shr ecx, 13
+	movzx ecx, cl
+	mov ebx, eax
+	and ebx, 0ffc00000h
+	invoke printf, CStr("%8lX: %08lX (4 MB page: phys=%X%08lX)",lf), edx, eax, cx, ebx
 	jmp skipitem
 @@:
 	push eax
@@ -650,12 +662,31 @@ skipitem:
 	ret
 DispIOPB endp
 
+;--- display Interrupt redirection bitmap
+
+DispRedir proc stdcall uses si di pBitmap:ptr
+	invoke printf, CStr("Interrupt redirection bitmap:",lf)
+	mov bx, 0
+	mov di, pBitmap
+nextbit:
+	bt [di], bx
+	jnc skipitem
+	invoke printf, CStr("%2X "), bx
+skipitem:
+	inc bx
+	cmp bh, 0
+	jz nextbit
+	invoke printf, CStr(lf)
+	ret
+DispRedir endp
+
 DispTSS proc stdcall wSel:word, dwBase:dword, wLimit:word
 
 local wSize:word
 local dwPhys:dword
 local pTSS:ptr
 local pIOPB:ptr
+local Redir[32]:byte
 
 	mov pTSS, 0
 	mov pIOPB, 0
@@ -684,6 +715,18 @@ local pIOPB:ptr
 	invoke copymem, pIOPB, edx, wSize
 	jc noiopb
 	invoke DispIOPB, pIOPB, wSize
+if 1
+	mov eax, cr4
+	test al, 1
+	jz noiopb
+	mov bx, pTSS
+	movzx edx, [bx].TSS.wOffs
+	sub edx, 32
+	add edx, dwPhys
+	invoke copymem, addr Redir, edx, 32
+	jc noiopb
+	invoke DispRedir, addr Redir
+endif
 noiopb:
 	invoke free, pIOPB
 	invoke free, pTSS
@@ -790,7 +833,7 @@ usage:
 	and ah,0F0h
 	cmp AH,70H				;on a 80386 (real-mode) 7x is in AH
 	jnz is286
-	db 66h		;MASM doesn't know SMSW EAX
+	db 66h					;MASM doesn't know SMSW EAX
 	smsw ax
 	mov [_msw],eax
 	jmp is386
@@ -804,31 +847,44 @@ is386:
 	mov [modflg],ax
 
 	mov eax,[_msw]
-	bt eax,31
+	bt eax,31	; PG
 	setc dl
 	movzx si,dl
-	bt eax,18
+	bt eax,18	; AM
 	setc dl
 	movzx di,dl
-	bt eax,16
+	bt eax,16	; WP
 	setc cl
 	movzx cx,cl
-	bt ax,5
+	bt ax,5		; NE   
 	setc dl
 	movzx dx,dl
 
+	.data
+wMP dw 0
+wEM dw 0
+wTS dw 0
+	.code
+
+	bt ax,3		; TS
+	setc byte ptr [wTS]
+	bt ax,2		; EM
+	setc byte ptr [wEM]
+	bt ax,1		; MP
+	setc byte ptr [wMP]
+
 	mov bx,CStr('Real')
-	bt ax,0
+	bt ax,0		; PE
 	setc al
 	jnc @F
 	mov bx,CStr('V86')
 @@:    
 	movzx ax,al
-	invoke printf, CStr("MSW: %lX (PG=%x, AM=%x, WP=%x, NE=%x, PE=%x); %s-mode",lf),_msw, si, di, cx, dx, ax, bx 
+	invoke printf, CStr("MSW: %lX (PG=%x AM=%x WP=%x NE=%x TS=%u EM=%u MP=%u PE=%x); %s-mode",lf),_msw, si, di, cx, dx, wTS, wEM, wMP, ax, bx 
 
-	db 66h
-	sgdt gdtr
-	db 66h
+	db 66h			; probably useless, just lgdt may need operand size prefix
+	sgdt gdtr     
+	db 66h			; probably useless, just lidt may need operand size prefix
 	sidt idtr
 
 	cmp bOpt, 0
@@ -903,9 +959,21 @@ is386:
 	pop bp
 
 nocr4:
+
+;--- might be a good idea to check CR0.MP & CR0.EM bits.
+;--- if CR0.MP=1, a fwait opcode will raise an exception 07 if CR0.TS=1
+;--- if CR0.EM=1, any fp opcode will raise an exception 07.
+;--- MP=bit 1, EM=bit 2, TS=bit 3.
+
+	test [_msw], 4
+	jz @F
+	invoke printf, CStr("CR0.EM=1, won't run FPU instructions",lf)
+	jmp nofpu
+@@:
 	fnstsw ax
 	fnstcw wSize
 	invoke printf, CStr("FCW: %X  FSW: %X",lf), wSize, ax
+nofpu:
 
 	mov eax, dr0
 	mov ebx, dr1

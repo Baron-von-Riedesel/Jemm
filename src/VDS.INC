@@ -3,9 +3,9 @@
 
 ;--- flags in DX used by various VDS functions
 
-VDSF_COPY       equ 02h	;bit 1
-VDSF_NOBUFFER   equ 04h	;bit 2
-VDSF_NOREMAP    equ 08h	;bit 3 - Jemm ignores this flag!
+VDSF_COPY       equ 02h	;bit 1 - copy in/out of DMA buffer (8107/8108)
+VDSF_NOBUFFER   equ 04h	;bit 2 - don't alloc DMA buffer (8103)
+VDSF_NOREMAP    equ 08h	;bit 3 - change PTEs; Jemm ignores this flag!
 VDSF_64KALIGN   equ 10h	;bit 4
 VDSF_128KALIGN  equ 20h	;bit 5
 VDSF_PTE        equ 40h	;bit 6 - 1=scatter_lock returns PTEs 

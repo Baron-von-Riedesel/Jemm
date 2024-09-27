@@ -32,8 +32,9 @@ endif
 
 	.code
 
-;--- entry from real-mode. This must be at offset 0.
-;--- CS,DS,ES=Flat, SS unknown
+;--- entry from real-mode - must be at offset 0.
+;--- This is a true VCPI entry, meaning SS:ESP still on host stack.
+;--- CS,DS,ES=Flat
 ;--- ecx->VMMS structure
 ;--- edi=phys page for protected-mode stack
 ;--- ebp=vcpi entry (if ?USEVCPIEXIT is 1)
@@ -41,9 +42,17 @@ endif
 
 start proc stdcall public
 
-	or edi,7
+	or edi, PTF_PRESENT or PTF_RW or PTF_USER
 	mov eax, ds
-	xchg edi,ds:[?PAGEDIR+?PAGETABSYS+0FFCh]  ;set the stack PTE
+
+;--- set the 4kB stack allocated in 16-bit init code
+;--- to be fixed: don't modify PTEs of the F8000000-F83FFFFF region, it's
+;--- reserved for Jemm!
+
+	xchg edi,ds:[?PAGEDIR+?PAGETABSYS+0FFCh]  ;set the stack PTE ( =F83FF000h )
+
+;--- init stack. It's flat; since Jemm's ?SYSBASE is 0F8000000h, the
+;--- stack is F8400000h.
 
 	mov ss, eax
 	mov esp, ?SYSBASE + 400000h
@@ -79,7 +88,7 @@ endif
 
 ;--- call the modules entry point
 
-	mov esi,[ebx+3Ch]
+	mov esi,[ebx].IMAGE_DOS_HEADER.e_lfanew
 	add esi, ebx	;point to NT header
 
 	mov edi, ebx

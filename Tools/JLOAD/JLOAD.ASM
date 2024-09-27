@@ -693,11 +693,12 @@ InitVMM proc uses di esi
 	@dprintf ?RMDBG, <"InitVMM enter",lf>
 
 	invoke  GetLinear, offset buffer
-	mov dwBuffer, eax
+	mov [dwBuffer], eax
 if SIZEVMM gt 1000h
 	xor esi,esi
 endif
-	mov ecx,cr3
+	mov ecx, cr3
+	and cx, 0F000h
 	invoke CopyExtMem, eax, ecx, 1000h	;copy page dir to buffer
 	jnc @F
 	mov dx,DStr("unable to read page directory",13,10)
@@ -743,6 +744,7 @@ endif
 	mov dword ptr [buffer+(?SYSTEMADDR shr 20)],edx
 
 	mov ecx,cr3 					;"write" updated page dir
+	and cx, 0F000h
 	invoke CopyExtMem, ecx, [dwBuffer], 1000h
 	mov dx,DStr("error setting content of page dir",13,10)
 	jc error
@@ -795,32 +797,28 @@ exit:
 error:
 	call errorout
 	mov edx, [dwPageTab]
-	and edx, edx
-	jz @F
-	mov ax,0DE05h
-	int 67h
-@@:
+	call freepg
 	mov edx, [dwVmmPage]
-	and edx, edx
-	jz @F
-	mov ax,0DE05h
-	int 67h
-@@:
+	call freepg
 if SIZEVMM le 1000h
 	mov edx, esi
-	and edx, edx
-	jz @F
-	mov ax,0DE05h
-	int 67h
-@@:
+	call freepg
 endif
 	xor ax,ax
 	ret
+freepg:
+	and edx, edx
+	jz @F
+	mov ax,0DE05h
+	int 67h
+@@:
+	retn
 
 InitVMM endp
 
 ;--- enter 32bit VMM code
 ;--- returns ax==0 on failure
+;--- allocs a 4kB stack
 
 RunVMM proc public
 
@@ -907,9 +905,11 @@ endif
 ;--- returncode from JLM is stored in EDX
 	push edx
 
-	mov edx,[dwStack]
+;--- free the 4kB stack
+	mov edx, [dwStack]
 	mov ax,0DE05h
 	int 67h
+
 if ?CATCHEXC06
 	push ds
 	lds dx,[oldint06]

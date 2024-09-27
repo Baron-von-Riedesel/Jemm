@@ -4,12 +4,12 @@
 
 	.286
 ;	.model small	;NO model, _TEXT must be PARA, BEGDATA is first in DGROUP!
-	option casemap:none
 	option proc:private
 
 	include jemm.inc
 	include jemm16.inc
 	include debug16.inc
+	include xms.inc
 if ?KD
 	include debugsys.inc
 endif
@@ -449,8 +449,7 @@ UnloadJemm proc c public
 	pop ds
 	mov si, offset intvecs
 @@nextvec:
-	db 36h	;SS prefix
-	lodsb
+	lodsb ss:[si]
 	cmp al,-1
 	jz @@ok
 	movzx bx,al

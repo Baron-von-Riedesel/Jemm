@@ -21,8 +21,13 @@ endif
 
 ?CODEIN2PAGE    EQU 0       ; 1=move code away from first page
 ?USETRIPLEFAULT EQU 0       ; 1=use triple fault to reboot
-?SAFEKEYBOARD   equ 0       ; 1=use original vector for int 16h kbd poll
+ifndef ?SAFEKBD
+?SAFEKBD        equ 0       ; 1=use original vector for int 16h kbd poll
+endif
 ?DYNTRAPP60     equ 1       ; 1=trap port 60h conditionally only
+ifndef ?MAPEXTMEM
+?MAPEXTMEM      equ 0       ; 1="identity map" extended memory (SBEINIT.COM/386SWAT may need this)
+endif
 
 GDT_SIZE        equ 200h    ; size of GDT
 
@@ -62,13 +67,7 @@ endif
 
 ?FASTENTRIES    equ 32
 
-;--- page table flags
-
-PTF_PRESENT equ 1
-PTF_RW      equ 2
-PTF_USER    equ 4
-PTF_WT      equ 8
-PTF_4MB     equ 80h
+	include x86.inc
 
 ;--- EMS constants
 
@@ -78,40 +77,6 @@ PTF_4MB     equ 80h
 EMS_MAX_HANDLES         EQU 255 ; std=255, the EMS handle is a byte value
 EMS_MAX_PAGES_ALLOWED   EQU 800h; 2048*16 = 32 MB
 EMS_MAXSTATE            EQU 64  ; std=64, number of EMS save state items
-
-;--- EMS status codes
-
-EMSS_OK                 equ 00h
-EMSS_SOFTWARE_ERR       equ 80h ;unexpected error
-EMSS_HARDWARE_ERR       equ 81h ;should never occur with EMM emulators
-EMSS_EMM_BUSY           equ 82h ;should never occur with EMS 3.2+
-EMSS_INVALID_HANDLE     equ 83h
-EMSS_INVALID_FUNCTION   equ 84h ;function code in AH not defined
-EMSS_NO_MORE_HANDLES    equ 85h ;all handles in use
-EMSS_CONTEXT_EXISTS     equ 86h ;45h: try to free a handle with saved context
-EMSS_OUT_OF_PAGES       equ 87h ;43h, 51h, 5A00h, 5A01h
-EMSS_OUT_OF_FREE_PAGES  equ 88h ;43h, 51h, 5A00h, 5A01h
-EMSS_ZERO_PAGES         equ 89h ;43h
-EMSS_LOG_PAGE_INVALID   equ 8Ah ;44h, 50h, 55h, 56h, 57h
-EMSS_PHYS_PAGE_INVALID  equ 8Bh ;44h, 4Fh, 50h, 55h, 56h
-EMSS_CONTEXT_STACK_FULL equ 8Ch ;46h
-EMSS_STATE_ALREADY_SAVED equ 8Dh;47h
-EMSS_NO_STATE_IS_SAVED  equ 8Eh ;48h
-EMSS_INVALID_SUBFUNC    equ 8Fh ;4Eh, 4Fh, 50h, 52h, 53h, 54h, 57h, 58h, 59h, 5Bh
-EMSS_UNDEF_ATTR_TYPE    equ 90h ;
-EMSS_FEATURE_UNSUPP     equ 91h ;52h
-EMSS_OVERLAP_OCCURED    equ 92h ;5700h
-EMSS_LENGTH_EXCEEDED    equ 93h ;57h
-EMSS_CONVEMS_OVERLAPP   equ 94h ;57h (jemm never returns this code)
-EMSS_OFFS_EXCEEDS_PGSIZ equ 95h ;57h
-EMSS_REGLEN_EXCEEDS_1MB equ 96h ;57h
-EMSS_REGIONS_OVERLAPP   equ 97h ;5701h
-EMSS_TYPE_UNDEFINED     equ 98h ;57h
-EMSS_ALT_MAPS_UNSUPP    equ 9Ch ;5B01h, 5B04h, 5B06h, 5B07h, 5B08h
-EMSS_INVALID_ALT_MAP    equ 9Dh ;5Bh (jemm never returns this code)
-EMSS_MBBOUNDARY_CROSSED equ 0A2h;57h
-EMSS_SRC_ARRAY_INVALID  equ 0A3h;4E01h, 5B01h
-EMSS_ACCESS_DENIED      equ 0A4h;5Bh
 
 ;--- EMS handle descriptor
 
@@ -136,15 +101,6 @@ EMSSTAT ends
 
 PBF_DONTEXPAND  EQU 1   ; don't try to expand this block
 PBF_DONTFREE    EQU 2   ; don't try to free this block
-
-DESCRIPTOR struct
-wLimit  dw ?    ;+0
-wA0015  dw ?    ;+2
-bA1623  db ?    ;+4
-bAttr   db ?    ;+5
-bLimEx  db ?    ;+6
-bA2431  db ?    ;+7
-DESCRIPTOR ends        
 
 ;--- selector definitions
 ;--- FLAT_CODE_SEL must be first descriptor in GDT
@@ -199,60 +155,6 @@ if ?UNLOAD
 pUnload dd ?
 endif
 BPTABLE ends
-
-
-;--- TSS structure
-;--- the only fields in the TSS which are needed are tsEsp0, tsSS0
-;--- and tsOfs. Jemm386 will never switch tasks.
-
-TSSSEG  struct
-        dd ?    ;+00 selector
-tsEsp0  dd ?    ;+04
-tsSS0   dd ?    ;+08
-        dq ?    ;+0C
-        dq ?    ;+14
-tsCR3   dd ?    ;+1C
-tsEip   dd ?    ;+20
-tsEfl   dd ?    ;+24
-tsEax   dd ?    ;+28
-tsEcx   dd ?    ;+2C
-tsEdx   dd ?    ;+30
-tsEbx   dd ?    ;+34
-tsEsp   dd ?    ;+38
-tsEbp   dd ?    ;+3C
-tsEsi   dd ?    ;+40
-tsEdi   dd ?    ;+44
-tsES    dd ?    ;+48
-tsCS    dd ?    ;+4C
-tsSS    dd ?    ;+50
-tsDS    dd ?    ;+54
-tsFS    dd ?    ;+58
-tsGS    dd ?    ;+5C
-tsLDTR  dd ?    ;+60
-tsFlags dw ?    ;+64
-tsOfs   dw ?    ;+66
-TSSSEG  ends
-
-;--- stack frame for PUSHAD
-
-PUSHADS struct
-rEDI    dd ?
-rESI    dd ?
-rEBP    dd ?
-        dd ?    ;reserved
-rEBX    dd ?
-rEDX    dd ?
-rECX    dd ?
-rEAX    dd ?
-PUSHADS ends
-
-;--- IRET stack frame for 32bit protected-mode
-
-IRETD32 struct
-pEIP    dd ?    ;+0
-pCS     dd ?    ;+4 
-pEFL    dd ?    ;+8
-IRETD32 ends
 
 ;--- client register structure in V86 monitor.
 ;--- consists of:
@@ -388,12 +290,12 @@ else
 endif
 endm
 
-;--- macro to convert a a pointer to PTEs in system page table
+;--- macro to convert a pointer to PTEs in system page table
 ;--- to the according linear address
 
 @SYSPTE2LINEAR macro reg, pPT
-    mov     reg, pPT
-    sub     reg, ?SYSLINEAR+?PAGETABSYS
-    shl     reg, 10
-    add     reg, ?SYSBASE
+    mov reg, pPT
+    sub reg, ?SYSLINEAR+?PAGETABSYS
+    shl reg, 10
+    add reg, ?SYSBASE
 endm

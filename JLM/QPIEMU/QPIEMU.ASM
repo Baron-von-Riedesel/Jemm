@@ -26,7 +26,15 @@ DLL_PROCESS_DETACH  equ 0
 ;--- symbol. This is the simplest method to make JLoad know the
 ;--- device id.
 
+ifdef ?PE
+	public export ddb	;syntax accepted since jwasm v2.19
+	option dotname
+.drectve segment info
+	db "-subsystem:native -dll -fixed:no"
+.drectve ends
+else
 	public ddb
+endif
 
 ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"QPIEMU",0,0, dispatch >
 

@@ -79,6 +79,8 @@ endif
 
 vds_handler proc public
 
+    and byte ptr [ebp].Client_Reg_Struc.Client_EFlags+2, not 1  ;v5.85: clear RF
+
     mov eax, [EBP].Client_Reg_Struc.Client_EAX
     cmp ah,81h
     jnz @@isnotvds
@@ -387,7 +389,7 @@ vds_copyinbuff endp ;fall thru
 
 vds_copyinbuffEx proc
 
-    call testbuffer
+    call testbuffer		; returns EBX=linear address (inside DMA buffer)
     jc @@exit
     mov ecx, [edi].DDS.dwSize
     movzx eax, [edi].DDS.wSeg

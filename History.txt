@@ -2,21 +2,21 @@
  History
 
  __.__.2024: v5.85
-
  - address region 11xxxx-3FFFFF is now only mapped as needed.
  - optional kernel-debugger-aware variant calls int 68h for deinitialization.
  - better log displays via macro @dprintf.
  - log displays redirected to kernel debugger if one has been detected.
  - buffered output of log displays removed.
- - VDS func ax=810Ch: set ZF if disable cnt reaches zero.
- - VDS: added several argument checks ( mostly DX ).
+ - fix: VDS func ax=810Ch: set ZF if disable cnt reaches zero.
+ - fix: VDS: added several argument checks ( mostly DX ).
  - fix: ISA DMA ports A-F must be handled by Jemm to detect FD accesss 
    even if external handler has trapped these ports.
- - JemmDbg renamed to JDeb386 and separated from Jemm.
+ - switch ?SAFEKBD=1 is now default for JemmEx.
+ - JemmDbg renamed to JDeb386 and removed from Jemm package.
  - JemmExL removed.
+ - CPUSTAT: optionally displays interrupt redirection bitmap.
 
  12.02.2024: v5.84
-
  - fixed: Simulate_IO() no longer calls trap handler.
  - QPIEMU: new JLM that partly implements Qemm's API (QPI).
  - fixed: int 67h, ax=5B01h will return error code A3h if checksum invalid.

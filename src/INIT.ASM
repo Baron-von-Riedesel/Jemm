@@ -214,7 +214,7 @@ SaveIVT endp
 endif
 
 if ?SHAREDIDT
-externdef V86IDT:near
+externdef V86IDT:GATE
 endif
 
 ;--- set int EAX to value of ECX
@@ -223,15 +223,15 @@ endif
 
 SetIDTEntry proc
 if ?SHAREDIDT
-    mov word ptr [offset V86IDT+eax*8+0], cx
+    mov word ptr [eax*8+V86IDT].wOfsLo, cx
     shr ecx,16
-    mov word ptr [offset V86IDT+eax*8+6], cx
+    mov word ptr [eax*8+V86IDT].wOfsHi, cx
 else
     push ebx
     mov ebx,[dwV86IDT]
-    mov word ptr [ebx+eax*8+0], cx
+    mov word ptr [ebx+eax*8].GATE.wOfsLo, cx
     shr ecx,16
-    mov word ptr [ebx+eax*8+6], cx
+    mov word ptr [ebx+eax*8].GATE.wOfsHi, cx
     pop ebx
 endif
     ret
@@ -448,23 +448,40 @@ if ?PGE
 endif
     loop @B
 
-ifdef ?MAPFULL4M
+if ?MAPEXTMEM
 
-;-- for VCPI intruders, set remaining PTEs in page tab 0.
+;-- for VCPI intruders, identity map remaining PTEs in page tab 0.
 
     push eax
-if 1    ;SBEINIT.COM assumes linear=physical mapping
+ if 1
     movzx eax, di
     and ah, 0Fh
     shl eax, 10     ;transform offset in page table -> linear address
     or al, PTF_PRESENT or PTF_RW or PTF_USER
-endif
+ endif
     mov cx, 400h    ;hiword ecx is clear
 @@:
     stosd
     ADD EAX,1000h
     test di,0FFFh
     loopnz @B
+
+;--- identity map extended memory 400000-7fffffffh?
+;--- with PSE, there's no big loss, since just the page dir
+;--- has to be adjusted. However, possible intruders most
+;--- likely won't understand 4MB PDEs.
+ if 1
+    sub edi, 2000h-4	; =pagedir+4
+    mov ecx, 1FFh
+;--- bit 7=1: PSE 4MB page
+;--- bits 13-21: 0
+;--- bits 22-31: addressbits 22-31
+    mov eax, 400000h or PTF_4MB or PTF_PRESENT or PTF_RW or PTF_USER
+@@:
+    stosd
+    add eax, 400000h
+    loop @B
+ endif
     pop eax
 endif
 
@@ -1249,7 +1266,9 @@ endif
 
     mov eax, ds:[ecx+06h*4]
     mov [OldInt06],eax
-if ?SAFEKEYBOARD    
+if ?SAFEKBD    
+    mov eax, ds:[ecx+15h*4]
+    mov [OldInt15],eax
     mov eax, ds:[ecx+16h*4]
     mov [OldInt16],eax
 endif
