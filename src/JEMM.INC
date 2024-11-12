@@ -108,7 +108,7 @@ EMMDEV_GETSTAB equ 8    ;get VMM info
 ;--- ioctl write functions
 EMMDEV_UPDATE  equ 15
 
-;--- structure returned by Jemm386 if an SYSVARS request was made
+;--- structure returned by Jemm386 if a SYSVARS request was made
 ;--- for device "EMMXXXX0"
 
 EMX06 struct

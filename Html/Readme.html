@@ -363,15 +363,15 @@
  
  - obviously commandline options differ.
  - the device driver API, accessed by opening file "EMMXXXX0" and
-   then issueing IOCTL cmds, differ.
+   then issueing IOCTL cmds, differs.
  - Jemm doesn't support the so-called GEMMIS API.
  - Jemm doesn't support the IO port trapping API of MS Emm386.
 
- JemmEx supports UMBs (Upper Memory Blocks) managed by the XMS API, but the
- management is different: there's no chain of UMBs, linked with a 16-byte
- header ( similar to DOS MCBs [Memory Control Blocks] ). Instead, the UMB
+ Jemm supports UMBs (Upper Memory Blocks) accessed via the XMS API, but the
+ management is different: unlike MS Emm386, there's no chain of UMBs, linked
+ with a 16-byte header ( somewhat similar to DOS MCBs ). Instead, the UMB
  addresses and sizes are stored in a table in extended memory, not accessible
- by external programs. The table can hold up to 8 entries.
+ by external programs. The table can hold up to 8 blocks.
  
 
  8. Additional Tools

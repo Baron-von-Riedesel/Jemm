@@ -83,14 +83,14 @@ if ?INTEGRATED
     jz @@ok2
     cmp al,8Eh/2        ; 8E-8F?
     jz @@ok3
-if ?XMS35
+ if ?XMS35
     cmp al,0C8h/2       ; C8-C9?
     jz @@ok4
     cmp ah,0CBh         ; CB?
     jz @@ok5
     cmp ah,0CCh         ; CC?
     jz @@ok5
-endif
+ endif
     cmp ah,12h
     jbe umb_handler
     xor ax,ax           ; everything else fails

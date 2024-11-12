@@ -9,18 +9,19 @@
   5.1  Emulation of privileged Opcodes
   5.2  IOPL Sensitive Instructions
   6.   Errors and Warnings
-  7.   Additional Tools
-  7.1  UMBM
-  7.2  JEMFBHLP
-  7.3  CPUSTAT
-  7.4  EMSSTAT
-  7.5  XMSSTAT
-  7.6  MEMSTAT
-  7.7  VCPI
-  7.8  MOVEXBDA
-  7.9  CPUID
-  8.   Troubleshooting, Hints
-  9.   License
+  7.   Compatibility
+  8.   Additional Tools
+  8.1  UMBM
+  8.2  JEMFBHLP
+  8.3  CPUSTAT
+  8.4  EMSSTAT
+  8.5  XMSSTAT
+  8.6  MEMSTAT
+  8.7  VCPI
+  8.8  MOVEXBDA
+  8.9  CPUID
+  9.   Troubleshooting, Hints
+  10.  License
 
 
  1. About Jemm
@@ -344,9 +345,26 @@
    on startup.
 
 
- 7. Additional Tools
+ 7. Compatibility
 
- 7.1. UMBM
+ Jemm is NOT an MS Emm386 clone. Differences are:
+ 
+ - obviously commandline options differ.
+ - the device driver API, accessed by opening file "EMMXXXX0" and
+   then issueing IOCTL cmds, differs.
+ - Jemm doesn't support the so-called GEMMIS API.
+ - Jemm doesn't support the IO port trapping API of MS Emm386.
+
+ Jemm supports UMBs (Upper Memory Blocks) accessed via the XMS API, but the
+ management is different: unlike MS Emm387, there's no chain of UMBs, linked
+ with a 16-byte header ( somewhat similar to DOS MCBs ). Instead, the UMB
+ addresses and sizes are stored in a table in extended memory, not accessible
+ by external programs. The table can hold up to 8 blocks.
+ 
+
+ 8. Additional Tools
+
+ 8.1. UMBM
 
  UMBM is a small tool only useful in conjunction with Uwe Sieber's UMBPCI.
  The main purpose of UMBM is to allow DOS to load the XMM into upper memory.
@@ -373,7 +391,7 @@
  to CONFIG.SYS. UMBM has been tested to run with MS-DOS 6/7 and FreeDOS.
 
 
- 7.2. JEMFBHLP
+ 8.2. JEMFBHLP
 
  JEMFBHLP is a tiny device driver only needed if both FreeDOS and Jemm's
  FASTBOOT option are used. FreeDOS v1.0 does not provide the information
@@ -381,10 +399,10 @@
  incapability. It saves the values for interrupt vectors 15h and 19h at
  0070h:0100h, which is the MS-DOS compatible way to do it.
 
- I was told that in FreeDOS v1.1 this problem has been fixed.
+ In more recent FreeDOS versions this problem has been fixed.
 
 
- 7.3. CPUSTAT
+ 8.3. CPUSTAT
 
  CPUSTAT displays some system registers. Most of them aren't accessible in
  v86-mode. So this program should be seen as a test if the emulation of the
@@ -394,20 +412,20 @@
  of the v86-monitor. Run "CPUSTAT -?" for more details.
 
 
- 7.4. EMSSTAT
+ 8.4. EMSSTAT
 
  EMSSTAT can be used to display the current status of the installed EMM.
  It works with any EMM, not just Jemm.
 
 
- 7.5. XMSSTAT
+ 8.5. XMSSTAT
 
  XMSSTAT can be used to display the current status of the installed XMM.
  It allows to check current values of JemmEx options X2MAX, MAXEXT and
  XMSHANDLES.
 
 
- 7.6. MEMSTAT
+ 8.6. MEMSTAT
 
  MEMSTAT may be used to display the machine's memory layout, as it is
  returned by the BIOS. The most interesting infos are:
@@ -416,14 +434,14 @@
  - total amount of free memory
 
 
- 7.7. VCPI
+ 8.7. VCPI
 
  VCPI may be used to display the VCPI status of the installed EMM.
  With option -p it will display the page table entries for the conventional
  memory.
 
 
- 7.8. MOVEXBDA
+ 8.8. MOVEXBDA
 
  MOVEXBDA is a device driver supposed to move the Extended BIOS Data
  Area ( XBDA or EBDA ) to low DOS memory. If an XBDA exists, it is usually
@@ -440,12 +458,12 @@
  MOVEXBDA should work with any EMM.
 
 
- 7.9. CPUID
+ 8.9. CPUID
 
  CPUID displays cpu features returned by the CPUID instruction.
 
 
- 8. Troubleshooting, Hints
+ 9. Troubleshooting, Hints
 
  þ If Jemm halts or reboots the machine, the following combinations
    of parameters may help to find the reason. Generally, Jemm386 should be
@@ -570,7 +588,7 @@
      cannot be increased anymore, even if the XBDA is moved.
 
 
- 9. License
+ 10. License
 
  - JEMM386/JEMMEX: partly Artistic License (see ARTISTIC.TXT for details)
  - UMBM:     Public Domain

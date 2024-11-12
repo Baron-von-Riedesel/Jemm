@@ -15,6 +15,7 @@
  - JemmDbg renamed to JDeb386 and removed from Jemm package.
  - JemmExL removed.
  - CPUSTAT: optionally displays interrupt redirection bitmap.
+ - cmdline switch NOVMW added.
 
  12.02.2024: v5.84
  - fixed: Simulate_IO() no longer calls trap handler.

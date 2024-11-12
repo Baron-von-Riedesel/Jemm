@@ -1,6 +1,6 @@
 #
-# builds JemmExL
-#
+# builds JemmExL, the "legacy" variant of JemmEx, without support
+# of XMS v3.5 ( super-extended memory )
 
 NAME3=JEMMEXL
 
