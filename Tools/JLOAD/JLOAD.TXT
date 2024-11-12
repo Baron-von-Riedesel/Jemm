@@ -90,22 +90,13 @@
 
  4. Debugging JLMs
  
- a) JemmDbg
+  Loading JDeb386 - which is a JLM itself - is the easiest method to debug JLMs.
+ This debugger has a simple line-oriented interface. Once loaded, a breakpoint
+ will activate the debugger.
 
-  This is the easiest method to debug JLMs. This debugger has a simple line-
- oriented interface. Once loaded, a breakpoint in protected-mode will activate
- the debugger. It cannot debug applications running in v86-mode, though.
-
- b) 386SWAT
-
-  Jemm is compatible with the 386SWAT ring 0 debugger. This debugger may also
- be used to find bugs in JLMs. However, to catch the most common type of errors
- in protected-mode - GPFs - with 386SWAT, one has to tell 386SWAT which GPFs
- are "expected" and which are not. The following line in 386SWAT.PRO should do
- the trick:
-
- GPSKIP=HLT,INI,IND,INS,OUTI,OUTD,OUTS,CRn
-
+  Alternatively, Deb386v.sys may be used. This is a DebugR variant in DOS
+ device driver format. This debugger has the advantage that it can debug Jemm
+ during its initialization phase.
 
  Japheth
 

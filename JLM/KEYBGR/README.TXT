@@ -1,5 +1,5 @@
 
- Deutscher Tastaturtreiber fr DOS der mit 48 Bytes DOS Speicher 
+ Deutscher Tastaturtreiber fuer DOS der mit 48 Bytes DOS Speicher 
  auskommt. Funktioniert nur in Verbindung mit Jemm.
 
  Wird installiert durch Eintrag in config.sys:

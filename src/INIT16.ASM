@@ -20,6 +20,9 @@ NULL equ 0
 
 ?USEMEMSET equ 0
 ?UMBPCI equ 1
+ifndef ?NOVMWARE
+?NOVMWARE equ 1    ; 1=support option NOVMW to disable VMWare detection
+endif
 
 	include jemm.inc
 	include jemm16.inc
@@ -94,6 +97,9 @@ ExcludeTest	DB FALSE;X=TEST
 IncludeTest	DB FALSE;I=TEST
 if ?SPLIT
 SplitTest	DB 0
+endif
+if ?NOVMWARE
+NoVMWare	DB 0
 endif
 MinRequest	DB FALSE;MIN= has been found
 
@@ -203,6 +209,9 @@ endif
     db " NODYN         no dynamic XMS memory allocation (use MIN= to set fix amount)",LF
     db " NOHI          don't move resident part into first UMB",LF
     db " NOINVLPG      don't use INVLPG opcode",LF
+if ?NOVMWARE
+    db " NOVMW         don't try to detect VMWare",LF
+endif
 if ?PGE
     db "+PGE/NOPGE     Page Global Enable feature usage on/off (default off)",LF
 endif
@@ -2851,6 +2860,12 @@ if ?SPLIT
 		mov SplitTest, TRUE
 	.endif
 endif
+if ?NOVMWARE
+	invoke FindCommand, CStr("NOVMW")
+	.if ax
+		mov NoVMWare, TRUE
+	.endif
+endif
 if ?MOVEXBDA
 	invoke FindCommand, CStr("MOVEXBDA")
 	.if ax
@@ -2936,12 +2951,19 @@ else
 endif
 	invoke I15CheckRsvdRegion
 
+if ?NOVMWARE
+	cmp NoVMWare, 0
+	jnz @F
+endif
 	invoke VMwareDetect
 	.if ax
 		mov dword ptr SystemMemory+0E8h, 'VVVV'
 		mov dword ptr SystemMemory+0ECh, 'XXXX'
 		invoke cprintf, CStr("VMware detected", LF)
 	.endif
+if ?NOVMWARE
+@@:
+endif
 
 ;--- get the "range" options: I|S|X=bbbb-eeee
 	.while 1

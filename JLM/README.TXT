@@ -9,7 +9,7 @@
  HELLO2:   "hello world" JLM in C (MS VC, Open Watcom)
  IOTRAP:   sample how to trap IO port access.
  JCLOCK:   shows clock in text mode.
- JKEYBGR:  German keyboard driver.
+ KEYBGR:   German keyboard driver.
  QPIEMU:   emulates port trapping part of QPI.  
  XCDROM32: UltraDMA DVD/CD-ROM driver (GNU GPL 2).
  XDMA32:   UltraDMA HD driver (GNU GPL 2).
