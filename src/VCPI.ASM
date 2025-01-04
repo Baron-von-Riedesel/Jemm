@@ -357,33 +357,42 @@ VCPI_V86toPM PROC public
         word ptr [esi].V86TOPM.dfCSEIP+4, dword ptr [esi].V86TOPM.dfCSEIP
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX   ;restore client value
     mov ebp,[ebp].Client_Reg_Struc.Client_EBP   ;restore client value
+
 if ?VCPITMPSS
 ;--- some poorly written VCPI clients expect hiword(esp) to be zero!
 ;--- So we provide a small 128 byte stack.
+;--- SS must be loaded BEFORE the address context is changed!
     mov ax, V86_STACK_SEL
     mov ss, eax
 endif
+
     mov eax,[esi].V86TOPM.dwCR3     ; set client's context *first*
     mov cr3,eax
-
     mov eax,[esi].V86TOPM.dwIDTOFFS ; set up client's IDT
     lidt fword ptr [eax]
     mov eax,[esi].V86TOPM.dwGDTOFFS ; set up client's GDT
-    movzx esp,[esi].V86TOPM.wTR
     lgdt fword ptr [eax]
+    lldt [esi].V86TOPM.wLDTR        ; set up client's LDT
 if ?CLEARTB    
-;--- the "busy" flag of the TSS must be cleared, according to VCPI docs!
+
+;--- the "busy" flag of the TSS must be cleared, according to VCPI docs, and
+;--- this must be done BEFORE the TR register is loaded!
+
+    movzx esp,[esi].V86TOPM.wTR
+    and esp,not 111b                ; v5.85: don't assume bits 0+1 of new value for TR are 0!
+
     mov eax,[eax+2]                 ; EAX == linear address of client's GDT
     and ds:[esp+eax].DESCRIPTOR.bAttr,NOT 2; clear task busy bit in TSS descriptor
 endif
-    ltr sp                          ; set up client's TSS
-    lldt [esi].V86TOPM.wLDTR        ; set up client's LDT
+    ltr [esi].V86TOPM.wTR           ; set up client's TSS
+
 if ?VCPITMPSS
     mov esp,?HLPSTKSIZE
 else
     mov esp,?BASE+?HLPSTKSIZE
 endif
     jmp [esi].V86TOPM.dfCSEIP       ; jump to client's entry point
+
 
 VCPI_V86toPM ENDP
 
