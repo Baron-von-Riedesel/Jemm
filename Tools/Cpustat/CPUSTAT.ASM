@@ -817,7 +817,7 @@ usage:
 			invoke printf, CStr("    -g: display GDT if in V86 mode",lf)
 			invoke printf, CStr("    -i: display IDT if in V86 mode",lf)
 			invoke printf, CStr("    -p: display PD if in V86 mode",lf)
-			invoke printf, CStr("    -t: display TSS if in V86 mode",lf)
+			invoke printf, CStr("    -t: display TSS+IOPB if in V86 mode",lf)
 			invoke printf, CStr("    -v: make -p display paging tables",lf)
 			jmp exit
 		.endif

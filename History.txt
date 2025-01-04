@@ -16,6 +16,8 @@
  - JemmExL removed.
  - CPUSTAT: optionally displays interrupt redirection bitmap.
  - cmdline switch NOVMW added.
+ - fix: it was assumed that value for TR to be loaded in VCPI function
+   ax=DE0Ch ( switch from v86- to protected-mode) had bits 0 & 1 cleared.
 
  12.02.2024: v5.84
  - fixed: Simulate_IO() no longer calls trap handler.
