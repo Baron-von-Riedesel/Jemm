@@ -198,6 +198,10 @@ DWORD_IO    EQU (1 SHL DWORD_IO_BIT)
 STRING_IO   EQU (1 SHL STRING_IO_BIT)
 REP_IO      EQU (1 SHL REP_IO_BIT)
 
+;--- messages
+SYSTEM_EXIT EQU 5
+DEVICE_REBOOT_NOTIFY EQU 17h
+
 ;--------------------------------------------------------------------------
 ;--- VDMA device. This device is also installed by JLoad
 

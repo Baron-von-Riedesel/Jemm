@@ -1,4 +1,7 @@
 
+ v5.86:
+   - Jemm's control notifications handled (DEVICE_REBOOT_NOTIFY).
+
  v5.85:
    - debug displays now done with @dprintf().
    - V86 hooks won't modify IDT anymore.

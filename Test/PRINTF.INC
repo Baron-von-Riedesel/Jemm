@@ -1,22 +1,6 @@
 
 ;--- simple printf() implementation
 
-strlen proc c uses di string:ptr BYTE
-
-	mov cx,-1
-	mov di,string
-	push ds
-	pop es
-	mov al,0
-	cld
-	repnz scasb
-	mov ax,cx
-	inc ax
-	not ax
-	ret
-
-strlen endp
-
 handle_char proc
 
 	mov dl,al
@@ -83,8 +67,6 @@ local longarg:byte
 local fill:byte
 local szTmp[12]:byte
 
-	push ds
-	pop es
 	lea di,[fmt+2]
 @@L335:
 	mov si,[fmt]
@@ -196,8 +178,15 @@ handle_u:				;'u'
 	lea cx,[szTmp]
 	invoke ltob, dx::ax, cx, bx
 	mov si,ax
+
 @@do_outputstring260:
-	invoke strlen, si
+	mov ax,si
+	.while byte ptr [si]
+		inc si
+	.endw
+	xchg ax, si
+	sub ax, si
+
 	sub [size_],ax
 	cmp BYTE PTR [flag],1
 	jne @@L360

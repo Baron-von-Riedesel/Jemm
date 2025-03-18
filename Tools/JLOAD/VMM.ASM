@@ -187,7 +187,8 @@ InitVMM proc public
 	mov MoveMemory, eax		;new for v5.69
 	lodsd
 	mov ppV86Hooks, eax		;new for v5.85
-
+	lodsd
+	mov [eax],offset control_proc	;new for v5.86
 if ?KD
 	mov ax, 4Fh
 	int 41h
@@ -1646,6 +1647,23 @@ _PageCommitPhys proc
 	ret
 	align 4
 _PageCommitPhys endp
+
+;--- notifications from Jemm (SYSTEM_EXIT)
+
+control_proc proc
+	mov edx,offset ddb_list
+nextdevice:
+	mov ecx, [edx].VxD_Desc_Block.DDB_Control_Proc
+	jecxz @F
+	pushad
+	call ecx
+	popad
+@@:
+	mov edx,[edx].VxD_Desc_Block.DDB_Next
+	and edx, edx
+	jnz nextdevice
+	ret
+control_proc endp
 
 ;--- in: eax->ID to find, if 000, edi=name
 ;--- out: eax = hModule

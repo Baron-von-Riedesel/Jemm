@@ -11,6 +11,7 @@
  JCLOCK:   shows clock in text mode.
  KEYBGR:   German keyboard driver.
  QPIEMU:   emulates port trapping part of QPI.  
+ REBOOT:   shows how control message DEVICE_REBOOT_NOTIFY may be handled.
  XCDROM32: UltraDMA DVD/CD-ROM driver (GNU GPL 2).
  XDMA32:   UltraDMA HD driver (GNU GPL 2).
 

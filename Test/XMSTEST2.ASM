@@ -1,5 +1,5 @@
 
-;--- XMSTEST: test max block allocation
+;--- XMSTEST2: test max block allocation
 ;--- Public Domain.
 ;--- to be assembled with JWasm or Masm v6.
 

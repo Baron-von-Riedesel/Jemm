@@ -10,7 +10,8 @@
   4.3  IOPL Sensitive Instructions
   4.4  VMWare Detection
   4.5  Option MAXSEXT
-  4.6  Option SB
+  4.6  Option NOEMS
+  4.7  Option SB
   5.   Compatibility
   6.   Errors and Warnings
   7.   Troubleshooting, Hints
@@ -285,7 +286,22 @@
  "reserved" ( tool MEMSTAT may be used to verify this behavior ).
 
 
- 4.6 Option SB
+ 4.6 Option NOEMS
+
+ Despite its name, this option does not fully disable EMS. What's done is:
+
+ - device name changed from EMMXXXX0 to EMMQXXX0
+ - no page frame installed
+ - EMS memory pool is limited to 8 MB
+
+ The change of the device name makes the usual EMM detection routines fail.
+ OTOH, the interrupt 67h API is fully functional. Most of this is pretty
+ similar to what "recent" MS Emm386 versions do - the only difference is
+ that they won't limit the memory pool to 8 MB, but install it in its full
+ size (32 MB).
+
+
+ 4.7 Option SB
 
  Option SB was supposed to help Creative's SoundBlaster emulation drivers for
  SB PCI devices. It translates an exception 0Dh with error code 0x1A that
@@ -302,18 +318,21 @@
    then issueing IOCTL cmds, differs.
  - Jemm doesn't support the so-called GEMMIS API.
  - Jemm doesn't support the IO port trapping API of MS Emm386.
+ - Jemm supports UMBs (Upper Memory Blocks) accessed via the XMS API, but the
+   management is different: unlike MS Emm386, there's no chain of UMBs, linked
+   with a 16-byte header ( somewhat similar to DOS MCBs ). Instead, the UMB
+   addresses and sizes are stored in a table in extended memory, not accessible
+   by external programs. The table can hold up to 8 blocks.
+ - MS Emm386 tries to map physical memory in its linear address space, in such
+   a way that linear and physical addresses are identical. This isn't done by
+   Jemm, because it may consume quite a lot of physical memory for paging
+   tables - at least if 4KB pages are used, as it is the case with MS Emm386.
+ - Both Jemm and MS Emm386 supply the NOVCPI commandline option. However, the
+   effects differ: with Jemm, VCPI function DE01h will be deactivated by this
+   option, thus refusing to start any VCPI client. In contrast, MS Emm386's
+   NOVCPI makes the monitor still offer the full API, but no VCPI memory can
+   be allocated.
 
- Jemm supports UMBs (Upper Memory Blocks) accessed via the XMS API, but the
- management is different: unlike MS Emm386, there's no chain of UMBs, linked
- with a 16-byte header ( somewhat similar to DOS MCBs ). Instead, the UMB
- addresses and sizes are stored in a table in extended memory, not accessible
- by external programs. The table can hold up to 8 blocks.
-
- MS Emm386 tries to map physical memory in its linear address space, in such a
- way that linear and physical addresses are identical. This isn't done by Jemm,
- because it may consume quite a lot of physical memory for paging tables - at
- least if 4KB pages are used, as it is the case with MS Emm386.
- 
 
  6. Errors and Warnings
 
@@ -371,8 +390,10 @@
    Jemm386 only. Means that Jemm386 is forced to reside beyond the physical
    16MB barrier. No problem for Jemm386 itself, but the VDS API requires a
    DMA buffer that is located below that 16MB barrier. So one is better off not
-   to ignore this warning. The simplest fix is to replace the XMM, use
-   HimemX2.exe instead of HimemX.exe.
+   to ignore this warning. To fix it: a) ensure that Jemm386 is loaded just
+   after the XMM; b) replace the XMM, use HimemX2.exe instead of HimemX.exe
+   (if an extended memory block is allocated, HimemX2 tries to return the
+   block with the lowest address that satisfies the request).
 
  - "Warning: no suitable page frame found, EMS functions limited."
    Most programs using EMS won't work without a page frame, so this warning

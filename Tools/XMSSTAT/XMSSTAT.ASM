@@ -39,7 +39,7 @@ printf proto c :ptr byte, :vararg
 
 ;--- define a string constant
 
-CStr macro string
+CStr macro string:vararg
 local xxx
 	.const
 xxx db string
@@ -62,6 +62,7 @@ FL_NOSIZENULL   equ 1
 FL_NOUSEDEMBS   equ 2
 FL_NOFREEEMBS   equ 4
 FL_FREEHANDLES  equ 8
+FL_NOSEXTMEM    equ 16
 
 	.code
 
@@ -72,7 +73,7 @@ FL_FREEHANDLES  equ 8
 ;--- display a EOL
 
 _crout proc
-	invoke printf, CStr(<lf>)
+	invoke printf, CStr(lf)
 	ret
 _crout endp
 
@@ -105,14 +106,24 @@ getparm_1:
 	jnz @F
 	or [bFlags], FL_NOUSEDEMBS
 @@:
+	cmp ax,'-s'
+	jnz @F
+	or [bFlags], FL_NOSEXTMEM
+@@:
 	cmp ax,'-?'
 	jnz getparm_3
-	invoke printf, CStr(<"XMSSTAT v1.2, Public Domain",lf>)
-	invoke printf, CStr(<"usage: XMSSTAT [ -options ]",lf>)
-	invoke printf, CStr(<"  -a: skip free memory blocks",lf>)
-	invoke printf, CStr(<"  -b: also display unused handles",lf>)
-	invoke printf, CStr(<"  -c: skip memory blocks with size 0",lf>)
-	invoke printf, CStr(<"  -f: skip used memory blocks",lf>)
+	.const
+szHelp label byte
+	db "XMSSTAT v1.3, Public Domain",lf
+	db "usage: XMSSTAT [ -options ]",lf
+	db "  -a: skip free memory blocks",lf
+	db "  -b: also display unused handles",lf
+	db "  -c: skip memory blocks with size 0",lf
+	db "  -f: skip used memory blocks",lf
+	db "  -s: skip memory blocks beyond 4GB",lf
+	db 0
+	.code
+	invoke printf, offset szHelp
 	jmp getparm_er
 getparm_3:
 	cmp al,'/'
@@ -192,6 +203,12 @@ hdlout proc
 	jnz @F
 	ret
 @@:
+	test [bFlags], FL_NOSEXTMEM
+	jz @F
+	cmp es:[bx].XMSH.dwAddr,400000h
+	jb @F
+	ret
+@@:
 	invoke printf, CStr("%3u %4X"), si, bx
 	push si
 	mov ecx,es:[bx].XMSH.dwSize
@@ -221,7 +238,7 @@ hdlout proc
 	mov al, es:[bx].XMSH.bFlags
 	call getflags
 	movzx ax,al
-	invoke printf, CStr(<"%2X %s",lf>), ax, cx
+	invoke printf, CStr("%2X %s",lf), ax, cx
 	ret
 
 hdlout endp
@@ -239,8 +256,8 @@ hdlarray proc stdcall pArray:DWORD
 	les bx,es:[bx].XMSHT.dwArray
 	jcxz exit
 	call _crout
-	invoke printf, CStr(<" no handle   region              size(kB) locks  flags",lf>)
-	invoke printf, CStr(<"------------------------------------------------------------",lf>)
+	invoke printf, CStr(" no handle   region              size(kB) locks  flags",lf)
+	invoke printf, CStr("------------------------------------------------------------",lf)
 	mov si,1                    ;start with 1
 nextitem:
 	pusha
@@ -249,16 +266,16 @@ nextitem:
 	add bx,dx
 	inc si
 	loop nextitem
-	invoke printf, CStr(<"------------------------------------------------------------",lf>)
-	invoke printf, CStr(<"                                %9lu">), dwTotalSX
+	invoke printf, CStr("------------------------------------------------------------",lf)
+	invoke printf, CStr("                                %9lu"), dwTotalSX
 	mov ecx,dwTotal
 	cmp ecx, dwTotalSX
 	jz @F
-	invoke printf, CStr(<" (%lu kB below 4G)">), ecx
+	invoke printf, CStr(" (%lu kB below 4G)"), ecx
 @@:
 	call _crout
 exit:
-	invoke printf, CStr(<"free handles: %u",lf>),freehdls
+	invoke printf, CStr("free handles: %u",lf),freehdls
 	mov ah,6					;disable A20
 	call [xmsadr]
 	ret
@@ -275,17 +292,17 @@ hdlinfo proc near
 	jnz nohandletab
 	mov al,es:[bx].XMSHT.bSize	;size of element
 	mov ah,00
-	invoke printf, CStr(<"XMS handle table at %X:%X, handle cnt/size=%u/%u",lf>), es, bx, es:[bx].XMSHT.wHdls, ax
-	invoke printf, CStr(<"XMS handle array at %X:%X",lf>), word ptr es:[bx].XMSHT.dwArray+2, word ptr es:[bx].XMSHT.dwArray+0
+	invoke printf, CStr("XMS handle table at %X:%X, handle cnt/size=%u/%u",lf), es, bx, es:[bx].XMSHT.wHdls, ax
+	invoke printf, CStr("XMS handle array at %X:%X",lf), word ptr es:[bx].XMSHT.dwArray+2, word ptr es:[bx].XMSHT.dwArray+0
 	cmp es:[bx].XMSHT.bSize, sizeof XMSH
 	jnz invalhdlsize
 	invoke hdlarray, es::bx
 	ret
 nohandletab:
-	invoke printf, CStr(<"Int 2Fh, ax=4309h failed!",lf>)
+	invoke printf, CStr("Int 2Fh, ax=4309h failed!",lf)
 	ret
 invalhdlsize:
-	invoke printf, CStr(<"XMS handle size isn't 10!",lf>)
+	invoke printf, CStr("XMS handle size isn't 10!",lf)
 	ret
 hdlinfo endp
 
@@ -301,31 +318,31 @@ umbinfo  proc near
 	jz umbchk1
 	cmp bl,80h
 	jnz umbchk2
-	invoke printf, CStr(<"no UMB handler installed",lf>)
+	invoke printf, CStr("no UMB handler installed",lf)
 	jmp exit
 umbchk2:
 	cmp bl,0B1h
 	jnz @F
-	invoke printf, CStr(<"no free UMBs available",lf>)
+	invoke printf, CStr("no free UMBs available",lf)
 	jmp exit
 @@:
 	movzx ax,bl
-	invoke printf, CStr(<"request for UMB failed, BL=%X",lf>),ax
+	invoke printf, CStr("request for UMB failed, BL=%X",lf),ax
 	jmp exit
 umbchk1:
 	push bx 	 ;save UMB address
 	push dx 	 ;save size largest
-	invoke printf, CStr(<"segment of largest UMB: %X",lf>), bx
+	invoke printf, CStr("segment of largest UMB: %X",lf), bx
 	pop ax
-	invoke printf, CStr(<"size of largest UMB (paragraphs): %X",lf>), ax
+	invoke printf, CStr("size of largest UMB (paragraphs): %X",lf), ax
 	pop dx
-	mov ah,11h				;free UMB again
+	mov ah,11h			;free UMB again
 	call dword ptr [xmsadr]
 	cmp ax,1
 	jz exit
 	mov ax,bx
 	mov ah,0
-	invoke printf, CStr(<"calling free UMB failed, BL=%X",lf>),ax
+	invoke printf, CStr("calling free UMB failed, BL=%X",lf),ax
 exit:
 	ret
 umbinfo  endp
@@ -337,11 +354,11 @@ freememinfo2 proc
 	call [xmsadr]
 	cmp bl,0
 	jnz failed
-	invoke printf, CStr(<"v2 free memory largest/total (kB): %u/%u",lf>), ax, dx
+	invoke printf, CStr("v2 free memory largest/total (kB): %u/%u",lf), ax, dx
 	ret
 failed:
 	movzx bx,bl
-	invoke printf, CStr(<"XMS call AH=08 returned bl=%X: %u/%u",lf>), bx, ax, dx
+	invoke printf, CStr("XMS call AH=08 returned bl=%X: %u/%u",lf), bx, ax, dx
 	ret
 freememinfo2 endp
 
@@ -352,11 +369,11 @@ freememinfo3 proc
 	call [xmsadr]
 	cmp bl,0
 	jnz failed
-	invoke printf, CStr(<"v3 free memory largest/total (kB): %lu/%lu, highest addr: %lX",lf>), eax, edx, ecx
+	invoke printf, CStr("v3 free memory largest/total (kB): %lu/%lu, highest addr: %lX",lf), eax, edx, ecx
 	ret
 failed:
 	movzx bx,bl
-	invoke printf, CStr(<"XMS call AH=88h returned bl=%X: %lu/%lu, highest addr: %lX",lf>), bx, eax, edx, ecx
+	invoke printf, CStr("XMS call AH=88h returned bl=%X: %lu/%lu, highest addr: %lX",lf), bx, eax, edx, ecx
 	ret
 freememinfo3 endp
 
@@ -369,11 +386,11 @@ freememinfoSX proc
 	jz exit
 	cmp bl,0
 	jnz failed
-	invoke printf, CStr(<"v3.5 free memory > 4GB largest/total (kB): %lu/%lu",lf>), eax, edx
+	invoke printf, CStr("v3.5 free memory > 4GB largest/total (kB): %lu/%lu",lf), eax, edx
 	ret
 failed:
 	movzx bx,bl
-	invoke printf, CStr(<"XMS call AH=C8h returned bl=%X: %lu/%lu",lf>), bx, eax, edx
+	invoke printf, CStr("XMS call AH=C8h returned bl=%X: %lu/%lu",lf), bx, eax, edx
 exit:
 	ret
 freememinfoSX endp
@@ -388,11 +405,11 @@ versioninfo proc
 	movzx dx,byte ptr [wVersion+0]
 	movzx bx,byte ptr [wDriver+1]
 	movzx cx,byte ptr [wDriver+0]
-	invoke printf, CStr(<"XMS version: %u.%X, driver version: %u.%u",lf>), ax, dx, bx, cx
+	invoke printf, CStr("XMS version: %u.%X, driver version: %u.%u",lf), ax, dx, bx, cx
 	pop dx
 	test dx,1
 	jz nohma
-	invoke printf, CStr(<"HMA handled by XMS host, HMA is ">)
+	invoke printf, CStr("HMA handled by XMS host, HMA is ")
 	mov ah,01h				;try to reserve HMA
 	mov dx,-1
 	call [xmsadr]
@@ -400,13 +417,13 @@ versioninfo proc
 	jnz hma_used
 	mov ah,02h				;release HMA
 	call [xmsadr]
-	invoke printf, CStr(<"free",lf>)
+	invoke printf, CStr("free",lf)
 	ret
 hma_used:
-	invoke printf, CStr(<"allocated",lf>)
+	invoke printf, CStr("allocated",lf)
 	ret
 nohma:
-	invoke printf, CStr(<"HMA NOT handled by XMS host",lf>)
+	invoke printf, CStr("HMA NOT handled by XMS host",lf)
 	ret
 versioninfo endp
 
@@ -420,14 +437,14 @@ main    proc c
 	int 2fh
 	test al,80h 		 ;xms host found?
 	jnz main1
-	invoke printf, CStr(<"no XMS host found",lf>)
+	invoke printf, CStr("no XMS host found",lf)
 	jmp exit
 main1:
 	mov ax,4310h		;get XMS call address
 	int 2fh
 	mov word ptr xmsadr+0,bx
 	mov word ptr xmsadr+2,es
-	invoke printf, CStr(<"XMS call address: %X:%X",lf>), word ptr [xmsadr+2], word ptr [xmsadr+0]
+	invoke printf, CStr("XMS call address: %X:%X",lf), word ptr [xmsadr+2], word ptr [xmsadr+0]
 
 	call versioninfo
 	call freememinfo2
@@ -464,7 +481,7 @@ start   proc
 	js no386			;bit 15 set? then its a 8086/80186
 	jnz is386
 no386:
-	invoke printf, CStr(<"a 80386 is needed",lf>)
+	invoke printf, CStr("a 80386 is needed",lf)
 	jmp done
 is386:
 	mov ax,@data

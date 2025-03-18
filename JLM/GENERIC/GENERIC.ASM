@@ -29,7 +29,7 @@ DLL_PROCESS_DETACH  equ 0
 
 	public ddb
 
-ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"GENERIC",0,0, dispatch >
+ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"GENERIC",0, 0, v86_dispatch>
 
 szHello db "Hello from JLM GENERIC",cr,lf,0
 
@@ -37,7 +37,7 @@ szHello db "Hello from JLM GENERIC",cr,lf,0
 
 ;--- dispatcher for v86 services
 
-dispatch proc
+v86_dispatch proc
 
 	@VMMCall Simulate_Far_Ret	;emulate a RETF in v86
 
@@ -51,7 +51,7 @@ dispatch proc
 	ret
 	align 4
 
-dispatch endp
+v86_dispatch endp
 
 getversion proc
 

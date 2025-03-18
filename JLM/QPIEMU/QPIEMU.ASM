@@ -36,7 +36,7 @@ else
 	public ddb
 endif
 
-ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"QPIEMU",0,0, dispatch >
+ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"QPIEMU",0,0, v86_dispatch >
 
 callback dd 0	; current far16 real-mode callback address
 
@@ -44,7 +44,7 @@ callback dd 0	; current far16 real-mode callback address
 
 ;--- dispatcher for v86 services
 
-dispatch proc
+v86_dispatch proc
 
 	@VMMCall Simulate_Far_Ret	;emulate a RETF in v86
 
@@ -133,7 +133,7 @@ untrapport:
 
 	align 4
 
-dispatch endp
+v86_dispatch endp
 
 getversion proc
 

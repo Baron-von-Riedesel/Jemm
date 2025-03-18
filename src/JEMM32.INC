@@ -216,9 +216,14 @@ pIO_Trap_Table          dd ?
 pV86_Monitor            dd ?	; linear address of V86_Monitor() (obsolete with ppV86Hooks)
 pStackCurr              dd ?	; linear address of dwStackCurr (obsolete with ppV86Hooks)
 pMoveMemory             dd ?	; linear address of MoveMemory()
-ppV86Hooks              dd ?	; linear address of pV86Hooks variable (since v5.85)
+ppV86Hooks              dd ?	; v5.85: address of pV86Hooks variable
+pControlProc            dd ?	; v5.86: address of ControlProc variable (called by Jemm on certain events)
 VMM_SERV_TABLE ends
 endif
+
+;--- messages for ControlProc callout (matches Win9x VMM values)
+SYSTEM_EXIT equ 5
+DEVICE_REBOOT_NOTIFY equ 17h
 
 ;--- macros
 

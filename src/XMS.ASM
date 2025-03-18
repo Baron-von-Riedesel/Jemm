@@ -17,6 +17,7 @@
     include external.inc
 
 ?MERGE0HDL equ 1	;std=0, 1=try to merge handles even if hdl to free has size 0
+?HINF_MSCOMP equ 1	;std=1, 1=full MS compatibility for AH=0Eh
 
 ;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
@@ -685,9 +686,9 @@ xms_ext_get_handle_info endp
 ;--- in: ah=0Eh
 ;--- in: dx=handle
 ;--- out: ax=0|1
-;--- out: dx=size in kB
-;--- out: bl=block lock count
-;--- out: bh=free handle count
+;--- out: if ax==1, dx=size in kB
+;--- out: if ax==1, bl=free handle count
+;--- out: if ax==1, bh=block lock count
 
 xms_get_handle_info proc
 
@@ -695,24 +696,29 @@ xms_get_handle_info proc
     push edx
     @dprintf ?EMBDBG, <"xms_get_handle_info enter, dx=%X",10>, dx
     
-    call xms_ext_get_handle_info
+    call xms_ext_get_handle_info ;modifies edx, bx, cx; ax=0|1
     or ax,ax
-    jz @@get_handle_info_err
+    jz @@get_handle_info_err    ; if invalid handle (bl=A2h then)
 
+;--- in cx, free handles
     cmp ch,0                    ; bl = min(cx,0xff)
     jz @@handle_count_ok
     mov cl,0ffh
 @@handle_count_ok:
     mov bl,cl
 
-    cmp edx,010000h             ; dx = min(edx,0xffff);
+    cmp edx,010000h
     jb @@handle_size_ok
-    mov dx,0ffffh
+if ?HINF_MSCOMP
+    dec ax
+    mov bl,XMS_INVALID_HANDLE
+    jmp @@get_handle_info_err
+else
+    mov dx,0ffffh               ; dx = min(edx,0xffff);
+endif
 @@handle_size_ok:
-
-@@get_handle_info_err:
-
     mov [esp],dx
+@@get_handle_info_err:
     pop edx
     pop ecx
     ret
@@ -1370,6 +1376,10 @@ A20_Handle92 proc public
     call A20_Set
     pop eax
     or al, 2       ;dont allow disable
+if 1
+;--- refuse reset via bit 0 = 1
+    and al,not 1
+endif
     out dx, al
     ret
     align 4

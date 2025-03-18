@@ -1,5 +1,5 @@
 
-;*** display VCPI infomation
+;*** display VCPI information
 ;*** and use VCPI to switch to protected mode and back
 
 ;--- if segments are defined BEFORE .model,

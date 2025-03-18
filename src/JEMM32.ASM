@@ -42,6 +42,7 @@
 ?ISRFLGS    equ 0       ; std=0, 1=display PIC ISR flags
 ;?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
 ?CLEARCR4   equ 1       ; std=1, 1=clear CR4 at reboot
+?INT19RBT   equ 0       ; std=0, 1=emit INT 19h on reboot
 
 if ?INTEGRATED
 ?FREEXMS    equ 1       ; std=1, 0 might work
@@ -151,6 +152,7 @@ endif
 ;--- next 2 vars must be consecutive
 pV86Hooks       dd 0    ; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
 dwHookProc      dd 0
+pControlProc    dd offset _ret
 
 ;-- byte vars (variable)
 
@@ -178,6 +180,7 @@ endif
 
 RunEmuInstr:
 EmuInstr    DB  90h,90h,90h ; run self-modifying code here
+_ret:
             ret
 
 ;--- place rarely modified data here
@@ -2089,6 +2092,15 @@ Simulate_Iret endp
 
 Simulate_Int proc
 
+;--- v5.86: check if a v86hook is installed and call it first
+	mov edx, [pV86Hooks]
+	cmp edx, 0
+	jz @F
+	mov ecx, [edx+4*eax]
+	jecxz @F
+	call [dwHookProc]   ;expects: eax=int#, ecx=hookproc, ebp->client regs
+	jnc int_handled
+@@:
     mov edx,[eax*4]
     movzx eax,word ptr [EBP].Client_Reg_Struc.Client_ESP
     MOVZX ECX,word ptr [EBP].Client_Reg_Struc.Client_SS   ; get address of v86 SS:SP
@@ -2110,7 +2122,7 @@ Simulate_Int proc
     MOV [ECX+4],AX              ; and store them onto v86 stack
     and AH,not (1+2)            ; clear TF+IF
     mov [EBP].Client_Reg_Struc.Client_EFlags,eax
-
+int_handled:
     ret
     align 4
 Simulate_Int endp
@@ -2298,7 +2310,11 @@ if 1
     MOV AL,0AEh     ;enable keyboard
     OUT 64h,AL
 endif
-    jmp Reboot
+if ?FASTBOOT
+    test [bV86Flags], V86F_FASTBOOT
+    jnz fastboot
+endif
+    jmp _Reboot
 
 ife ?HOOK13
 @@isfdirq:
@@ -2495,6 +2511,7 @@ fastboot proc
 
     @dprintf ?RBTDBG,<"fastboot reached",10>
 
+if 0  ;kbd enable has been done in int 15h handler already
     mov al,0Bh
     out 20h,al
     in al,20h
@@ -2505,6 +2522,7 @@ fastboot proc
 @@fb_1:
     mov al,0AEh             ; (re)enable keyboard
     out 64h,al
+endif
 
     call Begin_Nest_Exec
 if 1
@@ -2515,7 +2533,7 @@ if 1
 endif
     @dprintf ?RBTDBG, <"calling restorevecs",10>
     call restorevecs
-    jc Reboot_2
+    jc _Reboot
 
 if ?ADDCONV
 ;--- if base memory has been extended beyond A000h, it must be
@@ -2532,7 +2550,7 @@ endif
 ;--- since the int 19h value saved by DOS has been modified by Jemm,
 ;--- execution will reach fastboot_1 at last.
 
-    @dprintf ?RBTDBG, <"launching Int 19h",10>
+    @dprintf ?RBTDBG, <"fastboot: launching Int 19h",10>
 
 ;--- it's bptable.pInt06 that has to be modified -
 ;--- because that's the FIRST breakpoint ( see restorevecs ).
@@ -2597,29 +2615,36 @@ endif
 fastboot endp
 endif
 
-Int19_V86Entry:
-
-;   call Simulate_Iret  ;not needed since there is no return
-
 ;--- Reboot - reboot the machine
 
-Reboot proc
+_Reboot proc
 
     @dprintf ?RBTDBG,<"Reboot enter",10>
+if ?INT19RBT
+    mov eax,19h
+    call Exec_Int   ;may not return
+endif
+Int19_V86Entry::
+    mov eax, DEVICE_REBOOT_NOTIFY
+    call pControlProc
+    test [bV86Flags], V86F_ALTBOOT
+    jz Reboot_0
 
+    MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
+    mov al,0FEh
+    out 64h,al	;reset via KBC
+if 0
+    in al,92h   ;reset via PS/2 port A
+    or al,1
+    out 92h,al
+endif
+;    hlt
+
+Reboot_0:
 if ?FASTBOOT
-    test [bV86Flags], V86F_FASTBOOT
-    jnz fastboot
-Reboot_2::
     mov dl,0    ;flag: do a "full" reboot
 endif
-    test [bV86Flags], V86F_ALTBOOT
-    jz Reboot_1
-
-    mov al,0FEh
-    out 64h,al	;should reboot
-
-Reboot_1::
+Reboot_1::      ;<--- entry from FASTBOOT (see above)
     @dprintf ?RBTDBG, <"Reboot_1 reached, int 19=%X, XBDA segment=%X",10>, dword ptr ds:[19h*4], word ptr ds:[@XBDA]
 
     MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
@@ -2641,7 +2666,7 @@ ife ?USETRIPLEFAULT
   if ?FASTBOOT
     cmp dl,1
     jnz @@nofast2
-    sub edi, 5      ;skip the jmp ffff:0000
+    sub edi, 5      ;skip the jmp f000:fff0
     mov esi, offset rmcode2
     mov cl, offset endofrmcode2 - offset rmcode2
     rep movsb
@@ -2685,51 +2710,52 @@ else
 endif
 
 rmcode:
-    db 0Fh, 22h, 0C1h       ;7E03: mov cr0, ecx (switches to real-mode)
-    db 0Fh, 22h, 0D8h       ;7E00: mov cr3, eax
-    db 8Eh, 0D0h            ;7E06: mov ss, ax (set SS=0000)
-;    db 0EAh,0, 0, -1, -1    ;7E08: jmp ffff:0000 (set CS=FFFF)
-    db 0EAh,0F0h, 0FFh, 0, 0F0h ;7E08: jmp f000:fff0 (set CS=F000)
-                            ;7E0D:
+    mov cr0,ecx             ;7E00: 0F 22 C1   mov cr0, ecx (switches to real-mode)
+    db 0EAh                 ;7E03: EA         jmp 0000:7E08 (set CS=0000)
+    dw 07E08h, 0000h        ;      0000:7E08  
+    mov cr3,eax             ;7E08: 0F 22 D8   mov cr3, eax
+    mov ss,eax              ;7E0B: 8E D0      mov ss, ax (in 16-bit; set SS=0000)
+    db 0EAh                 ;7E0D: EA         jmp F000:FFF0
+    dw 0FFF0h, 0F000h       ;      F000:FFF0  
 endofrmcode:
+
 if ?FASTBOOT
 rmcode2:
-    db 0EAh,0Dh,7Eh,0, 0    ;jmp 0000:7E0D (set CS=0)
-if ?RBTDBG
+ if ?RBTDBG
     db 0B8h, 52h, 0Eh       ;mov ax,0e52h 'R'
     db 0BBh, 07h, 00h       ;mov bx,0007h
-    db 0CDh, 10h            ;int 10h
-    db 0B8h, 42h, 0Eh       ;mov ax,0e42h 'B'
-    db 0CDh, 10h            ;int 10h
-    db 0B8h, 54h, 0Eh       ;mov ax,0e54h 'T'
-    db 0CDh, 10h            ;int 10h
-    db 0B4h, 00h            ;mov ah,00
-    db 0CDh, 16h            ;int 16h
-endif
-if 0
-    db 0Eh                  ;push cs
-    db 1Fh                  ;pop ds
-    db 0Eh                  ;push cs
-    db 07h                  ;pop es
-    db 0FBh                 ;sti
-    db 0B8h, 00h, 00h       ;mov ax,0000h
-    db 0BAh, 80h, 00h       ;mov dx,0080h
-    db 0CDh, 13h            ;int 13h
+    int 10h
+    mov al,'B'
+    int 10h
+    mov al,'T'
+    int 10h
+    mov ah,0
+    int 16h
+ endif
+ if 0
+    push cs
+    pop ds
+    push cs
+    pop es
+    sti
+    mov ah,00
+    mov dl,80h
+    int 13h                 ;disk reset
     db 0B8h, 01h, 02h       ;mov ax,0201h
     db 0B9h, 01h, 00h       ;mov cx,0001h
     db 0BAh, 80h, 00h       ;mov dx,0080h
     db 0BBh, 00h, 7Ch       ;mov bx,7C00h
-    db 0CDh, 13h            ;int 13h
-    db 06h                  ;push es
-    db 53h                  ;push bx
-    db 0CBh                 ;retf
-else
-    db 0CDh, 19h            ;int 19h
-endif
+    int 13h                 ;read sector 1 of HD 0
+    push es
+    push bx
+    retf                    ;jump to boot code
+ else
+    int 19h
+ endif
 endofrmcode2:
 endif
 
-Reboot endp
+_Reboot endp
 
     align 4
 
@@ -2753,6 +2779,7 @@ vmm_service_table label VMM_SERV_TABLE
     dd offset dwStackCurr
     dd MoveMemory
     dd offset pV86Hooks	;v5.85
+    dd offset pControlProc	;v5.86
 
 endif
 

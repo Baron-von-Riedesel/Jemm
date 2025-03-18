@@ -1,6 +1,14 @@
 
  History
 
+ __.__.2025: v5.86
+ - service table: added control proc member to allow Jemm to call out on 
+   certain events; currently "device_reboot_notify" is the only call-out. 
+ - Simulate_Int: call an installed v86 hook proc before running the INT.
+ - JemmEx, XMS AH=0Eh: invalid handle returned if size > 65535 kB ( MS Himem
+   compatible).
+ - REBOOT: sample JLM showing how reboot control msg may be handled.
+
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.
  - fixed: VDS: added several argument checks ( mostly DX ).
