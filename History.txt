@@ -7,7 +7,7 @@
  - Simulate_Int: call an installed v86 hook proc before running the INT.
  - JemmEx, XMS AH=0Eh: invalid handle returned if size > 65535 kB ( MS Himem
    compatible).
- - REBOOT: sample JLM showing how reboot control msg may be handled.
+ - REBOOT: sample JLMs showing how the reboot control msg may be handled.
 
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.

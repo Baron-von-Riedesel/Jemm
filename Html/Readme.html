@@ -21,9 +21,10 @@
   4.2  Emulation of privileged Opcodes
   4.3  IOPL Sensitive Instructions
   4.4  VMWare Detection
-  4.5  Option MAXSEXT
-  4.6  Option NOEMS
-  4.7  Option SB
+  4.5  Option FASTBOOT
+  4.6  Option MAXSEXT
+  4.7  Option NOEMS
+  4.8  Option SB
   5.   Compatibility
   6.   Errors and Warnings
   7.   Troubleshooting, Hints
@@ -122,7 +123,7 @@
             of RAM (&gt; 256 MB). This is optionally because it makes Jemm
             behave not fully VCPI compliant, but shouldn't hurt usually.
  FASTBOOT   option might allow a fast reboot. There is no guarantee that it
-            will work, though, see hints in "Troubleshooting".
+            will work, though, see the "Option FASTBOOT" chapter below.
  FRAME=nnn  instructs Jemm to use a certain page frame. Accepted are frame
             values from 8000 to E000 or NONE. The page frame should start
             at the beginning of a physical EMS page, that is, the frame 
@@ -289,7 +290,31 @@
  The VMWare detection can be disabled with option NOVMW.
 
 
- 4.5 Option MAXSEXT
+ 4.5 Option FASTBOOT
+
+ The FASTBOOT option may work with many versions of DOS. However, there are
+ quite a few restrictions. To speed up the boot process, FASTBOOT tries to
+ avoid resetting the system. This implicates that the interrupt vector table
+ and at least the disk devices can be reset to the state before DOS has been
+ loaded. Resetting the interrupt vector table requires some cooperation from
+ DOS. Other things that may get in the way are:
+
+ - Moving the XBDA into an UMB with option MOVEXBDA is critical, because to
+   move it back into conventional memory might not work for various reasons.
+
+ - older FreeDOS versions may need JEMFBHLP.EXE to be installed prior to the
+   XMM (Himem). Possibly this might also be needed for MS-DOS versions &lt; 5.
+
+ - UMBPCI allows to activate "Shadow RAM", but there's no option to deactivate
+   it. This may confuse Jemm, since it can only detect RAM activated by UMBPCI
+   if UMBPCI's signature is found.
+
+ - A boot loader (Grub) might have inserted code in conventional memory to
+   modify hard disks numbers. There's no guarantee that this code survives the 
+   fastboot process.
+
+
+ 4.6 Option MAXSEXT
 
  JemmEx only: this option limits amount of "super-extended" memory. Setting
  MAXSEXT=0 disables this feature. If enabled, JemmEx must exclusively manage
@@ -298,7 +323,7 @@
  "reserved" ( tool MEMSTAT may be used to verify this behavior ).
 
 
- 4.6 Option NOEMS
+ 4.7 Option NOEMS
 
  Despite its name, this option does not fully disable EMS. What's done is:
 
@@ -313,7 +338,7 @@
  size (32 MB).
 
 
- 4.7 Option SB
+ 4.8 Option SB
 
  Option SB was supposed to help Creative's SoundBlaster emulation drivers for
  SB PCI devices. It translates an exception 0Dh with error code 0x1A that
@@ -500,15 +525,6 @@
 
  - Unlike MS Emm386, Jemm does not try to identity-map extended memory in its
    address space. This prevents the PL0 debugger 386SWAT from "intruding".
-
- - The FASTBOOT option can work with many versions of DOS. However,
-   additional settings might be needed:
-
-   - FreeDOS may require to set STACKS=0,0 in CONFIG.SYS.
-     Also the XBDA most likely must not be moved.
-
-   - older FreeDOS versions may need JEMFBHLP.EXE to be installed prior to the
-     XMM (Himem). Possibly this might also be needed for MS-DOS versions &lt; 5.
 
  - If Jemm is installed from the commandline, loading the CTMOUSE driver
    v1.9x and v2.0x might cause an exception. Adding option NOHI or NORAM

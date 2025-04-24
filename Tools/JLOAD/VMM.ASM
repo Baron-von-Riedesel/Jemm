@@ -1649,6 +1649,7 @@ _PageCommitPhys proc
 _PageCommitPhys endp
 
 ;--- notifications from Jemm (SYSTEM_EXIT)
+;--- eax, ebx, esi, edi, ebp must not be changed.
 
 control_proc proc
 	mov edx,offset ddb_list

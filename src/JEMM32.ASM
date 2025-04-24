@@ -2479,7 +2479,7 @@ if 0;?MOVEXBDA ;restoring the XBDA should be done by DOS (MS-DOS does)
     cmp si, 0A000h
     jb @@noxbda
     shl esi, 4
-    movzx eax,byte ptr [esi];first byte of XBDA is size in KB
+    movzx eax,byte ptr [esi];first byte of XBDA is (rather:should be) size in KB
     sub ds:[@MEM_SIZE],ax   ;restore size of low memory
     movzx edi,word ptr ds:[@MEM_SIZE]
     shl edi, 6
@@ -2609,7 +2609,7 @@ nextitem:
     loop nextitem
 endif
 
-    mov dl,1        ;set flag for fastboot
+    mov bl,1        ;set flag for fastboot
     jmp Reboot_1
 
 fastboot endp
@@ -2625,10 +2625,13 @@ if ?INT19RBT
     call Exec_Int   ;may not return
 endif
 Int19_V86Entry::
+if ?FASTBOOT
+    mov bl,0    ;bit 0: 0="full" reboot, 1=fastboot
+endif
     mov eax, DEVICE_REBOOT_NOTIFY
     call pControlProc
     test [bV86Flags], V86F_ALTBOOT
-    jz Reboot_0
+    jz Reboot_1
 
     MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
     mov al,0FEh
@@ -2640,11 +2643,8 @@ if 0
 endif
 ;    hlt
 
-Reboot_0:
-if ?FASTBOOT
-    mov dl,0    ;flag: do a "full" reboot
-endif
 Reboot_1::      ;<--- entry from FASTBOOT (see above)
+
     @dprintf ?RBTDBG, <"Reboot_1 reached, int 19=%X, XBDA segment=%X",10>, dword ptr ds:[19h*4], word ptr ds:[@XBDA]
 
     MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
@@ -2664,14 +2664,16 @@ ife ?USETRIPLEFAULT
     pop es
     rep movsb
   if ?FASTBOOT
-    cmp dl,1
-    jnz @@nofast2
+    test bl,1
+    jz @F
     sub edi, 5      ;skip the jmp f000:fff0
     mov esi, offset rmcode2
     mov cl, offset endofrmcode2 - offset rmcode2
     rep movsb
     and byte ptr ds:[47Bh],not 20h  ;reset VDS bit
-@@nofast2:
+    mov eax, DEVICE_REBOOT_NOTIFY
+    call pControlProc
+@@:
   endif
     xor edx, edx
     push edx
@@ -2747,7 +2749,7 @@ rmcode2:
     db 0BBh, 00h, 7Ch       ;mov bx,7C00h
     int 13h                 ;read sector 1 of HD 0
     push es
-    push bx
+    push ebx                ;in 16-bit: push bx
     retf                    ;jump to boot code
  else
     int 19h
