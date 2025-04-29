@@ -127,7 +127,7 @@ proc install
 
 	mov eax,intn
 	mov esi,hookproc
-	VMMCall Hook_V86_Int_Chain
+	@VMMCall Hook_V86_Int_Chain
 	ret                         ; Exit 
 endp
 
@@ -135,7 +135,7 @@ proc deinstall
 
 	mov eax,intn
 	mov esi,hookproc
-	VMMCall Unhook_V86_Int_Chain
+	@VMMCall Unhook_V86_Int_Chain
 	ret                         ; Exit 
 endp
 

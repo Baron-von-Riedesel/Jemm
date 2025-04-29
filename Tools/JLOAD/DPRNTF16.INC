@@ -4,7 +4,7 @@
 ;--- itoa(long n, char * s, int base);
 ;--- convert 32-bit long to string
 
-ltoa PROC stdcall uses eax edx edi number:dword, outb:word, base:word
+ltoa PROC stdcall uses edx edi number:dword, outb:word, base:word
 
 	mov ch,0
 	movzx edi, base
@@ -44,7 +44,10 @@ ltoa PROC stdcall uses eax edx edi number:dword, outb:word, base:word
 
 ltoa ENDP
 
-dprintf proc c public fmt:ptr, args:vararg
+;--- it's assumed cs=DGROUP (model tiny)
+;--- no assume for SS & DS, ES unused.
+
+dprintf proc c public uses ds fmt:ptr, args:vararg
 
 local flag:byte
 local longarg:byte
@@ -56,10 +59,12 @@ local szTmp[12]:byte
 	pushf
 	cld
 	lea di,args
+	push cs
+	pop ds
 @@L335:
 	mov si,fmt
 nextchar:
-	lodsb [si]
+	lodsb
 	or al,al
 	je done
 	cmp al,'%'
@@ -160,8 +165,10 @@ handle_x:
 @@:
 printnum:
 	lea si, szTmp
+	push eax
 	invoke ltoa, dx::ax, si, bx
 	mov si, ax
+	pop eax
 	push ds
 	push ss
 	pop ds

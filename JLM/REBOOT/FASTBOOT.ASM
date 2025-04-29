@@ -24,6 +24,13 @@ REAL_DATA_SEL   equ 5 * 8
 
 ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"REBOOT",0, ctrlproc >
 
+helptxt label byte
+	db "Usage:",13,10
+	db "jload fastboot.dll [options]",13,10
+	db "options:",13,10
+	db "  /n",9,"partition to load - n=1..8",13,10
+	db 0
+
 	.CODE
 
 ctrlproc proc
@@ -97,10 +104,28 @@ endif
 
 ctrlproc endp
 
-;--- check for cmdline option /1 /2 /3 /4
+cputs proc uses esi
+	mov esi, eax
+	@VMMCall Begin_Nest_Exec	 ;start nested execution
+	cld
+nextitem:
+	lodsb
+	and al,al
+	jz done
+	mov byte ptr [ebp].Client_Reg_Struc.Client_EDX,al
+	mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,2
+	mov eax,21h
+	@VMMCall Exec_Int
+	jmp nextitem
+done:
+	@VMMCall End_Nest_Exec		 ;end nested execution
+	ret
+cputs endp
 
-Init proc uses esi pParms:ptr JLCOMM
-	mov esi,pParms
+;--- check for cmdline option /1 .. /8
+
+Init proc uses esi pComm:ptr
+	mov esi,pComm
 	mov esi,[esi].JLCOMM.lpCmdLine
 	cld
 	.while byte ptr [esi]
@@ -109,12 +134,18 @@ Init proc uses esi pParms:ptr JLCOMM
 		.break .if al == 13
 		.if al == '/' || al == '-'
 			mov al,[esi]
-			.if al >= '1' && al <= '4'
+			.if al >= '1' && al <= '8'
 				sub al,'0'
 				mov rmcode+8,al
 				inc esi
 			.endif
 		.else
+			@VMMCall Get_Cur_VM_Handle
+			push ebp
+			mov ebp,[ebx].cb_s.CB_Client_Pointer
+			mov eax,offset helptxt
+			call cputs
+			pop ebp
 			xor eax,eax
 			ret
 		.endif

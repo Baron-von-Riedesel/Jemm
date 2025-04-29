@@ -384,6 +384,7 @@ nextchar:
 skipchar:
 	jmp nextchar
 copydone:
+	dec si   ;go back to 00 or 0dh byte
 	mov word ptr es:[dwCmdLine],si
 	test ah,1
 	jnz error
@@ -398,7 +399,7 @@ GetPgmParms endp
 
 GetLdrPath proc uses es si di
 
-	@dprintf ?RMDBG,<"GetLdrPath enter",lf>
+	@dprintf ?RMDBG,<"GetLdrPath enter, CS=%X",lf>, cs
 	cld
 	mov ah,51h
 	int 21h
@@ -822,7 +823,7 @@ InitVMM endp
 
 RunVMM proc public
 
-	@dprintf ?RMDBG, <"RunVMM enter",lf>
+	@dprintf ?RMDBG, <"RunVMM enter, dwCmdLine=%lX",lf>, dwCmdLine
 
 ;--- set (common) linear addresses in JLCOMM
 

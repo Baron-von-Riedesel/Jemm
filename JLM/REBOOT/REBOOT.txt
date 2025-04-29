@@ -14,7 +14,11 @@
   by Jemm's FASTBOOT option): with an optional argument one can select a
   partition to boot from, thus circumventing the MBR boot code.
 
-   DEVICE=JLOAD.EXE FASTBOOT.DLL [/1 | /2 | /3 | /4]
+   DEVICE=JLOAD.EXE FASTBOOT.DLL [/<partition>]
+   
+   where <partition> is a digit (1..8). With partition 1-4 one selects
+   a partition from the MBR, while partition 5-8 will select a partition
+   inside an extended partition. 
 
    FastbDbg.dll will additionally install the DebugB debugger variant. When
   rebooting, a breakpoint is set just before the boot sector code is executed.
