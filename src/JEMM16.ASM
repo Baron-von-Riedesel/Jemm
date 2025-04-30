@@ -35,15 +35,15 @@ MCB ends
 @DefineBP macro _name
 _name&::
 	@BPOPC
-	endm
+endm
 
 CStr macro text:VARARG
 local sym
 CONST segment
-sym db text
+sym db text,0
 CONST ends
 	exitm <offset sym>
-	endm
+endm
 
 _TEXT segment para public 'CODE'
 _TEXT ends
@@ -1048,7 +1048,7 @@ backinv86:
 
 	push eax				; FIRSTPAGE value
 
-	@dprintf ?INITRMDBG, <"V86 mode entered",10>
+	@dprintf ?INITRMDBG, <"InitJemm: V86 mode entered",10>
 
 	call GetRes		;get Jemm resident part
 	mov bx,ax
@@ -1071,7 +1071,7 @@ endif
 
 	sti
 
-	@dprintf ?INITRMDBG, <"interrupts enabled, hooking int 15h, 2Fh, ...",10>
+	@dprintf ?INITRMDBG, <"InitJemm: ints enabled, hooking int 15h, 2Fh, ...",10>
 	mov si,offset intvecs
 @@nextint2:
 	mov al,[si].INTMOD.bInt
@@ -1091,7 +1091,7 @@ endif
 	call endinit
 
 ife ?INTEGRATED
-	@dprintf ?INITRMDBG, <"calling InstallXMSHandler",10>
+	@dprintf ?INITRMDBG, <"InitJemm: calling InstallXMSHandler",10>
 	call InstallXMSHandler
  if ?MOVEXBDA and not ?MOVEXBDAPM
 	call move_xbda ;must be called after InstallXMSHandler

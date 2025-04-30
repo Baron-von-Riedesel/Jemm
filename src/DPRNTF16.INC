@@ -3,8 +3,9 @@
 
 ;--- itoa(long n, char * s, int base);
 ;--- convert 32-bit long to string
+;--- v5.86: removed eax from uses clause (since AX is used to return string ptr)
 
-ltoa PROC stdcall uses eax edx edi number:dword, outb:word, base:word
+ltoa PROC stdcall uses edx edi number:dword, outb:word, base:word
 
 	mov ch,0
 	movzx edi, base
@@ -160,11 +161,13 @@ handle_x:
 @@:
 printnum:
 	lea si, szTmp
+	push eax       ;v5.86: added
 	invoke ltoa, dx::ax, si, bx
+	mov si, ax
+	pop eax        ;v5.86: added
 	push ds
 	push ss
 	pop ds
-	mov si, ax
 	call print_string
 	pop ds
 	retn

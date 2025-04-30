@@ -1712,20 +1712,20 @@ endif
 ife ?LIM32
     mov ebx,[esi].JEMMINIT.PageMap
 
-if ?INITDBG
+if ?INITDBG and ?EMSDBG
     xor ecx,ecx
-    @dprintf ?INITDBG, <"SysMem table:",10>
+    @dprintf <?INITDBG or ?EMSDBG>, <"SysMem table:",10>
 @@nextitemx:
-    @dprintf ?INITDBG, <"%c">, byte ptr [ebx+ecx]
+    @dprintf <?INITDBG or ?EMSDBG>, <"%c">, byte ptr [ebx+ecx]
     inc ecx
     test cl,0Fh
     jnz @@nextitemx
     test cl,30h
     jz @F
-    @dprintf ?INITDBG, <'-'>
+    @dprintf <?INITDBG or ?EMSDBG>, <'-'>
     jmp @@nextitemx
 @@:
-    @dprintf ?INITDBG, <10>
+    @dprintf <?INITDBG or ?EMSDBG>, <10>
     and cl,cl
     jnz @@nextitemx
 endif
@@ -1827,7 +1827,7 @@ EMS_Init2 proc public
     pop ecx
     mov [EMSPageAllocationEnd],edi
 
-    @dprintf ?INITDBG, <"EMS page alloc start/end=%X/%X",10>, [EMSPageAllocationStart], [EMSPageAllocationEnd]
+    @dprintf <?EMSDBG or ?INITDBG>, <"EMS page alloc start/end=%X/%X",10>, [EMSPageAllocationStart], [EMSPageAllocationEnd]
 
 ;--- behind the EMS EMSPD array comes an array of bytes
 ;--- which are the "nibble" offsets of the descriptor's bit array
@@ -1835,7 +1835,7 @@ EMS_Init2 proc public
     inc eax
     rep stosb
 
-    @dprintf ?INITDBG, <"EMS array of subindices end=%X",10>, edi
+    @dprintf <?EMSDBG or ?INITDBG>, <"EMS array of subindices end=%X",10>, edi
 
 ;--- init EMS SYSTEM handle
 

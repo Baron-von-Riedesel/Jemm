@@ -8,6 +8,7 @@
  - JemmEx, XMS AH=0Eh: invalid handle returned if size > 65535 kB ( MS Himem
    compatible).
  - REBOOT: sample JLMs showing how the reboot control msg may be handled.
+ - fixed debug displays in 16-bit part.
 
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.

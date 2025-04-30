@@ -624,7 +624,7 @@ if ?I41SUPP
     mov al, 41h
     movzx eax, al
     mov ecx, offset Int41_Entry
-    @dprintf ?INITDBG, <"int 41h vector set to %X",10>, ecx
+    @dprintf ?INITDBG, <"init: int 41h vector set to %X",10>, ecx
     call SetIDTEntry
 endif
 
@@ -632,6 +632,7 @@ if ?KD
     mov esi, jemmini
     cmp [esi].JEMMINIT.kdseg,0
     jz @F
+    @dprintf ?INITDBG, <"init: kernel debugger init call",10>
     push edi
     mov al, PMINIT_INIT_IDT
  if ?SHAREDIDT
@@ -645,6 +646,7 @@ if ?KD
     int 41h
     cmp ax, 0F386h
     setz [bKD]
+    @dprintf ?INITDBG, <"init: kernel debugger response to int 41h: %X",10>, eax
 @@:
 endif
 
@@ -653,7 +655,7 @@ endif
 if 0
     mov ebp, ?TOS - size IRETDV86
     lea esp, [ebp-24]   ;take care of the local variables
-    @dprintf ?INITDBG, <"ESP reset",10>
+    @dprintf ?INITDBG, <"init: ESP reset",10>
 endif
 
 ;--- edi para aligned again (increased by 700h/690h)

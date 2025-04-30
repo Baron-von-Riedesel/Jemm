@@ -173,7 +173,7 @@ ife ?HOOK13
 bDiskIrq        db  0   ; bit0: 1=diskette transfer pending
 endif
 if ?KD
-bKD             db  0
+bKD             db  0   ; bit0: 1=kernel debugger detected and initialized
 endif
 
     align 4

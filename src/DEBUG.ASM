@@ -13,6 +13,8 @@
 	include jemm32.inc		;declarations for Jemm32
 	include debug.inc
 
+SLOWDOWN equ 256            ;to slow down debug displays
+
 ;--- publics/externals
 
 	include external.inc
@@ -120,6 +122,15 @@ endif
 	mov ss:[edi],ax
 	add edi,2
 	loop @@nextcell2
+if SLOWDOWN
+	mov ecx,SLOWDOWN
+@@:
+	in al,61h
+	cmp al,ah
+	jz @B
+	mov ah,al
+	loop @B
+endif
 	retn
 
 VPUTCHR ENDP

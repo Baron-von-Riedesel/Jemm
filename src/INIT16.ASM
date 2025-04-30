@@ -12,7 +12,7 @@ local sym
 sym db text,0
 	.code
 	exitm <offset sym>
-	endm
+endm
 
 FALSE equ 0
 TRUE equ 1
