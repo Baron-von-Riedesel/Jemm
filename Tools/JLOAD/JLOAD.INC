@@ -16,7 +16,7 @@ hFile	dw ?    ;file handle of JLM
 pszLdr	dw ?	;points to full path of JLOAD.EXE
 pszJLM	dw ?	;points to JLM name parameter
 pHdr	dw ?	;points to PE header
-pBuffer	dw ?	;points to a 4 kB buffer
+pBuffer	dw ?	;points to a 4 kB buffer in conv. memory
 pDDB	dw ?	;points to DDB (if module is to be unloaded)
 VMMS	ends
 

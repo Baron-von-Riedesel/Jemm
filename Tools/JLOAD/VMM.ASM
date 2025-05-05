@@ -70,6 +70,8 @@ vmcb	cb_s <0,0,?TOS - size Client_Reg_Struc,1>
 ddb_list label dword
 d0001	VxD_Desc_Block <ddb_0004,1,1,1,0,0,"        ",0,0,0,0,0,0,0,offset vmm_services,  ?NUMSERV0001>
 
+GetDOSBuffer proto	;defined in JLOAD32
+
 ;--- VMM service table
 
 vmm_services label dword
@@ -124,6 +126,7 @@ MoveMemory  		dd 0
 					dd _Free_GDT_Selector ; v5.83
 					dd Get_DDB ; v5.83
 					dd V86ToPM ; v5.85
+					dd GetDOSBuffer ; v5.86
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 

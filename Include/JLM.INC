@@ -140,6 +140,10 @@ VMM_Service Get_DDB
 
 VMM_Service V86ToPM		; jump to VCPI client, esi->V86toPM struct, ebp->client regs
 
+;--- added in v5.86
+
+VMM_Service GetDOSBuffer; get linear address of 4kB DOS buffer in JLOAD (during init phase only)
+
 ;--- equates for the page memory functions
 
 ;_PageReserve() page parameter:

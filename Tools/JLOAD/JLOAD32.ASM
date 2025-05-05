@@ -479,6 +479,17 @@ FreeDiscardableSections proc
 	align 4
 FreeDiscardableSections endp
 
+;--- get address of 4k DOS buffer (during load only)
+;--- ecx=JLCOMM ptr
+
+GetDOSBuffer proc public
+	movzx eax,[ecx].VMMS.pBuffer
+	movzx edx,word ptr [ebp].Client_Reg_Struc.Client_DS
+	shl edx,4
+	add eax,edx
+	ret
+GetDOSBuffer endp
+
 if ?TRACE
 
 	include vioout.inc 

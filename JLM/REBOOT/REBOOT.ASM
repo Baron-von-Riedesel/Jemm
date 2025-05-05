@@ -13,9 +13,20 @@ DLL_PROCESS_DETACH equ 0
 
 DEVICE_ID equ 4435h
 
-	.data
+	option dotname
+.drectve segment info
+	db "-dll "
+	db "-subsystem:native "
+	db "-fixed:no "
+.drectve ends
 
-	public ddb
+.hdr$2 segment flat
+	db "PX"
+.hdr$2 ends
+
+	.const
+
+	public export ddb
 
 ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"REBOOT",0, ctrlproc >
 

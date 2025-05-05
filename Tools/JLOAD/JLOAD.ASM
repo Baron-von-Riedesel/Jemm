@@ -179,7 +179,7 @@ dwStack   dd 0			;phys page for protected-mode stack
 dwPageTab dd 0			;phys page for VMM page table
 dwVmmPage dd 0			;phys page for VMM code/data
 dwBuffer  dd 0			;linear address of buffer
-dwCmdLine dd 0
+dwCmdLine dd 0			;start of cmdline for JLM (terminated by CR or 00)
 if ?CATCHEXC06
 oldint06  dd 0
 spsaved dw 0
@@ -301,56 +301,52 @@ _IsJemmInstalled proc
 	ret
 _IsJemmInstalled endp
 
-;*** read command line parameter
+;*** read command line parameters
+;--- handles jload options /u and /q.
 ;*** RC: Carry if error
 ;***     NC: file to load in szPgmName
-;--- modifies DS!
+;--- modifies DS,SI,DI!
 
 GetPgmParms proc
 
 	@dprintf ?RMDBG,<"GetPgmParms enter",lf>
 	lds si,[dwCmdLine]
 	sub cx,cx
-	mov ah,0
-nextws:
+	mov al,0
+nextchr:
+	mov ah,al
 	lodsb
 	cmp al,0
 	jz error
 	cmp al,13
 	jz error
+	cmp al,' '		;skip wspaces
+	jbe nextchr
 	cmp al,'/'
 	jz @F
 	cmp al,'-'
-	jnz isnoopt
-@@:
-	mov ah,al
-	jmp skipcharx
-isnoopt:
-	cmp al,' '			;skip spaces
 	jnz parmfound
-skipcharx:
-	jmp nextws
+@@:
+	mov al,1
+	jmp nextchr
 error:
 	stc
 	ret
 parmfound:
-	and ah,ah			;option mode?
-	jz nooption
+	cmp ah,1		;option mode?
+	jnz nooption
 	or al,20h
 	cmp al,'q'
 	jnz @F
 	or es:[fOption], FOPTION_QUIET
-	mov ah,0
-	jmp skipcharx
+	jmp nextchr
 @@:
 	cmp al,'u'
-	jnz @F
+	jnz error
 	or es:[vmms.wFlags], JLF_UNLOAD
+	jmp nextchr
+nooption:			;must be the file to load
 	mov ah,0
-	jmp skipcharx
-@@:
-	jmp error
-nooption:
 	dec si
 	mov dl,0
 	mov di,offset szPgmName
@@ -1247,7 +1243,7 @@ NIBOUT:
 	ret
 endif
 
-;--- entry for driver
+;--- entry if loaded as device driver in config.sys
 
 interrupt proc far
 	pushad
