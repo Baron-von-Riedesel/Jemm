@@ -2,7 +2,9 @@
 ;--- Sample how to handle DEVICE_REBOOT_NOTIFY control message;
 ;--- handles fastboot only.
 ;--- Requires Jemm v5.86+.
-;--- to be assembled with JWasm (Masm won't understand INCBIN).
+;--- To be assembled with JWasm v2.19+; if Masm is to be used,
+;--- FASTBRM.BIN must be converted to FASTBRM.INC.
+;--- If a link step is added, the linker is supposed to export ddb.
 
 	.386p
 	.MODEL FLAT, stdcall
@@ -37,6 +39,7 @@ bDbgFlags db ?
 endif
 RMCOMM ends
 
+ifdef @pe_file_flags   ;defined by JWasm if option -pe is set
 	option dotname
 .drectve segment info
 	db "-dll "
@@ -47,10 +50,14 @@ RMCOMM ends
 .hdr$2 segment flat
 	db "PX"
 .hdr$2 ends
+EXPORT equ <export>
+else
+EXPORT equ <>
+endif
 
 	.const
 
-	public export ddb
+	public EXPORT ddb
 
 ddb VxD_Desc_Block <0,0,DEVICE_ID,1,0,0,"REBOOT",0, ctrlproc, v86_dispatch >
 
@@ -75,7 +82,11 @@ dwStartDbg dd 0
 dwSizeDbg  dd 0
 endif
 rmcode label byte
+ifdef __JWASM__
 	incbin <fastbrm.bin>
+else
+	include <fastbrm.inc>	;translated by bin2inc
+endif
 sizermcode equ $ - rmcode
 
 if BOOTSECT
@@ -86,6 +97,11 @@ endif
 	.CODE
 
 ;--- V86 API
+;--- AH=0: get version
+;--- AH=1: set disk in AL
+;--- AH=2: set partition in AL
+;--- AH=3: set boot debugger (DS:SI=address, ECX=size)
+;--- AH=4: set int 13h extension (not implemented yet)
 
 v86_dispatch proc
 
@@ -233,16 +249,36 @@ helpout endp
 
 if BOOTDBG
 
+ReleaseDbg proc uses esi
+	mov ecx,dwSizeDbg
+	jecxz exit
+	add ecx,4096-1
+	shr ecx,12
+	mov esi,dwStartDbg
+@@:
+	push ecx
+	push 0
+	push esi
+	@VMMCall _PageFree
+	add esp,2*4
+	pop ecx
+	add esi,1000h
+	loop @B
+exit:
+	mov dwSizeDbg,0
+	mov dwStartDbg,0
+	ret
+ReleaseDbg endp
+
 ;--- v86 API ah=3: load DebugB
 ;--- ds:si=address
 ;--- ecx=size of debugger
 
 SetDebug proc uses esi edi
+	call ReleaseDbg
 	mov eax, [ebp].Client_Reg_Struc.Client_ECX
 	and eax, eax
-	jz nodbg
-	cmp dwStartDbg,0
-	jnz error
+	jz exit
 	add eax,4096-1
 	shr eax,12
 	mov esi,eax
@@ -273,9 +309,7 @@ SetDebug proc uses esi edi
 	mov ecx,[ebp].Client_Reg_Struc.Client_ECX
 	mov dwSizeDbg, ecx
 	rep movsb
-	ret
-nodbg:
-	mov dwSizeDbg, 0
+exit:
 	ret
 error:
 	or [ebp].Client_Reg_Struc.Client_EFlags,1  ;set Carry flag
@@ -355,7 +389,10 @@ ReadBSFile endp
 
 endif
 
-;--- check for cmdline option /1 .. /8
+;--- scan cmdline
+;--- options /P1 .. /P8
+;--- options /D0 .. /D7
+;--- option  /B:filename
 
 Init proc uses esi pComm:ptr
 	mov esi,pComm
@@ -407,6 +444,14 @@ endif
 	retn
 Init endp
 
+Deinit proc
+if BOOTDBG
+	call ReleaseDbg
+endif
+	mov eax,1
+	ret
+Deinit endp
+
 DllMain PROC stdcall hModule:dword, dwReason:dword, dwRes:dword
 
 	mov eax,dwReason
@@ -417,7 +462,7 @@ DllMain PROC stdcall hModule:dword, dwReason:dword, dwRes:dword
 @@:
 	cmp eax,DLL_PROCESS_DETACH
 	jnz @F
-	mov eax,1
+	call Deinit
 @@:
 exit:
 	ret

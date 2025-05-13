@@ -13,7 +13,7 @@ lf	equ 10
 
 ;--- define a string constant
 
-CStr macro string
+CStr macro string:vararg
 local xxx
 CONST segment
 xxx db string
@@ -84,7 +84,7 @@ EMScheck proc uses es si di
 found:
 	and dx,dx
 	jnz isems
-	invoke printf, CStr(<"EMM installed, but NOEMS, device name=">)
+	invoke printf, CStr("EMM installed, but NOEMS, device name=")
 	mov bx,10
 	mov cx,8
 @@:
@@ -159,11 +159,11 @@ getp1:
 	clc
 	ret
 parerr:
-	invoke printf, CStr(<"usage: EMSSTAT [ options ]",lf>)
-	invoke printf, CStr(<"options are:",lf>)
-	invoke printf, CStr(<"    -p: display physical pages",lf>)
-	invoke printf, CStr(<"    -v: display VCPI info",lf>)
-	invoke printf, CStr(<"    -d: try to open devices EMMXXXX0 or EMMQXXX0",lf>)
+	invoke printf, CStr("usage: EMSSTAT [ options ]",lf)
+	invoke printf, CStr("options are:",lf)
+	invoke printf, CStr("    -p: display physical pages",lf)
+	invoke printf, CStr("    -v: display VCPI info",lf)
+	invoke printf, CStr("    -d: try to open devices EMMXXXX0 or EMMQXXX0",lf)
 	stc
 	ret
 getpar endp
@@ -178,7 +178,7 @@ main proc c
 	call EMScheck
 	and ax,ax
 	jnz @F
-	invoke printf, CStr(<"EMM not found",lf>)
+	invoke printf, CStr("EMM not found",lf)
 	mov al,01
 	jmp nointapi
 @@:
@@ -242,18 +242,18 @@ readd proc near
 	shr al,4
 	mov ah,0
 	mov ch,0
-	invoke printf, CStr(<"EMS version: %u.%u",lf>), cx, ax
+	invoke printf, CStr("EMS version: %u.%u",lf), cx, ax
 	mov ax,[si+3]
 	mov cx,[si+5]
 	mov edx,[si+11]
 	mov ebx,[si+19]
-	invoke printf, CStr(<'16 kB pages total/free: %u/%u (%lu/%lu kB)',lf>),ax,cx,edx,ebx
+	invoke printf, CStr('16 kB pages total/free: %u/%u (%lu/%lu kB)',lf),ax,cx,edx,ebx
 	mov ax,  [si+0]
-	invoke printf, CStr(<'EMS page frame: %04X',lf>),ax
+	invoke printf, CStr('EMS page frame: %04X',lf),ax
 	mov ax,  [si+7]
-	invoke printf, CStr(<'Active handles: %u',lf>),ax
+	invoke printf, CStr('Active handles: %u',lf),ax
 	mov ax,  [si+17]
-	invoke printf, CStr(<'physical pages: %u',lf>),ax
+	invoke printf, CStr('physical pages: %u',lf),ax
 
 	mov ax,5900h
 	lea di,[si+23]
@@ -264,18 +264,18 @@ readd proc near
 	jz ems59
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=5900h (get EM hardware information) failed, status=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=5900h (get EM hardware information) failed, status=%X",lf),ax
 	jmp ems59done
 ems59:
 	mov ax, [si+23]
 	shl ax, 4
-	invoke printf, CStr(<'Raw pages size: %u',lf>),ax
+	invoke printf, CStr('Raw pages size: %u',lf),ax
 	mov ax, [si+25]
-	invoke printf, CStr(<'Alternate map register sets: %u',lf>),ax
+	invoke printf, CStr('Alternate map register sets: %u',lf),ax
 	mov ax, [si+27]
-	invoke printf, CStr(<'Mapping context size: %u',lf>),ax
+	invoke printf, CStr('Mapping context size: %u',lf),ax
 	mov ax, [si+29]
-	invoke printf, CStr(<'DMA register sets: %u',lf>),ax
+	invoke printf, CStr('DMA register sets: %u',lf),ax
 ems59done:
 	ret
 readd endp
@@ -287,7 +287,7 @@ rpages proc
 	int 67h
 	cmp ah,0
 	jnz exit
-	invoke printf, CStr(<"raw pages total/free: %u/%u",lf>),dx,bx
+	invoke printf, CStr("raw pages total/free: %u/%u",lf),dx,bx
 exit:
 	ret
 rpages endp
@@ -304,10 +304,10 @@ local	wHandles:WORD
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=5402h (get number of handles) failed, status=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=5402h (get number of handles) failed, status=%X",lf),ax
 	jmp done
 @@:
-	invoke printf, CStr(<"(max) size of handle table: %u",lf>),bx
+	invoke printf, CStr("(max) size of handle table: %u",lf),bx
 
 	push ds
 	pop es
@@ -318,15 +318,15 @@ local	wHandles:WORD
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=5400h (get handle directory) failed, status=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=5400h (get handle directory) failed, status=%X",lf),ax
 	jmp done
 @@:
 	movzx ax,al
 	mov wHandles,ax
 	and ax, ax
 	jz done
-	invoke printf, CStr(<"Handle Name     Pages     KB",lf>)
-	invoke printf, CStr(<"-----------------------------",lf>)
+	invoke printf, CStr("Handle Name     Pages     KB",lf)
+	invoke printf, CStr("-----------------------------",lf)
 	mov cx,wHandles
 nexthdl:						;<------
 	push cx
@@ -350,7 +350,7 @@ nextchar:
 	int 67h
 	and ah,ah
 	jz @F
-	invoke printf, CStr(<"    ?      ?",lf>)
+	invoke printf, CStr("    ?      ?",lf)
 	jmp invalhdl
 @@:
 	movzx ebx,bx
@@ -364,15 +364,15 @@ nextchar:
 	push ax
 	pop eax
 	add [totalkb],eax
-	invoke printf, CStr(<"%8lu",lf>), eax
+	invoke printf, CStr("%8lu",lf), eax
 invalhdl:
 	pop cx
 	add di,10
 	loop nexthdl
-	invoke printf, CStr(<"-----------------------------",lf>)
+	invoke printf, CStr("-----------------------------",lf)
 	mov eax,dword ptr [totalpg+0]
 	mov edx,dword ptr [totalkb+0]
-	invoke printf, CStr(<"               %5lu%8lu",lf>), eax, edx
+	invoke printf, CStr("               %5lu%8lu",lf), eax, edx
 done:
 	ret
 xvhandle endp
@@ -404,7 +404,7 @@ local	numpgs:word
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=5801h (get mappable pages) failed, status=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=5801h (get mappable pages) failed, status=%X",lf),ax
 	jmp exit
 @@:
 	and cx,cx
@@ -420,11 +420,11 @@ local	numpgs:word
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=5800h (get mappable pages) failed, status=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=5800h (get mappable pages) failed, status=%X",lf),ax
 	jmp exit
 @@:
-	invoke printf, CStr(<"Segm:Pg Segm:Pg Segm:Pg Segm:Pg",lf>)
-	invoke printf, CStr(<"-------------------------------",lf>)
+	invoke printf, CStr("Segm:Pg Segm:Pg Segm:Pg Segm:Pg",lf)
+	invoke printf, CStr("-------------------------------",lf)
 	xor si,si
 ppage3:
 	mov ax,si
@@ -435,7 +435,7 @@ ppage3:
 	invoke printf,CStr("%2u"),ax
 	jmp ppage4
 @@:
-	invoke printf, CStr(<"--">)
+	invoke printf, CStr("--")
 ppage4:
 
 	invoke printf,CStr(" ")
@@ -450,7 +450,7 @@ ppage4:
 exit:
 	ret
 nopages:
-	invoke printf, CStr(<"no mappable pages",lf>)
+	invoke printf, CStr("no mappable pages",lf)
 	ret
 ppages endp
 
@@ -463,7 +463,7 @@ intrt proc near
 	mov al,ah
 	mov ah,0
 	mov cx,fc
-	invoke printf, CStr(<"function:%X - RC:%X",lf>),cx,ax
+	invoke printf, CStr("function:%X - RC:%X",lf),cx,ax
 	pop ax
 	mov bx,0000
 intrt1:
@@ -477,7 +477,7 @@ descout proc near
 	invoke printf, CStr("%08lX:"), ax::cx
 	mov ax,[di+0]		;limit bits 15..0
 	mov cx,[di+5]
-	invoke printf, CStr(<"%04X,%04X",lf>),ax,cx
+	invoke printf, CStr("%04X,%04X",lf),ax,cx
 	add di,8
 	stc
 	ret
@@ -496,13 +496,13 @@ vcpi proc near
 	int 67h
 	cmp ah,00
 	jz @F
-	invoke printf, CStr(<"VCPI not supported",lf>)
+	invoke printf, CStr("VCPI not supported",lf)
 	jmp exit
 @@:
 	mov al,bh
 	mov ah,0
 	mov bh,0
-	invoke printf, CStr(<"VCPI version: %u.%u",lf>),ax,bx
+	invoke printf, CStr("VCPI version: %u.%u",lf),ax,bx
 
 	push ds
 	pop es
@@ -511,23 +511,23 @@ vcpi proc near
 	mov ax,0DE01h			;get protected mode interface
 	int 67h
 	.if (ah == 0)
-		invoke printf, CStr(<"offset for protected-mode switch:%08lX",lf>), ebx
+		invoke printf, CStr("offset for protected-mode switch:%08lX",lf), ebx
 		sub di,offset buffer
 		movzx edi,di
 		shl edi, 10 	;440h -> 110000
 		mov eax, edi
-		invoke printf, CStr(<"Start free address space: %lX",lf>), eax
+		invoke printf, CStr("Start free address space: %lX",lf), eax
 		mov di,offset gdttab
-		invoke printf, CStr(<'1. VCPI descriptor: '>)
+		invoke printf, CStr('1. VCPI descriptor: ')
 		call descout
-		invoke printf, CStr(<'2. VCPI descriptor: '>)
+		invoke printf, CStr('2. VCPI descriptor: ')
 		call descout
-		invoke printf, CStr(<'3. VCPI descriptor: '>)
+		invoke printf, CStr('3. VCPI descriptor: ')
 		call descout
 	.else
 		mov al,ah
 		mov ah,0
-		invoke printf, CStr(<"int 67h, ax=DE01 failed, ah=%X",lf>),ax
+		invoke printf, CStr("int 67h, ax=DE01 failed, ah=%X",lf),ax
 	.endif
 	mov ax,0DE03h		;num free 4K pages
 	int 67h
@@ -535,10 +535,10 @@ vcpi proc near
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=DE03 failed, ah=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=DE03 failed, ah=%X",lf),ax
 	jmp _de02
 @@:
-	invoke printf, CStr(<"free 4K pages: %lu",lf>),edx
+	invoke printf, CStr("free 4K pages: %lu",lf),edx
 _de02:
 	mov ax,0DE02h		;maxAddr of a 4K page
 	int 67h
@@ -546,10 +546,10 @@ _de02:
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=DE02 failed, ah=%X",lf>),ax
+	invoke printf, CStr("int 67h, ax=DE02 failed, ah=%X",lf),ax
 	jmp _de0a
 @@:
-	invoke printf, CStr(<"highest address of pages: %lX",lf>),edx
+	invoke printf, CStr("highest address of pages: %lX",lf),edx
 _de0a:
 	mov ax,0DE0Ah		;get interrupt vector mappings
 	int 67h
@@ -557,10 +557,10 @@ _de0a:
 	jz @F
 	mov al,ah
 	mov ah,0
-	invoke printf, CStr(<"int 67h, ax=DE0A failed, ah=%X",lf>)
+	invoke printf, CStr("int 67h, ax=DE0A failed, ah=%X",lf)
 	jmp exit
 @@:
-	invoke printf, CStr(<"master/slave PIC base: %02X/%02X",lf>),bx,cx
+	invoke printf, CStr("master/slave PIC base: %02X/%02X",lf),bx,cx
 exit:
 	mov dx,[handle]
 	cmp dx,0000
@@ -576,20 +576,20 @@ vcpi endp
 
 read0 proc
 	push cx
-	invoke printf, CStr(<"read IOCTL device [">)
+	invoke printf, CStr("read IOCTL device [")
 	mov al, [buffer]
 	mov ah,0
 	invoke printf, CStr("%X"),ax
-	invoke printf, CStr(<"]=">)
+	invoke printf, CStr("]=")
 	pop cx
 	mov dx, offset buffer
 	mov ax,4402h
 	int 21h
 	.if (CARRY?)
-		invoke printf, CStr(<" failed",lf>)
+		invoke printf, CStr(" failed",lf)
 		stc
 	.else
-		invoke printf, CStr(<" ok (AX=%X):">),ax
+		invoke printf, CStr(" ok (AX=%X):"),ax
 		clc
 	.endif
 	ret
@@ -602,27 +602,27 @@ deviceinfo proc
 	mov ax,3D00h
 	int 21h
 	.if (CARRY?)
-		invoke printf, CStr(<"open device EMMXXXX0 failed",lf>)
+		invoke printf, CStr("open device EMMXXXX0 failed",lf)
 		mov dx,offset emsstr2
 		mov ax,3D00h
 		int 21h
 		.if (CARRY?)
-			invoke printf, CStr(<"open device EMMQXXX0 failed",lf>)
+			invoke printf, CStr("open device EMMQXXX0 failed",lf)
 			mov dx,offset emsstr3
 			mov ax,3D00h
 			int 21h
 			.if (CARRY?)
-				invoke printf, CStr(<"open device EMMXXXQ0 failed",lf>)
+				invoke printf, CStr("open device EMMXXXQ0 failed",lf)
 				jmp exit
 			.endif
 		.endif
 	.endif
 	push ax
 	push dx
-	invoke printf, CStr(<"open device ">)
+	invoke printf, CStr("open device ")
 	pop ax
 	invoke printf, ax
-	invoke printf, CStr(<" ok",lf>)
+	invoke printf, CStr(" ok",lf)
 	pop bx
 	mov byte ptr [buffer+0], 0
 	mov byte ptr [buffer+1], -1
@@ -633,7 +633,7 @@ deviceinfo proc
 		mov ax, word ptr [buffer+0]
 		mov cx, word ptr [buffer+2]
 		mov dx, word ptr [buffer+4]
-		invoke printf, CStr(<"%X %X %X",lf>),ax,cx,dx
+		invoke printf, CStr("%X %X %X",lf),ax,cx,dx
 	.endif
 	mov byte ptr [buffer+0], 2
 	mov byte ptr [buffer+1], -1
@@ -642,7 +642,7 @@ deviceinfo proc
 	.if (!CARRY?)
 		movzx ax, [buffer+0]
 		movzx cx, [buffer+1]
-		invoke printf, CStr(<"%u.%u",lf>),ax,cx
+		invoke printf, CStr("%u.%u",lf),ax,cx
 	.endif
 	mov ah, 3Eh
 	int 21h

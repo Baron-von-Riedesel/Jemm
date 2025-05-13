@@ -1,32 +1,9 @@
 
-  1. About ReBoot and FastBoot
+  About ReBoot
 
-  Reboot and FastBoot are JLMs to modify the reboot process.
-  
-  a) Reboot is just a sample, supposed to be modified if Jemm's default
+  Reboot is just a sample, supposed to be modified if Jemm's default
   way to reboot doesn't work on a machine. To load, add the following line
   to CONFIG.SYS:
 
    DEVICE=JLOAD.EXE REBOOT.DLL
-
-  b) FastBoot allows some fine tuning of Jemm's fast reboot behavior (which is
-  activated by Jemm's FASTBOOT option):
-
-   DEVICE=JLOAD.EXE FASTBOOT.DLL [options]
-   
-   Valid options are:
-   /Dn    : select a HD to boot from (n=0-7; 0 is first HD and default)
-   /Pn    : select a partition to boot from (n=1-8; if n > 4, the partition 
-            will be searched in the (first) extended partition. If this option
-            is omitted, the FastBoot JLM will load & run the MBR's boot code.
-   /B:file: select a "boot sector" file to be used for booting. This file is
-            expected to have a size of 512 bytes and contain executable boot
-            code.
-
-   Additionally, the FastBoot JLM implements an API to load and activate the
-  "boot variant" of Debug/X: DebugB. This allows to debug the DOS kernel
-  during initialization without modifying the boot sector of the partition.
-
-   Jemm's FASTBOOT option is not guaranteed to work, please read the chapter
-  about the requirements in Jemm's documentation.
 

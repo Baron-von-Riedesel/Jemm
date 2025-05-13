@@ -1,6 +1,7 @@
 
 ;*** get extended memory status using int 15h
 ;*** AH=88h
+;*** AH=C7h if supported
 ;*** AX=E801h
 ;*** AX=E820h
 
@@ -59,34 +60,47 @@ qRsvd	dq 0
 
 conv_mem proc
 	int 12h
-	invoke printf, CStr(<"conventional memory (Int 12h): %u kB",10>), ax
+	invoke printf, CStr("conventional memory (Int 12h): %u kB",10), ax
 	ret
 conv_mem endp
 
+;--- call int 15h, ah=C7h (later PS/2 machines, usually fails on newer systems)
+
+I15C0S struct
+wBytes    dw ?	;+0
+bModel    db ?	;+2
+bSubModel db ?	;+3
+bBiosRev  db ?	;+4
+bFeature1 db ?	;+5
+bFeature2 db ?	;+6
+bFeature3 db ?
+bFeature4 db ?
+bFeature5 db ?
+I15C0S ends
 
 do_c0c7 proc
 	stc
 	mov ah,0C0h
 	int 15h
 	jnc @F
-	invoke printf, CStr(<"Int 15h, ah=C0h failed",10>)
+	invoke printf, CStr("Int 15h, ah=C0h failed",10)
 	jmp no15c0
 @@:
-	cmp word ptr es:[bx],7
+	cmp es:[bx].I15C0S.wBytes,7
 	jb no15c0
-	mov al,es:[bx+6]
-	test al,10h
+	mov al,es:[bx].I15C0S.bFeature2
+	test al,10h	;int 15h, ah=0C7h supported?
 	jz no15c7
 	mov ah,0C7h
 	mov si,offset i15c7
 	int 15h
 	jc no15c7
-	invoke printf, CStr(<"Int 15h, ah=C7h:",10>)
-	invoke printf, CStr(<"Local memory (1 MB-16 MB/16 MB-4 GB): %08lX/%08lX kB",10>),\
+	invoke printf, CStr("Int 15h, ah=C7h:",10)
+	invoke printf, CStr("Local memory (1 MB-16 MB/16 MB-4 GB): %08lX/%08lX kB",10),\
 		i15c7.dwLBelow16, i15c7.dwLAbove16
-	invoke printf, CStr(<"System memory (1 MB-16 MB/16 MB-4 GB): %08lX/%08lX kB",10>),\
+	invoke printf, CStr("System memory (1 MB-16 MB/16 MB-4 GB): %08lX/%08lX kB",10),\
 		i15c7.dwSBelow16, i15c7.dwSAbove16
-	invoke printf, CStr(<"Cacheable memory (1 MB-16 MB/16 MB-4 GB): %08lX/%08lX kB",10>),\
+	invoke printf, CStr("Cacheable memory (1 MB-16 MB/16 MB-4 GB): %08lX/%08lX kB",10),\
 		i15c7.dwCBelow16, i15c7.dwCAbove16
 no15c7:
 no15c0:
@@ -100,10 +114,10 @@ do_88 proc
 	mov ax,8800h
 	int 15h
 	jnc @F
-	invoke printf, CStr(<"Int 15h, ah=88h failed",10>)
+	invoke printf, CStr("Int 15h, ah=88h failed",10)
 	jmp done_88
 @@:
-	invoke printf, CStr(<"Int 15h, ah=88h, extended memory: %u kB",10>), ax
+	invoke printf, CStr("Int 15h, ah=88h, extended memory: %u kB",10), ax
 done_88:
 	ret
 do_88 endp
@@ -123,7 +137,7 @@ do_e801 proc
 	and cx, cx
 	jnz @F
 error:
-	invoke printf, CStr(<"Int 15h, ax=E801h failed",10>)
+	invoke printf, CStr("Int 15h, ax=E801h failed",10)
 	jmp done_e801
 @@:
 	.if (!ax)			;some bioses return values in CX:DX
@@ -133,12 +147,12 @@ error:
 
 	push bx
 	push ax
-	invoke printf, CStr(<"Int 15h, ax=E801h:",10>)
+	invoke printf, CStr("Int 15h, ax=E801h:",10)
 	pop ax
 	.if (ax > 3C00h)
-	   invoke printf, CStr(<"ext. memory below 16 MB: %u (0x%X) KB ???",10>), ax, ax
+	   invoke printf, CStr("ext. memory below 16 MB: %u (0x%X) KB ???",10), ax, ax
 	.else
-	   invoke printf, CStr(<"ext. memory below 16 MB: %u (0x%X) KB",10>), ax, ax
+	   invoke printf, CStr("ext. memory below 16 MB: %u (0x%X) KB",10), ax, ax
 	.endif
 	pop bx
 	mov edx, 1000000h
@@ -149,7 +163,7 @@ error:
 	dec ecx
 
 	shr ax, 4
-	invoke printf, CStr(<"ext. memory above 16 MB: %u 64 KB blocks = %u MB [%lX-%lX]",10>), bx, ax, edx, ecx
+	invoke printf, CStr("ext. memory above 16 MB: %u 64 KB blocks = %u MB [%lX-%lX]",10), bx, ax, edx, ecx
 done_e801:
 	ret
 do_e801 endp
@@ -182,9 +196,9 @@ do_e820 proc
 		.break .if (eax != "SMAP")
 		push ebx
 		.if (!si)
-			invoke printf, CStr(<"Int 15h, eax=E820h:",10>)
-			invoke printf, CStr(<" address range          size       type ",10>)
-			invoke printf, CStr(<"----------------------------------------------------",10>)
+			invoke printf, CStr("Int 15h, eax=E820h:",10)
+			invoke printf, CStr(" address range          size       type ",10)
+			invoke printf, CStr("----------------------------------------------------",10)
 			inc si
 		.endif
 ;--- get size in EDX:EAX
@@ -219,12 +233,12 @@ do_e820 proc
 		sub eax,1
 		sbb edx,0
 		.if (dword ptr [di].E820MAP.lenhigh)
-			invoke printf, CStr(<"%lX%08lX-%lX%08lX  %lX%08lX  %lX (%s)",10>),
+			invoke printf, CStr("%lX%08lX-%lX%08lX  %lX%08lX  %lX (%s)",10),
 				[di].E820MAP.basehigh, [di].E820MAP.baselow, edx, eax,
 				[di].E820MAP.lenhigh, [di].E820MAP.lenlow,
 				[di].E820MAP.type_, cx
 		.else
-			invoke printf, CStr(<"%lX%08lX-%lX%08lX  %9lX  %lX (%s)",10>),
+			invoke printf, CStr("%lX%08lX-%lX%08lX  %9lX  %lX (%s)",10),
 				[di].E820MAP.basehigh, [di].E820MAP.baselow, edx, eax,
 				[di].E820MAP.lenlow,
 				[di].E820MAP.type_, cx
@@ -233,9 +247,9 @@ do_e820 proc
 		.break .if (ebx == 0)
 	.endw
 	.if (!si)
-		invoke printf, CStr(<"Int 15h, eax=E820h failed",10>)
+		invoke printf, CStr("Int 15h, eax=E820h failed",10)
 	.else
-		invoke printf, CStr(<"----------------------------------------------------",10>)
+		invoke printf, CStr("----------------------------------------------------",10)
 		mov eax,dword ptr qSum+0
 		mov edx,dword ptr qSum+4
 		mov ecx,100000h
@@ -256,7 +270,7 @@ do_e820 proc
 		mov edx,dword ptr qAvl+4
 		mov ecx,100000h
 		div ecx
-		invoke printf, CStr(<"available: %lu MB, ACPI: %lu kB, rsvd: %lu MB, total: %lu MB",10>),
+		invoke printf, CStr("available: %lu MB, ACPI: %lu kB, rsvd: %lu MB, total: %lu MB",10),
 			eax, ebx, ebp, esi
 	.endif
 	ret
@@ -273,10 +287,10 @@ xbda proc
 	mov es,ax
 	mov bl,es:[0]
 	mov bh,0
-	invoke printf, CStr(<"XBDA at segment %X, size %u kB",10>), ax, bx
+	invoke printf, CStr("XBDA at segment %X, size %u kB",10), ax, bx
 	ret
 noxbda:
-	invoke printf, CStr(<"no XBDA on this system",10>)
+	invoke printf, CStr("no XBDA on this system",10)
 	ret
 xbda endp
 

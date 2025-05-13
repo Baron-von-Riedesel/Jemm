@@ -13,6 +13,7 @@ DLL_PROCESS_DETACH equ 0
 
 DEVICE_ID equ 4435h
 
+ifdef @pe_file_flags	;-pe option set?
 	option dotname
 .drectve segment info
 	db "-dll "
@@ -23,6 +24,7 @@ DEVICE_ID equ 4435h
 .hdr$2 segment flat
 	db "PX"
 .hdr$2 ends
+endif
 
 	.const
 
