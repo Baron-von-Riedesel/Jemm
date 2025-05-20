@@ -436,8 +436,9 @@ UnloadJemm proc c public
 	stc
 	ret
 @@found:
-	mov ds,di
-	mov ecx, ds:[0]    ;remove driver from chain
+	assume fs:nothing
+	mov fs,di          ;v5.86: use FS so DS still holds DGROUP (for debug displays)
+	mov ecx, fs:[0]    ;remove driver from chain
 	mov es:[bx], ecx
 
 	@dprintf ?UNLRMDBG, <"UnloadJemm: driver removed from chain",10>
@@ -446,19 +447,19 @@ UnloadJemm proc c public
 
 	mov es,di
 	push 0
-	pop ds
+	pop fs             ;v5.86: use FS so DS still holds DGROUP
 	mov si, offset intvecs
 @@nextvec:
-	lodsb ss:[si]
+	lodsb [si]
 	cmp al,-1
 	jz @@ok
 	movzx bx,al
 	shl bx, 2
-	mov di,ss:[si+2]
+	mov di,[si+2]
 	cmp di,-1
 	jz @@skipvec
 	mov ecx, es:[di]
-	mov ds:[bx],ecx
+	mov fs:[bx],ecx
 @@skipvec:
 	add si,4
 	jmp @@nextvec
@@ -475,14 +476,14 @@ ife ?INTEGRATED
 
 	push es
 	push es
-	pop ds
+	pop fs             ;v5.86: use FS so DS still holds DGROUP
 	mov si,offset XMShandler
 	push ecx
 	pop di
 	pop es
 	mov cx,5
 	sub di,cx
-	rep movsb
+	rep movsb es:[di],fs:[si]
 	pop es
 @@noxms:
 	@dprintf ?UNLRMDBG, <"UnloadJemm: XMS hook removed",10>
@@ -492,21 +493,21 @@ endif
 if ?KD
 ;--- call int 68h if kernel debugger installed.
 ;--- if the installed instance didn't initialize the kd, nothing is to be done here!
-	push ds
 	mov ax,es
-	sub ax, 10h
-	mov ds, ax
-	test byte ptr ds:[7fh], 1
-	pop ds
+	sub ax,10h
+	mov fs,ax
+	test byte ptr fs:[7fh], 1
 	jz @F
 	mov ah, D386_Real_Mode_Init
 	int D386_RM_Int
 @@:
 endif
+	assume fs:error
 
 ;--- make sure jemm386's resident memory block is freed
 ;--- this is to be improved yet
 
+	push ds
 	mov ax,es
 	sub ax,10h+1	;size PSP + 10h (to get MCB)
 	mov ds,ax
@@ -518,7 +519,7 @@ endif
 	cmp al,'Z'
 	jnz @@nopsp
 @@ismcb:
-	cmp cx, ds:[1]
+	cmp cx,ds:[1]
 	jnz @@nopsp
 ife ?INTEGRATED
 	cmp word ptr ds:[3],10h + RSEG_END/10h
@@ -533,6 +534,7 @@ endif
 	sub ax,10h
 	mov ds:[1],ax
 @@nopsp:
+	pop ds
 	@dprintf ?UNLRMDBG, <"UnloadJemm: resident segment prepared to be released",10>
 
 ;--- now call the installed instance of Jemm386 to

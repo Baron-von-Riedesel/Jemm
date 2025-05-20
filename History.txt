@@ -9,6 +9,7 @@
    MS Himem compatible.
  - JLMs Reboot & FastBoot added.
  - fixed debug displays in 16-bit part.
+ - fixed debug displays in Jemm16.asm, UnloadJemm.
 
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.

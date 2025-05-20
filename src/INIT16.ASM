@@ -19,7 +19,7 @@ TRUE equ 1
 NULL equ 0
 
 ?USEMEMSET equ 0
-?UMBPCI equ 1
+?UMBPCI    equ 1   ; 1=be aware of UMBPCI-created UMBs
 ifndef ?NOVMWARE
 ?NOVMWARE equ 1    ; 1=support option NOVMW to disable VMWare detection
 endif

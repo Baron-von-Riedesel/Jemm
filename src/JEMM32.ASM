@@ -2474,7 +2474,10 @@ restorevecs proc
     mov [OldInt19],eax  ;save the vector stored by DOS
     mov [esi-4],edx
 
-if 0;?MOVEXBDA ;restoring the XBDA should be done by DOS (MS-DOS does)
+;--- restoring the XBDA should be done by DOS - MS-DOS does, but
+;--- only if the XBDA size won't exceed 1? kB!
+;--- Problem: size of XBDA (byte at offset 0) may be invalid.
+if 0;?MOVEXBDA
     movzx esi,word ptr ds:[@XBDA]
     cmp si, 0A000h
     jb @@noxbda
@@ -2485,7 +2488,7 @@ if 0;?MOVEXBDA ;restoring the XBDA should be done by DOS (MS-DOS does)
     shl edi, 6
     mov ds:[@XBDA],di
     shl edi, 4
-    @dprintf ?RBTDBG, <"restore XBDA to %X",10>, di
+    @dprintf ?RBTDBG, <"restoring XBDA to %X",10>, di
     mov ecx, eax
     shl ecx,8
     rep movsd

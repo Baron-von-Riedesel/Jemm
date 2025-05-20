@@ -45,6 +45,8 @@ ltoa PROC stdcall uses edx edi number:dword, outb:word, base:word
 
 ltoa ENDP
 
+;--- expected: DS=DGROUP
+
 dprintf proc c public fmt:ptr, args:vararg
 
 local flag:byte
