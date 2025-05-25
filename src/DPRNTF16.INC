@@ -45,8 +45,6 @@ ltoa PROC stdcall uses edx edi number:dword, outb:word, base:word
 
 ltoa ENDP
 
-;--- expected: DS=DGROUP
-
 dprintf proc c public fmt:ptr, args:vararg
 
 local flag:byte
@@ -57,6 +55,9 @@ local szTmp[12]:byte
 
 	pusha
 	pushf
+	push ds
+	push cs
+	pop ds
 	cld
 	lea di,args
 @@L335:
@@ -70,6 +71,7 @@ nextchar:
 	call VPUTCHR
 	jmp nextchar
 done:
+	pop ds
 	popf
 	popa
 	ret

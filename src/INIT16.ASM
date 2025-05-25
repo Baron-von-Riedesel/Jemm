@@ -2,7 +2,7 @@
 ;--- 16-bit initialization part
 ;--- to be assembled with JWasm or Masm v6.1+
 
-	.MODEL SMALL
+	.MODEL tiny
 	.386
 	option proc:private
 
@@ -73,10 +73,9 @@ xms_smax	DD 1023*4096*1024	;MAXSEXT= value
 xms_maxhigh	dd -1		; mask for upper memory address limit   
  endif
 xms_num_handles	DW ?XMS_DEFHDLS	;XMSHANDLES= value
- ife ?XMS35
-bNoE820	DB 0
- else
-xms_smem_used db FALSE
+bNoE820	DB 0            ;NOE820 option; it's a noop if MAXSEXT != 0
+ if ?XMS35
+xms_smem_used db FALSE  ;set to 1 if any super-extended block is used
  endif
 bNoE801	DB 0
 endif
@@ -201,9 +200,9 @@ endif
     db " NOCHECK       disallow access to address space without RAM (MMIO)",LF
 if ?INTEGRATED
     db " NOE801        don't use Int 15h, E801h to get amount of ext. memory",LF
- ife ?XMS35
+ ;ife ?XMS35
     db " NOE820        don't use Int 15h, E820h to get amount of ext. memory",LF
- endif
+ ;endif
 endif
     db " NOEMS         disable EMS handling",LF
     db " NODYN         no dynamic XMS memory allocation (use MIN= to set fix amount)",LF
@@ -1137,10 +1136,13 @@ I15GetMemoryStatus proc stdcall uses si di
 local maxvalue:DWORD
 local mmap:E820MAP
 
-ife ?XMS35
+if ?XMS35
+	cmp xms_smem_used,FALSE
+	jnz @F
+endif
 	cmp [bNoE820],0    ; NOE820 option set?
 	jne @@e801_check
-endif
+@@:
 
 	@dprintf ?INITRMDBG,<"I15GetMemoryStatus: get extended memory with int 15, E820",10>
 
@@ -2737,12 +2739,12 @@ if ?INTEGRATED
 	.if ax
 		mov bNoE801, TRUE
 	.endif
- ife ?XMS35
+ ;ife ?XMS35
 	invoke FindCommand, CStr("NOE820")
 	.if ax
 		mov bNoE820, TRUE
 	.endif
- endif
+ ;endif
 	invoke FindCommand, CStr("XMSHANDLES=")
 	.if ax
 		invoke GetValue, ax, 10, FALSE

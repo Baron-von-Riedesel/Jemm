@@ -225,9 +225,8 @@
                &lt;l&gt; kB; setting MAXSEXT=0 will make JemmEx behave like a
                v3.0 XMM.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
- NOE820        for JemmEx, removed in v5.80, since required by XMS v3.5.
-               JemmExL still understands this option, which tells it not to use
-               int 15h, ax=E820h to get amount of extended memory.
+ NOE820        don't use int 15h, ax=E820h to get amount of extended memory;
+               option is ignored unless MAXSEXT=0 is set.
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
                need a value of &lt;m&gt;=32767.

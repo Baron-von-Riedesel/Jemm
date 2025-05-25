@@ -80,12 +80,13 @@ MAXBLOCKSIZE equ 40000h ; std=256 kB
 
 _start:
     jmp InitMonitor
-    dw lowword offset V86GDT
+    dw lowword offset V86GDT   ;at offset 5, so 16-bit code can locate the GDT
+size_startsig equ $ - _start
 
 ;--- this is a 128 byte helper stack used for VCPI switches to
 ;--- protected-mode.
 
-    db ?HLPSTKSIZE-(5+2) dup (55h)
+    db ?HLPSTKSIZE - size_startsig dup (55h)
 
 ;--- IDT - Interrupt Descriptor Table
 ;--- as default, the IDT is no longer in the shared region
@@ -2351,7 +2352,7 @@ if ?FREEXMS
     call Pool_FreeAllBlocks
 endif
 
-    @dprintf ?UNLDBG, <"Reset, v86CS:EIP=%X:%X, v86SS:ESP=%X:%X",10>,\
+    @dprintf ?UNLDBG, <"Unload: v86CS:EIP=%X:%X, v86SS:ESP=%X:%X",10>,\
         [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP,\
         [ebp].Client_Reg_Struc.Client_SS, [ebp].Client_Reg_Struc.Client_ESP
 
@@ -2390,12 +2391,11 @@ ife ?INTEGRATED
 else
     mov bl, [A20Index]
 endif
-
+if 0                        ; now done by Jemm16::UnloadJemm
     push 0
     push word ptr 3FFh
-    LIDT FWORD ptr [esp]     ; reset IDT to real-mode
-    
-    
+    LIDT FWORD ptr [esp]    ; reset IDT to real-mode
+endif    
     MOV AX,REAL_DATA_SEL    ; before returning, set the
     MOV DS,EAX              ; segment register caches
     MOV ES,EAX

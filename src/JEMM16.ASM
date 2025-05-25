@@ -1,9 +1,9 @@
 
-;--- 16 bit low-level ASM part of Jemm
+;--- 16 bit part of Jemm;
 ;--- to be assembled with JWasm or Masm v6.1+
 
 	.286
-;	.model small	;NO model, _TEXT must be PARA, BEGDATA is first in DGROUP!
+;	.model tiny		;NO model, _TEXT should be PARA aligned
 	option proc:private
 
 	include jemm.inc
@@ -30,6 +30,12 @@ psp dw ?
 blsiz dw ?
 MCB ends
 
+IRET16 struct
+wIP dw ?
+wCS dw ?
+wFL dw ?
+IRET16 ends
+
 ;--- @DefineBP: macro to define a v86-"breakpoint"
 
 @DefineBP macro _name
@@ -48,26 +54,19 @@ endm
 _TEXT segment para public 'CODE'
 _TEXT ends
 
-BEGDATA segment PARA public 'DATA'  ;make sure DGROUP is para aligned
+_TEXT32 segment para public 'CODE'
 code32:
 ifdef __JWASM__ ;JWasm allows to include binary data directly
 	incbin <jemm32.bin>
-	align 16
+;	align 16
 else
 	.nolist
 	include _jemm32.inc
 	.list
 endif
-BEGDATA ends
+_TEXT32 ends
 
 _DATA segment word public 'DATA'
-
-if 0  ; v5.84: temporary GDT has been removed
-tmpgdt label dword
-    dq 0
-    dw -1,0,9A00h,00CFh	;flat code selector
-    dw -1,0,9200h,00CFh	;flat data selector
-endif
 
 wLow    dw RSEG_END     ;resident low memory required by driver
 
@@ -112,12 +111,7 @@ _STACK segment para STACK  'STACK'
 stacktop label byte
 _STACK ends
 
-DGROUP group BEGDATA,_DATA,CONST,_BSS,_STACK
-
-;--- this definition is to avoid 32-bit code be generated
-;--- when ES is used for memory access beyond DGROUP.
-SEG0000 segment word at 0
-SEG0000 ends
+DGROUP group _TEXT,_TEXT32,_DATA,CONST,_BSS,_STACK
 
 	.386P	;privileged instructions are used
 
@@ -163,7 +157,9 @@ endif
 	@DefineBP BPXMS 	; handle XMS A20+UMB
 	@DefineBP BPSTRAT	; EMMXXXX0 device strategy call
 	@DefineBP BPDRV 	; EMMXXXX0 device interrupt call
-	@DefineBP BPRESET
+if ?UNLOAD
+	@DefineBP BPRESET	; unload
+endif
 
 if ?HOOK13
 
@@ -196,8 +192,8 @@ int1340common:
 iret_with_new_CY:
 	push bp
 	mov bp,sp
-	rcr byte ptr [bp+2+4],1
-	rol byte ptr [bp+2+4],1
+	rcr byte ptr [bp+2].IRET16.wFL,1
+	rol byte ptr [bp+2].IRET16.wFL,1
 	pop bp
 	iret
 
@@ -212,11 +208,18 @@ endif
 ;        ES:SI -> GDT (4 descriptors)
 ;Return: CF set on error, else cleared
 ;        AH = status (00 == ok)
+;
+; For JemmEx, also handle ah=88h (get extended memory size)
+; If XMS v3.5 is supported, ax=E820h must also be intercepted.
 ;******************************************************************************
 
 	align 4
 
 NEW15 PROC FAR
+
+;--- int 15h handlers "should" preserve CF
+;--- it's not done here, because CF will be set if ah=4Fh (keyboard)
+
 	CMP AH,87H		; is it the blockmove?
 	JZ BPI1587
 if ?INTEGRATED
@@ -237,7 +240,7 @@ exit_iret:
   ife ?HOOK13
 	push bp
 	mov bp,sp
-	and byte ptr [bp+2+4],not 1  ;clear CF
+	and byte ptr [bp+2].IRET16.wFL,not 1  ;clear CF
 	pop bp
 	iret
   else
@@ -372,7 +375,7 @@ RSEG_END equ $ - device_header
 ; installation part of the virtual Monitor
 ;
 
-	assume DS:DGROUP, ES:SEG0000
+	assume DS:DGROUP;, ES:SEG0000
 
 if ?UNLOAD
 
@@ -391,6 +394,7 @@ CheckIntHooks proc stdcall public uses es si di wResSeg:WORD
 	shl di,2
 	lodsw
 	scasd
+	stc
 	jnz @@nouninst
 	add si,2
 	jmp @@nextvect
@@ -400,27 +404,26 @@ if ?VDS
 	jz @F
 	mov ax,offset NEW4B
 	cmp eax,es:[4Bh*4]
+	stc
 	jnz @@nouninst
-	@dprintf ?UNLRMDBG, <"TryUnload, int 4Bh is ok",10>
+	@dprintf ?UNLRMDBG, <"CheckIntHooks: int 4Bh is ok",10>
 @@:
 endif
 	clc
-	ret
 @@nouninst:
-	stc
 	ret
 CheckIntHooks endp
 
 ;--- Jemm can be unloaded. Do it!
 ;--- in: AX=segment of resident part of installed Jemm
 ;--- out: C=error, NC=ok. 
-;--- may change all GPRs
+;--- may change all GPRs except BP/SP.
 
 UnloadJemm proc c public
 
 	mov di,ax
 
-	@dprintf ?UNLRMDBG, <"UnloadJemm enter, CS=%X SS=%X res. segm=%X",10>, cs, ss, di
+	@dprintf ?UNLRMDBG, <"UnloadJemm enter, res. segm=%X CS=%X SS:SP=%X:%X",10>, di, cs, ss, sp
 
 ;--- remove EMMXXXX0 from driver chain
 
@@ -436,9 +439,8 @@ UnloadJemm proc c public
 	stc
 	ret
 @@found:
-	assume fs:nothing
-	mov fs,di          ;v5.86: use FS so DS still holds DGROUP (for debug displays)
-	mov ecx, fs:[0]    ;remove driver from chain
+	mov ds,di
+	mov ecx, ds:[0]    ;remove driver from chain
 	mov es:[bx], ecx
 
 	@dprintf ?UNLRMDBG, <"UnloadJemm: driver removed from chain",10>
@@ -447,19 +449,19 @@ UnloadJemm proc c public
 
 	mov es,di
 	push 0
-	pop fs             ;v5.86: use FS so DS still holds DGROUP
+	pop ds
 	mov si, offset intvecs
 @@nextvec:
-	lodsb [si]
+	lodsb cs:[si]
 	cmp al,-1
 	jz @@ok
 	movzx bx,al
 	shl bx, 2
-	mov di,[si+2]
+	mov di,cs:[si+2]
 	cmp di,-1
 	jz @@skipvec
 	mov ecx, es:[di]
-	mov fs:[bx],ecx
+	mov [bx],ecx
 @@skipvec:
 	add si,4
 	jmp @@nextvec
@@ -476,14 +478,14 @@ ife ?INTEGRATED
 
 	push es
 	push es
-	pop fs             ;v5.86: use FS so DS still holds DGROUP
+	pop ds
 	mov si,offset XMShandler
 	push ecx
 	pop di
 	pop es
 	mov cx,5
 	sub di,cx
-	rep movsb es:[di],fs:[si]
+	rep movsb
 	pop es
 @@noxms:
 	@dprintf ?UNLRMDBG, <"UnloadJemm: XMS hook removed",10>
@@ -495,19 +497,17 @@ if ?KD
 ;--- if the installed instance didn't initialize the kd, nothing is to be done here!
 	mov ax,es
 	sub ax,10h
-	mov fs,ax
-	test byte ptr fs:[7fh], 1
+	mov ds,ax
+	test byte ptr ds:[7fh], 1
 	jz @F
 	mov ah, D386_Real_Mode_Init
 	int D386_RM_Int
 @@:
 endif
-	assume fs:error
 
 ;--- make sure jemm386's resident memory block is freed
 ;--- this is to be improved yet
 
-	push ds
 	mov ax,es
 	sub ax,10h+1	;size PSP + 10h (to get MCB)
 	mov ds,ax
@@ -534,20 +534,18 @@ endif
 	sub ax,10h
 	mov ds:[1],ax
 @@nopsp:
-	pop ds
 	@dprintf ?UNLRMDBG, <"UnloadJemm: resident segment prepared to be released",10>
 
 ;--- now call the installed instance of Jemm386 to
 ;--- do the rest of the clean-up
 
-	push ss
 	push bp
-	push cs
-	push offset rmtarget
 	mov bp,sp
+	pushd 0
+	push 3FFh
 	push es
 	push offset BPRESET
-	call dword ptr [bp-4]
+	call dword ptr [bp-(4+6)]
 
 ;--- Jemm386 has exited, but we are still in protected mode!
 ;--- GDTR no longer valid, IDTR reset to 3FF:00000000
@@ -557,14 +555,22 @@ endif
 	mov eax, cr0
 	and eax, 7FFFFFFEh	;disable paging and protected-mode
 	mov cr0, eax
+;--- v5.86: for 80486 compatibility, use a JMP far16 instead of RETF
+	db 0EAh				;jmp FAR16 opcode
+	dw offset @F,seg @F
+@@:
+	LIDT FWORD ptr [bp-6]; reset IDT to 0:3ffh (v5.86: now done AFTER mode switch)
+if 1
+	xor eax,eax	;v5.86: clear TLB
+	mov cr3,eax
+endif
 	mov sp,bp
-	retf				;restore CS
-rmtarget:
 	pop bp
-	pop ax
+	mov ax,cs	;v5.86: assume model TINY
 	mov ss,ax
 	mov ds,ax
 	mov es,ax
+	sti
 	@dprintf ?UNLRMDBG, <"UnloadJemm: back from protected-mode",10>
 	@dprintf ?UNLRMDBG, <"UnloadJemm exit",10>
 	mov ax,bx
@@ -669,7 +675,7 @@ driver_entry proc far
 	pushad
 	mov cx,ss
 	mov bx,sp
-	mov ax, DGROUP
+	mov ax, cs
 	mov ss, ax
 	mov sp, offset stacktop
 	push cx
@@ -811,7 +817,7 @@ endif
 
 start proc
 
-	mov ax, DGROUP
+	mov ax,cs
 	mov ss,ax
 	mov sp, offset stacktop - 128
 	call TestCPU
@@ -868,7 +874,7 @@ endif
 start endp
 
 ;--- monitor installation
-;--- in: SS=DS=DGROUP
+;--- in: CS=SS=DS=DGROUP
 ;--- si=mode
 ;--- out: EAX=first page used for EMS/VCPI
 
@@ -1003,12 +1009,11 @@ endif
 	mov dx,ds
 	movzx edx,dx
 	shl edx,4
-;	lea eax, [edx+offset DGROUP:tmpgdt]
 	movzx eax, word ptr [code32+5]	; get offset GDT from jemm32.bin
 ;--- set register parameters for 32-bit monitor init
-	lea edi, [edx+offset DGROUP:jemmini]
-	lea ebx, [edx+offset DGROUP:_brptab]
-	lea esi, [edx+offset DGROUP:code32]
+	lea edi, [edx+offset jemmini]
+	lea ebx, [edx+offset _brptab]
+	lea esi, [edx+offset code32]
 	add eax, esi
 
 	push eax

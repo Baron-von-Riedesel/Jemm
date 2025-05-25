@@ -1439,8 +1439,8 @@ ife ?INTEGRATED
     setz [bNoPool]
     jz @@noxmsarray
 endif
-    movzx edx,word ptr [ecx+4]  ;offset of xht_pArray
-    movzx eax,word ptr [ecx+6]	;segment of xht_pArray
+    movzx edx,word ptr [ecx].XMS_HANDLETABLE.xht_pArray+0;offset
+    movzx eax,word ptr [ecx].XMS_HANDLETABLE.xht_pArray+2;segment
     shl eax,4
     add eax,edx
 ife ?INTEGRATED
