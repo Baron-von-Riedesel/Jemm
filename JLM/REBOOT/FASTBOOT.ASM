@@ -15,8 +15,11 @@
 ifndef BOOTSECT
 BOOTSECT equ 1
 endif
-ifndef BOOTDBG
-BOOTDBG equ 1
+ifndef LDDBG  ;support API "load DebugB"?
+LDDBG equ 1
+endif
+ifndef LDI13EXT ;support API "load Int 13h extension"?
+LDI13EXT equ 1
 endif
 
 DLL_PROCESS_ATTACH equ 1
@@ -34,8 +37,8 @@ RMCOMM struct
 	dw ?,?		;offset, segment of jmp far16
 bPartition db ?
 bDisk db ?
-if BOOTDBG
-bDbgFlags db ?
+if LDDBG or LDI13EXT
+bFlags db ?     ;1:call DebugB init, 1: stop in DebugB; 2: 1=call int13 extension init.
 endif
 RMCOMM ends
 
@@ -77,9 +80,13 @@ fileerror label byte
 
 	.data
 
-if BOOTDBG
+if LDDBG
 dwStartDbg dd 0
 dwSizeDbg  dd 0
+endif
+if LDI13EXT
+dwStartI13 dd 0
+dwSizeI13  dd 0
 endif
 rmcode label byte
 ifdef __JWASM__
@@ -98,10 +105,10 @@ endif
 
 ;--- V86 API
 ;--- AH=0: get version
-;--- AH=1: set disk in AL
-;--- AH=2: set partition in AL
+;--- AH=1: set disk (AL=disk, HDs only)
+;--- AH=2: set partition (AL=partition, one-based)
 ;--- AH=3: set boot debugger (DS:SI=address, ECX=size)
-;--- AH=4: set int 13h extension (not implemented yet)
+;--- AH=4: set int 13h extension (DS:SI=address, ECX=size)
 
 v86_dispatch proc
 
@@ -110,13 +117,17 @@ v86_dispatch proc
 	movzx eax, word ptr [ebp].Client_Reg_Struc.Client_EAX
 	cmp ah,0
 	jz getversion
-	cmp ah,1h
+	cmp ah,1
 	jz setdisk
-	cmp ah,2h
+	cmp ah,2
 	jz setpart
-if BOOTDBG
-	cmp ah,3h
+if LDDBG
+	cmp ah,3
 	jz setdbg
+endif
+if LDI13EXT
+	cmp ah,4
+	jz seti13ext
 endif
 error:
 	or [ebp].Client_Reg_Struc.Client_EFlags,1  ;set Carry flag
@@ -130,9 +141,24 @@ setdisk:
 setpart:
 	mov rmcode.RMCOMM.bPartition,al
 	ret
-if BOOTDBG
+if LDDBG
 setdbg:
-	call SetDebug
+	call ReleaseDbg
+	call StoreFile
+	jc @F
+	mov dwStartDbg, eax
+	mov dwSizeDbg, ecx
+@@:
+	ret
+endif
+if LDI13EXT
+seti13ext:
+	call ReleaseI13
+	call StoreFile
+	jc @F
+	mov dwStartI13, eax
+	mov dwSizeI13, ecx
+@@:
 	ret
 endif
 v86_dispatch endp
@@ -149,13 +175,22 @@ reboot_notify:
 	test bl,1      ;fastboot flag?
 	jz @B
 
-;--- If fastboot is on, one cannot call v86-mode.
-;--- IVT vectors have been restored already, VDS bit has been cleared.
-;--- So copy 16-bit code to address 07e00h, setup stack and registers
-;--- EAX & ECX, finally jump to 7E00h ( still in protected-mode ).
+if LDDBG or LDI13EXT
+;	mov rmcode.RMCOMM.bFlags,0
+endif
 
-if BOOTDBG
-	mov rmcode.RMCOMM.bDbgFlags,0
+if LDI13EXT
+	mov ecx,dwSizeI13
+	jecxz no_i13ext
+	mov edi,8000h
+	mov esi,dwStartI13
+	cld
+	rep movsb
+	or rmcode.RMCOMM.bFlags,4
+no_i13ext:
+endif
+
+if LDDBG
 	mov ecx,dwSizeDbg
 	jecxz no_dbginit
 	add ecx,1024-1
@@ -176,15 +211,20 @@ adjmem:
 	mov esi,dwStartDbg
 	cld
 	rep movsb
-	mov rmcode.RMCOMM.bDbgFlags,1+2
+	or rmcode.RMCOMM.bFlags,1+2
 no_dbginit:
 	mov ax,word ptr ds:[4+2]
 	shr ax,6				   ;para -> kB
 	cmp ax,ds:[413h]
 	jb @F
-	or rmcode.RMCOMM.bDbgFlags,2
+	or rmcode.RMCOMM.bFlags,2
 @@:
 endif
+
+;--- If fastboot is on, one cannot call v86-mode.
+;--- IVT vectors have been restored already, VDS bit has been cleared.
+;--- So copy 16-bit code to address 07e00h, setup stack and registers
+;--- EAX & ECX, finally jump to 7E00h ( still in protected-mode ).
 
 	mov edi, 7E00h
 	mov esi, offset rmcode
@@ -247,7 +287,7 @@ helpout proc uses ebp
 	ret
 helpout endp
 
-if BOOTDBG
+if LDDBG
 
 ReleaseDbg proc uses esi
 	mov ecx,dwSizeDbg
@@ -270,12 +310,43 @@ exit:
 	ret
 ReleaseDbg endp
 
-;--- v86 API ah=3: load DebugB
-;--- ds:si=address
-;--- ecx=size of debugger
+endif
 
-SetDebug proc uses esi edi
-	call ReleaseDbg
+if LDI13EXT
+
+ReleaseI13 proc uses esi
+	mov ecx,dwSizeI13
+	jecxz exit
+	add ecx,4096-1
+	shr ecx,12
+	mov esi,dwStartI13
+@@:
+	push ecx
+	push 0
+	push esi
+	@VMMCall _PageFree
+	add esp,2*4
+	pop ecx
+	add esi,1000h
+	loop @B
+exit:
+	mov dwSizeI13,0
+	mov dwStartI13,0
+	ret
+ReleaseI13 endp
+
+endif
+
+if LDDBG or LDI13EXT
+
+;--- v86 API ah=3/4: copy conv. memory block to extended memory
+;--- in: v86-ds:si=address
+;---     v86-ecx=size of region
+;--- out: NC if ok
+;---      eax=ext. memory address
+;---      ecx=size of region
+
+StoreFile proc uses esi edi
 	mov eax, [ebp].Client_Reg_Struc.Client_ECX
 	and eax, eax
 	jz exit
@@ -290,7 +361,7 @@ SetDebug proc uses esi edi
 	add esp,3*4
 	cmp eax,-1
 	jz error
-	mov dwStartDbg, eax
+	mov edi, eax
 
 	shr eax, 12 			 ;convert linear address to page number
 	push PC_INCR or PC_WRITEABLE
@@ -300,21 +371,27 @@ SetDebug proc uses esi edi
 	push eax
 	@VMMCall _PageCommit
 	add esp,5*4
+	and eax,eax
+	jz error
 
 	movzx esi, word ptr [ebp].Client_Reg_Struc.Client_DS
 	shl esi, 4
 	movzx eax, word ptr [ebp].Client_Reg_Struc.Client_ESI
 	add esi, eax
-	mov edi,dwStartDbg
 	mov ecx,[ebp].Client_Reg_Struc.Client_ECX
-	mov dwSizeDbg, ecx
+	mov eax, edi
+	push ecx
 	rep movsb
+	pop ecx
 exit:
+	clc
 	ret
 error:
 	or [ebp].Client_Reg_Struc.Client_EFlags,1  ;set Carry flag
+	stc
 	ret
-SetDebug endp
+StoreFile endp
+
 endif
 
 if BOOTSECT
@@ -445,8 +522,11 @@ endif
 Init endp
 
 Deinit proc
-if BOOTDBG
+if LDDBG
 	call ReleaseDbg
+endif
+if LDI13EXT
+	call ReleaseI13
 endif
 	mov eax,1
 	ret

@@ -24,8 +24,11 @@ CHKJMPS  equ 0	;1=check for "jmp short" at boot sector start
 ifndef BOOTSECT
 BOOTSECT equ 1	;1=support option /B:boot_sector_file
 endif
-ifndef BOOTDBG  ;must match setting in fastboot.asm
-BOOTDBG equ 1	;1=check for presence of DebugB and initialize it
+ifndef LDDBG	;must match setting in fastboot.asm
+LDDBG equ 1		;1=check for presence of DebugB and initialize it
+endif
+ifndef LDI13EXT	;must match setting in fastboot.asm
+LDI13EXT equ 1	;1=initialize int13 extension
 endif
 
 @dbgout macro chr
@@ -55,7 +58,7 @@ BDESC ends
 	dw @F, 0
 bPartition db BOOTPART  ;offset 8 (contents may be changed by FASTBOOT.ASM!)
 bDisk      db BOOTDISK  ;offset 9 (contents may be changed by FASTBOOT.ASM!)
-if BOOTDBG
+if LDDBG or LDI13EXT
 bDbgFlags  db 0			;bit 0:1=initialize DebugB; bit 1:1=stop in debugger
 endif
 @@:
@@ -65,7 +68,14 @@ endif
 	mov ds,ax
 	mov es,ax
 	sti
-if BOOTDBG
+if LDI13EXT
+	test cs:[bDbgFlags],4
+	jz @F
+	db 9ah			;call 0800h:0000 to init int13 extension
+	dw 0,800h
+@@:
+endif
+if LDDBG
 	test cs:[bDbgFlags],1
 	jz @F
 	@dbgout 'D'
@@ -73,10 +83,10 @@ if BOOTDBG
 	shl ax, 6   ;kB -> para
 	push cs
 	push offset @F
-	push ax				;call DebugB init proc
+	push ax			;call DebugB init proc
 	push 0
 	retf
-@@:    
+@@:
 endif
 	@dbgout 'R'
 if RESETDSK
@@ -157,7 +167,7 @@ if CHKJMPS
 endif
 	@dbgout 'p'
 bsect_read:
-if BOOTDBG
+if LDDBG
 	test cs:[bDbgFlags],2
 	jz @F
 	int 3

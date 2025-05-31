@@ -137,12 +137,19 @@ vds_unsup endp
 endif
 
 ;--- int 4b, ax=8102h
-;--- DX=flags (hiword of EDX cleared)
+;--- in: DX=flags - must be 0000
+;--- out: AX/BX/CX see below
+;---      SI:DI = DMA buffer size in bytes
+;---      DX = flags;
+;---       0: 1=DMA in first MB only (PC/XT arch)
+;---       1: 1=buffer is in first MB
+;---       2: 1=automatic remap supported
+;---       3: 1=all memory physically contiguous
 
 vds_version proc
-    and edx,edx
+    and edx,edx	;hiword of EDX cleared by Jemm
     jnz @@fail
-    mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 100h    ; major/minor spec version
+    mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 100h; major/minor spec version
     mov word ptr [ebp].Client_Reg_Struc.Client_EBX, 1   ; product number
     mov word ptr [ebp].Client_Reg_Struc.Client_ECX, 1   ; product revision
     mov eax, [DMABuffSize]
