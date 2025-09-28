@@ -12,6 +12,7 @@
  - fixed debug displays in Jemm16.asm, UnloadJemm.
  - JemmEx: option NOE820 reintroduced; it's a noop unless MAXSEXT is 0.
  - fixed option UNLOAD: on 80386/80486 cpus, it wasn't safe.
+ - JLM QPIEmu: added function ax=5000h.
 
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.

@@ -130,7 +130,7 @@ if ?XMS35COMPAT
     jnz @F
     cmp cx,word ptr [ebp].Client_Reg_Struc.Client_EAX+2
     jnz @F
-    bt [dwFeatures],17  ;PSE supported?
+    bt [dwFeatures],17  ;PSE-36 supported?
     jnc @F
     mov cx,word ptr [ebp].Client_Reg_Struc.Client_ECX+2
     shl ecx,1

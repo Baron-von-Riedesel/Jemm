@@ -92,3 +92,8 @@ _Fs     dd ?    ;+28
 _Gs     dd ?    ;+32
 IRETDV86 ends
 
+;--- bit positions of CPUID edx
+CPUID_VME equ 1		; =2
+CPUID_PGE equ 13	; =2000h
+CPUID_PAT equ 16	; =10000h
+

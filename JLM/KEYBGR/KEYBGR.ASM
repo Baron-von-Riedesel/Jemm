@@ -9,6 +9,7 @@
 
         .386
         .model flat
+        option casemap:none
 
         include jlm.inc
 

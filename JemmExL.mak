@@ -54,11 +54,13 @@ AOPTD=
 # list of 32bit modules
 COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\vdma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
+BUILD=build
+
 !if $(DEBUG)
-OUTD3=build\$(NAME3)D
+OUTD3=$(BUILD)\$(NAME3)D
 COFFDEP3=$(COFFMODS:.\=build\JEMMEXLD\)
 !else
-OUTD3=build\$(NAME3)
+OUTD3=$(BUILD)\$(NAME3)
 COFFDEP3=$(COFFMODS:.\=build\JEMMEXL\)
 !endif
 
@@ -86,28 +88,28 @@ LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 {src\}.asm{$(OUTD3)}.obj:
 	@$(ASM) -c -nologo -coff -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl$(OUTD3)\ -Fo$(OUTD3)\ $<
 
-ALL: $(OUTD3) $(OUTD3)\$(NAME3).EXE
+ALL: $(BUILD) $(OUTD3) $(OUTD3)\$(NAME3).EXE
 
-$(OUTD3):
-	@mkdir $(OUTD3)
+$(BUILD) $(OUTD3):
+	@mkdir $*
 
 $(OUTD3)\$(NAME3).EXE: $(OUTD3)\jemm16.obj $(OUTD3)\init16.obj
-	cd $(OUTD3)
+	@cd $(OUTD3)
 	@$(LINK16)
-	cd ..\..
+	@cd ..\..
 
 $(OUTD3)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Sg -Fl$(OUTD3)\ -Fo$(OUTD3)\ src\init16.asm
 
 $(OUTD3)\jemm16.obj: src\jemm16.asm $(OUTD3)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
-	cd $(OUTD3)
+	@cd $(OUTD3)
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl ..\..\src\jemm16.asm
-	cd ..\..
+	@cd ..\..
 
 $(OUTD3)\jemm32.bin: $(COFFDEP3)
-	cd $(OUTD3)
+	@cd $(OUTD3)
 	@$(LINK32)
-	cd ..\..
+	@cd ..\..
 
 $(COFFDEP3): $(32BITDEPS)
 

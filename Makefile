@@ -5,13 +5,15 @@
 #-----------------------------------------------------------------
 # Assembler   JWasm                 Masm v6.1 or better (+Bin2Inc)
 # OMF Linker  JWlink                OW Wlink, MS Link (link16.exe)
-# COFF Linker JWLINK                OW Wlink
+# COFF Linker JWlink                OW Wlink
 # Make        MS Nmake              OW Wmake              
 #
 # note: OW Wmake must be used with the -ms option!
 #
 # note: WLink < v1.8 shouldn't be used as COFF linker. It contains a bug 
 #       which might cause unexpected results in Jemm.
+#
+# note: linker warning "stack segment not found" can be safely ignored.
 #
 # Jemm consists of 2 parts. which are created separately: the 32-bit
 # part is the true Jemm application ( the "v86-monitor" program ) -
@@ -94,14 +96,16 @@ AOPTD=
 # list of 32bit modules
 COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\vdma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
+BUILD=build
+
 !if $(DEBUG)
-OUTD1=build\$(NAME1)D
-OUTD2=build\$(NAME2)D
+OUTD1=$(BUILD)\$(NAME1)D
+OUTD2=$(BUILD)\$(NAME2)D
 COFFDEP1=$(COFFMODS:.\=build\JEMM386D\)
 COFFDEP2=$(COFFMODS:.\=build\JEMMEXD\)
 !else
-OUTD1=build\$(NAME1)
-OUTD2=build\$(NAME2)
+OUTD1=$(BUILD)\$(NAME1)
+OUTD2=$(BUILD)\$(NAME2)
 COFFDEP1=$(COFFMODS:.\=build\JEMM386\)
 COFFDEP2=$(COFFMODS:.\=build\JEMMEX\)
 !endif
@@ -133,23 +137,20 @@ LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 {src\}.asm{$(OUTD2)}.obj:
 	@$(ASM) -c -nologo -coff -D?SAFEKBD=1 -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
 
-ALL: $(OUTD1) $(OUTD2) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE
+ALL: $(BUILD) $(OUTD1) $(OUTD2) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE
 
-$(OUTD1):
-	@mkdir $(OUTD1)
-
-$(OUTD2):
-	@mkdir $(OUTD2)
+$(BUILD) $(OUTD1) $(OUTD2):
+	@mkdir $*
 
 $(OUTD1)\$(NAME1).EXE: $(OUTD1)\jemm16.obj $(OUTD1)\init16.obj
-	cd $(OUTD1)
+	@cd $(OUTD1)
 	@$(LINK16)
-	cd ..\..
+	@cd ..\..
 
 $(OUTD2)\$(NAME2).EXE: $(OUTD2)\jemm16.obj $(OUTD2)\init16.obj
-	cd $(OUTD2)
+	@cd $(OUTD2)
 	@$(LINK16)
-	cd ..\..
+	@cd ..\..
 
 $(OUTD1)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD1)\ -Fo$(OUTD1)\ src\init16.asm
@@ -175,19 +176,19 @@ $(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\jemm32.bin src\jemm.inc src\jemm16.
 	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
 
 $(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
-	$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
+	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
 
 !endif
 
 $(OUTD1)\jemm32.bin: $(COFFDEP1)
-	cd $(OUTD1)
+	@cd $(OUTD1)
 	@$(LINK32)
-	cd ..\..
+	@cd ..\..
 
 $(OUTD2)\jemm32.bin: $(COFFDEP2)
-	cd $(OUTD2)
+	@cd $(OUTD2)
 	@$(LINK32)
-	cd ..\..
+	@cd ..\..
 
 $(COFFDEP1): $(32BITDEPS)
 

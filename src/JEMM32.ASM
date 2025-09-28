@@ -41,7 +41,7 @@
 ?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06 if noone hooked int 6
 ?ISRFLGS    equ 0       ; std=0, 1=display PIC ISR flags
 ;?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
-?CLEARCR4   equ 1       ; std=1, 1=clear CR4 at reboot
+?RESETCR4   equ 1       ; std=1, 1=reset CR4 at reboot
 ?INT19RBT   equ 0       ; std=0, 1=emit INT 19h on reboot
 
 if ?INTEGRATED
@@ -987,10 +987,10 @@ if 1 ;v5.80: display cr4 instead of cr2 if no page fault
 	cmp [dwFeatures],0
 	jz @F
 	mov exc_cr2-2,'2'
-    cmp byte ptr [ebp].Client_Reg_Struc.Client_Int, 0Eh
-    jz @F
+	cmp byte ptr [ebp].Client_Reg_Struc.Client_Int, 0Eh
+	jz @F
 	mov exc_cr2-2,'4'
-    @mov_eax_cr4
+	@mov_eax_cr4
 @@:
 endif
     push eax                     ; ebp-16
@@ -2666,6 +2666,22 @@ ife ?USETRIPLEFAULT
     push ds
     pop es
     rep movsb
+
+  if ?RESETCR4
+   if 0
+    cmp [dwFeatures],ecx    ; does CR4 exist?
+    jz @F
+    .586p                   ; CR4 exists since Pentium ( not exactly true )
+    mov cr4, ecx            ; reset CR4
+    .486p
+@@:
+   else
+    mov al, 0
+    call SetVME             ; just reset CR4.VME 
+    xor ecx, ecx
+   endif
+  endif
+
   if ?FASTBOOT
     test bl,1
     jz @F
@@ -2682,15 +2698,6 @@ ife ?USETRIPLEFAULT
     push edx
     push word ptr 3FFh
     LIDT FWORD ptr [esp]     ; reset the IDT to real-mode
-
-  if ?CLEARCR4
-    cmp edx,[dwFeatures]
-    jz @F
-    .586p                   ; CR4 exists since Pentium ( not exactly true )
-    mov cr4, edx            ; reset CR4
-    .486p
-@@:
-  endif
 
     MOV AX,REAL_DATA_SEL    ; before returning to real-mode set the
     MOV DS,EAX              ; segment register caches
