@@ -17,9 +17,12 @@
             expected to have a size of 512 bytes and contain executable boot
             code.
 
-   Additionally, the FastBoot JLM implements an API to load and activate the
-  "boot variant" of Debug/X - DebugB. This allows to debug the DOS kernel
-  during initialization without modifying the boot sector of the partition.
+   Additionally, the FastBoot JLM implements an API:
+   1. to load and activate the "boot variant" of Debug/X - DebugB. This allows
+      to debug the DOS kernel during initialization without modifying the boot
+      sector of the partition.
+   2. to load an "INT 13h BIOS extension". Sample LDI13Ext.asm is supplied,
+      showing how this is supposed to be done - it just switches HDs 0 and 1.
 
    Jemm's FASTBOOT option is not guaranteed to work, please read the chapter
   about the requirements in Jemm's documentation.
