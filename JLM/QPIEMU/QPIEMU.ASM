@@ -20,6 +20,14 @@ lf equ 10
 DLL_PROCESS_ATTACH  equ 1
 DLL_PROCESS_DETACH  equ 0
 
+PGTAB0 equ 1	;support ax=5000h - "get page table 0 physical address"
+
+if PGTAB0
+;--- this hack should be cleaned ASAP...
+	include jemm.inc
+	include jemm32.inc	;needed to get linear address of page directory
+endif
+
 	.data
 
 ;--- the DDB must be make public. The linker will "export" this
@@ -54,9 +62,20 @@ v86_dispatch proc
 	jz getversion
 	cmp ah, 1Ah
 	jz isio
+if PGTAB0
+	cmp ax, 5000h
+	jz ispt0
+endif
 error:
 	or [ebp].Client_Reg_Struc.Client_EFlags,1  ;set Carry flag
 	ret
+if PGTAB0
+ispt0:
+	mov eax,ds:[?PAGEDIR]
+	and ax, 0F000h
+	mov [ebp].Client_Reg_Struc.Client_EDX, eax
+	ret
+endif
 isio:
 	cmp al, 0
 	jz simin
@@ -169,11 +188,15 @@ iocb proc
 ;--- EBX: current client reg
 ;--- CL: bit 2: 0=IN, 1=OUT
 ;---     bit 3+4: 00=BYTE, 01=WORD, 10=DWORD
+;--- CH: bit 1: 1=IF (QPI, undocumented)
 ;--- DX=port
+
+	mov ch, byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1
+	and ch, 2
 
 	and byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, not 1+2	; reset TF & IF!
 	mov word ptr [ebp].Client_Reg_Struc.Client_EDX, dx
-	mov ch, 2	; copied from Qemm
+
 	mov word ptr [ebp].Client_Reg_Struc.Client_ECX, cx
 
 	@VMMCall Begin_Nest_Exec 	;start nested execution

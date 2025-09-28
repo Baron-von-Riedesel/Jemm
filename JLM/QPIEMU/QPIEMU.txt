@@ -45,10 +45,20 @@
  AX=1A09h, QPI_SetPortTrap
  AX=1A0Ah, QPI_ClearPortTrap
 
- However, the way to get the address of QPI itself differs in QPIEMU:
+ Since v1.2, there's also AX=5000h, which isn't part of the original QPI.
+ It returns physical address of Jemm's page table 0 in register EDX.
+
+ The way to get the address of QPI itself differs for QPIEMU:
  an INT 2Fh, with AX=1684h, BX=4354h has to be called. If successful,
  It will return with AL==0 and the QPI entry point in ES:DI.
+
+
+ History
  
+ - v1.0: 03/2023: initial
+ - v1.1: 07/2025: bit 1 of CH holds IF
+ - v1.2: 09/2025: added function ax=5000h
+
 
  5. License
 

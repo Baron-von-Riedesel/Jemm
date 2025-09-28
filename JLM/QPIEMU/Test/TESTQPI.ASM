@@ -173,6 +173,17 @@ qpi_ok:
 	in eax, dx
 	invoke printf, CStr("IN eax, dx: EAX=%lX",10), eax
 
+	cli
+	mov eax, 55aa55AAh
+	in al, dx
+	invoke printf, CStr("CLI, IN al, dx: EAX=%lX",10), eax
+
+	cli
+	mov eax, 55aa55AAh
+	in ax, dx
+	invoke printf, CStr("CLI, IN ax, dx: EAX=%lX",10), eax
+	sti
+
 	mov eax, 12345678h
 	out dx, al
 	out dx, ax
