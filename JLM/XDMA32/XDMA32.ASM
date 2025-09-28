@@ -325,10 +325,12 @@ UModes label word
     dw 133       ;Mode 6, ATA-133
     dw 166       ;Mode 7, ATA-166
 
-SIZENAME    equ 40
+	include identify.inc
+;SIZENAME    equ 40
+SIZENAME    equ sizeof IDENTIFY_DEVICE_DATA.ModelNumber
 
 DNMsg   db  ', '
-DName   db 26*2 dup (0)
+DName   db 26*2 dup (0)    ;the model number is actually 20 words only
 
 	.code
 
@@ -824,7 +826,7 @@ I_ValDisk proc
 
     push esi
     mov edi,offset DName
-    mov cl,26
+    mov cl,26               ;copy "modelnumber", 
     lea esi,[esi+27*2]
 @@:
     lodsw                   ;copy ID words 27-52 to name
@@ -847,6 +849,13 @@ endif
 
     mov bl,[edi+53*2]       ;copy "UltraDMA valid" flag to BL
     mov bh,[edi+88*2+1]     ;copy "UltraDMA mode active" flags in BH-reg.
+
+if 0;USECFGDPARMS
+;--- if LBA sectors in config data exceeds values returned by BIOS, use them if option /E is given.
+;---
+	mov eax, [edi].IDENTIFY_DEVICE_DATA.UserAddressableSectors
+;    mov [xxx], eax
+endif
 
 if SETMODE
     test bl,4           ;values in word at pos 88 valid?
