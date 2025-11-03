@@ -2,8 +2,10 @@
  History
 
  __.__.2025: v5.86
- - service table: added control proc member to allow Jemm to call out on 
-   certain events; currently "device_reboot_notify" is the only call-out. 
+ - service table: added control proc member to allow Jemm to call out on
+   certain events; currently "device_reboot_notify" is the only call-out.
+ - service table: added v86faults member - allows programs to hook into
+   v86 faults; used by JLOAD.
  - Simulate_Int: call an installed v86 hook proc before running the INT.
  - JemmEx, XMS AH=0Eh: invalid handle returned if size > 65535 kB; this is
    MS Himem compatible.

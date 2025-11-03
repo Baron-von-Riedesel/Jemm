@@ -101,7 +101,7 @@ VMM_Service Simulate_Pop
 VMM_Service _PageFree
 VMM_Service _PhysIntoV86
 VMM_Service _LinMapIntoV86
-VMM_Service Hook_V86_Fault
+VMM_Service Hook_V86_Fault   ;implemented in v5.86 - previously a stub only
 VMM_Service Hook_PM_Fault
 VMM_Service Begin_Nest_Exec
 VMM_Service Exec_Int
@@ -117,7 +117,7 @@ VMM_Service VMM_Remove_DDB
 VMM_Service Remove_IO_Handler
 VMM_Service Remove_Mult_IO_Handlers
 VMM_Service Unhook_V86_Int_Chain
-VMM_Service Unhook_V86_Fault
+VMM_Service Unhook_V86_Fault  ;implemented in v5.86 - previously a stub only
 VMM_Service Unhook_PM_Fault
 VMM_Service _PageReserve
 VMM_Service _PageCommit

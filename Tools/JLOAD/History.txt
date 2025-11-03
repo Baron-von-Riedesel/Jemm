@@ -2,6 +2,8 @@
  v5.86:
    - Jemm's control notifications handled (DEVICE_REBOOT_NOTIFY).
    - fixed: 16-bit debug displays.
+   - implemented Hook_V86_Fault/Unhook_V86_Fault, using Jemm's service
+     table entry pV86Faults (v5.86).
 
  v5.85:
    - debug displays now done with @dprintf().

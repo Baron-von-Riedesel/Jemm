@@ -7,7 +7,9 @@
 ?MMASK          EQU 1       ; 1=trap DMA master mask port (0F, DE)
 ?INVLPG         EQU 1       ; 1=use INVLPG opcode on 80486+
 ?CLEARHIGHESP   EQU 1       ; 1=clear hiword(esp) for buggy VCPI clients
-?AUXOUT         EQU 0       ; 1=use COM1 for output, 0=use int 10h/29h
+ifndef ?AUXIO
+?AUXIO          EQU 0       ; 1=use COMx for I/O, 0=use INT 10h/29h and INT 16h
+endif
 ?USEINT10       EQU 1       ; 1=use int 10h for output, 0=use int 29h
 ?SERVTABLE      equ 1       ; 1=expose service table (for JLoad)
 ?FASTMON        equ 1       ; 1=faster monitor jmp for int 00-0F
@@ -217,7 +219,8 @@ pV86_Monitor            dd ?	; linear address of V86_Monitor() (obsolete with pp
 pStackCurr              dd ?	; linear address of dwStackCurr (obsolete with ppV86Hooks)
 pMoveMemory             dd ?	; linear address of MoveMemory()
 ppV86Hooks              dd ?	; v5.85: address of pV86Hooks variable
-pControlProc            dd ?	; v5.86: address of ControlProc variable (called by Jemm on certain events)
+pV86Faults              dd ?	; v5.86: address of V86Faults
+pControlProc            dd ?	; v5.86: address of ControlProc (called by Jemm on certain events)
 VMM_SERV_TABLE ends
 endif
 

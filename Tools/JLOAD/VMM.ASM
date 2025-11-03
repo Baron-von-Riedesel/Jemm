@@ -33,17 +33,19 @@ HOOKV86 ends
 	.data
 
 dfOldint20 		df 0	;saved Jemm's int 20h vector protected mode
+	align 4
 VDS_Call_Table	dd 0	;Jemm's VDS call table
 VCPI_Call_Table dd 0	;Jemm's VCPI call table
 IO_Trap_Table	dd 0	;Jemm's IO trap table
 bprm	 		dd 0	;real-mode address of first bp
 dwTSSbase		dd 0	;start TSS of monitor
 
-lpHooks			dd 0	;page for hooks (int chain, faults, ...)
+lpV86Hooks		dd 0	;page for hooks (v86 int chain)
 lpV86_Monitor	dd 0	;address V86_Monitor() function in Jemm
 lpStackCurr		dd 0	;address of dwStackCurr variable in Jemm
 ppV86Hooks		dd 0	;v5.85: address of pV86Hooks variable in Jemm
-retaddr			dd 0	;v5.85: return address to V86_Monitor 
+retaddr			dd 0	;v5.85: return address to V86_Monitor
+lpV86Faults		dd 0	;v5.86: original address stored in vmm_service_table
 
 ScratchPTE		dd 0	;PTE used to simplify page memory management
 oldiohandler	dd 0	;saved Jemm's IO handler
@@ -59,6 +61,7 @@ trueprevint2f   dd 0
 endif
 if ?KD
 bKDdetected		db 0
+	align 4
 endif
 
 ;--- generic "control block" returned by Get_Cur_VM_Handle
@@ -71,6 +74,8 @@ ddb_list label dword
 d0001	VxD_Desc_Block <ddb_0004,1,1,1,0,0,"        ",0,0,0,0,0,0,0,offset vmm_services,  ?NUMSERV0001>
 
 GetDOSBuffer proto	;defined in JLOAD32
+
+	align 4
 
 ;--- VMM service table
 
@@ -133,15 +138,7 @@ MoveMemory  		dd 0
 ;--- VMM breakpoint table
 
 v86_bp	BPDYN ?MAXBP dup (<>)
-
-if 0 ; defined in x86.inc
-GATE struct
-wOfsLo dw ?
-wSeg   dw ?
-wAttr  dw ?
-wOfsHi dw ?
-GATE ends
-endif
+v86faulthooks dd 32 dup (0)	;v5.86
 
 	.code
 
@@ -191,7 +188,9 @@ InitVMM proc public
 	lodsd
 	mov ppV86Hooks, eax		;new for v5.85
 	lodsd
-	mov [eax],offset control_proc	;new for v5.86
+	mov lpV86Faults, eax
+	mov [esi-4],offset V86Faults	;new for v5.86
+	mov [esi],offset call_control_procs	;new for v5.86
 if ?KD
 	mov ax, 4Fh
 	int 41h
@@ -888,7 +887,7 @@ Hook_V86_Int_Chain proc
 
 ;--- the "hook" page already allocated?
 
-	cmp [lpHooks],0
+	cmp [lpV86Hooks],0
 	jnz @@isallocated
 	push eax
 	push 0
@@ -910,7 +909,7 @@ Hook_V86_Int_Chain proc
 	pop ecx
 	and eax, eax
 	jz @@error2
-	mov [lpHooks], ecx
+	mov [lpV86Hooks], ecx
 
 ;--- v5.85: set the pV86Hooks variable in Jemm32
 	mov eax, [ppV86Hooks]
@@ -919,7 +918,7 @@ Hook_V86_Int_Chain proc
 
 	pop eax
 @@isallocated:
-	mov edx,[lpHooks]
+	mov edx,[lpV86Hooks]
 	cmp [edx+eax*4].HOOKV86.dwHook,0	; 4=sizeof HOOKV86 struct
 	jz @@newhook
 
@@ -984,6 +983,58 @@ bitset:
 	align 4
 Hook_V86_Int_Chain endp
 
+;--- eax = int#
+;--- esi = hook proc
+
+Unhook_V86_Int_Chain proc
+	@dprintf ?V86HOOKDBG, <"Unhook_V86_Int_Chain: int=%X",10>, eax
+	cmp eax,100h
+	jnc @@error
+	mov ecx,[lpV86Hooks]
+	jecxz @@error
+	mov edx,[ecx+eax*4].HOOKV86.dwHook
+	and edx,edx
+	jz @@error
+	xor ecx,ecx
+@@nextitem:
+	cmp edx,esi
+	jz @@found
+	mov ecx,[edx-4]
+	mov edx,[ecx]
+	and edx,edx
+	jnz @@nextitem
+@@error:
+	stc
+	ret
+@@found:
+	mov edx,[edx-4]
+	mov edx,[edx]
+	and ecx,ecx
+	jnz @@notfirst
+	mov ecx,[lpV86Hooks]
+	and edx, edx
+	jz @@islast
+	lea ecx,[ecx+eax*4]
+@@notfirst:
+	mov [ecx],edx
+	ret
+@@islast:
+	mov [ecx+eax*4].HOOKV86.dwHook,edx
+	bt [ecx+1024], eax
+	jc @@nobitres
+	push ebx
+	mov ebx, [dwTSSbase]
+	movzx edx, [ebx].TSSSEG.tsOfs
+	add ebx, edx
+	sub ebx, 32    
+	btr [ebx],eax
+	pop ebx
+@@nobitres:
+	clc
+	ret
+	align 4
+Unhook_V86_Int_Chain endp
+
 ;--- call hooks for an int
 ;--- must have been ensured that there are hooks!
 ;--- a hook proc is called with:
@@ -1016,62 +1067,76 @@ endif
 	align 4
 CallV86Hooks endp
 
-;--- eax = int#
-;--- esi = hook proc
-
-Unhook_V86_Int_Chain proc
-	@dprintf ?V86HOOKDBG, <"Unhook_V86_Int_Chain: int=%X",10>, eax
-	cmp eax,100h
-	jnc @@error
-	mov ecx,[lpHooks]
-	jecxz @@error
-	mov edx,[ecx+eax*4].HOOKV86.dwHook
-	and edx,edx
-	jz @@error
-	xor ecx,ecx
-@@nextitem:
-	cmp edx,esi
-	jz @@found
-	mov ecx,[edx-4]
-	mov edx,[ecx]
-	and edx,edx
-	jnz @@nextitem
-@@error:
-	stc
-	ret
-@@found:
-	mov edx,[edx-4]
-	mov edx,[edx]
-	and ecx,ecx
-	jnz @@notfirst
-	mov ecx,[lpHooks]
-	and edx, edx
-	jz @@islast
-	lea ecx,[ecx+eax*4]
-@@notfirst:
-	mov [ecx],edx
-	ret
-@@islast:
-	mov [ecx+eax*4].HOOKV86.dwHook,edx
-	bt [ecx+1024], eax
-	jc @@nobitres
-	push ebx
-	mov ebx, [dwTSSbase]
-	movzx edx, [ebx].TSSSEG.tsOfs
-	add ebx, edx
-	sub ebx, 32    
-	btr [ebx],eax
-	pop ebx
-@@nobitres:
-	clc
-	ret
-	align 4
-Unhook_V86_Int_Chain endp
+;--- add a v86 fault hook
+;--- eax=fault#
+;--- esi=fault proc
+;--- out: C if not installed
+;---  NC if installed, then ESI=previous handler (win31 compat)
 
 Hook_V86_Fault proc
+	@dprintf ?V86HOOKDBG, <"Hook_V86_Fault: int=%X",10>, eax
+	cmp eax,32
+	cmc
+	jb exit
+	mov edx,[esi-4]
+	xchg esi,[eax*4+v86faulthooks]
+	mov [edx],esi
+	cmp esi,0
+	jnz exit
+	mov eax,[lpV86Faults]
+	mov [edx],eax
+exit:    
+	ret
 Hook_V86_Fault endp
+
+;--- remove a v86 fault hook
+;--- eax=fault#
+;--- esi=fault proc
+;--- out: C if not unhooked (invalid fault in eax, esi not a hook proc, hook proc not found,...)
+
 Unhook_V86_Fault proc
+	@dprintf ?V86HOOKDBG, <"Unhook_V86_Fault: int=%X",10>, eax
+	cmp eax,32
+	cmc
+	jb exit
+	xor ecx, ecx
+	mov edx, [eax*4+v86faulthooks]
+	.while edx
+		.if edx == esi
+			mov edx,[esi-4]
+			mov edx,[edx]
+			.if !ecx
+				mov [eax*4+v86faulthooks], edx
+			.else
+				mov eax,[ecx-4]
+				mov [eax], edx
+			.endif
+			.break
+		.endif
+		mov ecx, edx
+		mov edx, [edx-4]
+		mov edx, [edx]
+	.endw
+	cmp edx,1
+exit:
+	ret
 Unhook_V86_Fault endp
+
+;--- call v86 fault hookers
+;--- in: ebp=client_reg_struct
+;---    (ebx=vm handle in windows)
+;---     eax=fault#
+;--- the fault handler may either
+;--- + pass the fault to the previous handler (all regs preserved then) OR
+;--- + do a RET (all GPRs excepts EBP/ESP may be modified)
+
+V86Faults proc
+	cmp [eax*4+v86faulthooks],0
+	jz @F
+	jmp [eax*4+v86faulthooks]
+@@:
+	jmp [lpV86Faults]
+V86Faults endp
 
 ;--- the "PM" functions are pretty useless, since Jemm has no support
 ;--- for protected-mode apps.
@@ -1654,7 +1719,7 @@ _PageCommitPhys endp
 ;--- notifications from Jemm (SYSTEM_EXIT)
 ;--- eax, ebx, esi, edi, ebp must not be changed.
 
-control_proc proc
+call_control_procs proc
 	mov edx,offset ddb_list
 nextdevice:
 	mov ecx, [edx].VxD_Desc_Block.DDB_Control_Proc
@@ -1667,7 +1732,7 @@ nextdevice:
 	and edx, edx
 	jnz nextdevice
 	ret
-control_proc endp
+call_control_procs endp
 
 ;--- in: eax->ID to find, if 000, edi=name
 ;--- out: eax = hModule

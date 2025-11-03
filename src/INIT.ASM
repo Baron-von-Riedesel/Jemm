@@ -401,9 +401,9 @@ endif
 
     mov edx, PTF_PRESENT or PTF_RW or PTF_USER  ;set flags u/ser, w/riteable, p/resent
 if ?PGE
-    test byte ptr tmpFeatures+1,20h  ;PGE supported?
+    test byte ptr tmpFeatures+1,CF_PGE shr 8  ;PGE supported?
     jz @F
-    or dh,1         ;set G bit (page global)
+    or dh,PTF_GBL shr 8              ;set G bit (page global); active only if bit set in CR4
 @@:
     mov tmpPageMask,dh
 endif
@@ -579,7 +579,7 @@ else
 endif
 if ?FASTMON
     mov eax, offset int00
-@@:
+nextfastidtentry:
 ;   @dprintf ?INITDBG, <".">
     mov edx, eax
     shr edx, 16
@@ -589,11 +589,17 @@ if ?FASTMON
     add eax, 4
     add esi, 8
     dec ecx
+if 1
+;--- v5.86: the first 8 entries are now 6 bytes long
+    cmp cl,100h-8    ;ff,fe,fd,fc,fb,fa,f9,f8
+    jb @F
+    add eax, 2
+@@:
+endif
     cmp cl,100h - ?FASTENTRIES
-    jnz @B
+    jnz nextfastidtentry
 ;   @dprintf ?INITDBG, <10>
-    mov edx, 0E9006Ah
-    mov dh,?FASTENTRIES
+    mov edx, 0E9006Ah or (?FASTENTRIES shl 8) ;push byte 20h, jmp xxxx
 else
     mov edx, 0E9006Ah       ;push byte 00h, jmp xxxx
 endif
@@ -1220,12 +1226,12 @@ endif
     mov cr3,ecx
 
 if ?PGE
-    test byte ptr tmpFeatures+1,20h  ;PGE supported?
+    test byte ptr tmpFeatures+1,CF_PGE shr 8  ;PGE supported?
     jz @F
     cmp [esi].JEMMINIT.NoPGE,0
     jnz @F
     @mov_ecx_cr4
-    or cl,80h
+    or cl,CR4_PGE
     @mov_cr4_ecx
 @@:
 endif

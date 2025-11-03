@@ -19,3 +19,5 @@ testvds3:   test 810B/810C for all channels
 xmstest:    XMS memory moves
 xmstest2:   XMS block allocation
 xmstest3:   test XMS functions 0Eh/8Eh (get handle information)
+xmstest4:   test XMS resize function 8Fh
+xmstest5:   test XMS resize function 0Fh

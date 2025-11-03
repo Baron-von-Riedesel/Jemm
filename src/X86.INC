@@ -1,11 +1,41 @@
 
 ;--- page table flags
 
-PTF_PRESENT equ 1
-PTF_RW      equ 2
-PTF_USER    equ 4
-PTF_WT      equ 8
-PTF_4MB     equ 80h
+PTF_PRESENT equ 001h
+PTF_RW      equ 002h
+PTF_USER    equ 004h
+PTF_PWT     equ 008h ; page write through
+PTF_PCD     equ 010h ; page cache disable
+PTF_ACCESS  equ 020h ; page accessed
+PTF_DIRTY   equ 040h ; page dirty
+PTF_4MB     equ 080h ; PDEs: 4MB PDE
+PTF_GBL     equ 100h ; page global (P3+)
+
+;--- features, returned by CPUID in EDX
+CF_FPU      equ 0001h
+CF_VME      equ 0002h
+CF_DE       equ 0004h;debugging ext
+CF_PSE      equ 0008h;Page Size Ext (4MB)
+CF_TSC      equ 0010h;Time Stamp Counter
+CF_MSR      equ 0020h;RDMSR/WRMSR supported
+CF_PAE      equ 0040h;Physical Address Ext
+CF_MCE      equ 0080h;Machine Check Exceptions
+CF_CX8      equ 0100h;CMPXCHG8B supported
+CF_APIC     equ 0200h;APIC exists
+;rsvd       equ 0400h;
+CF_SEP      equ 0800h;SYSENTER/SYSEXIT supported
+CF_MTRR     equ 1000h
+CF_PGE      equ 2000h
+
+;--- flags in CR4
+CR4_VME      equ 01h
+CR4_PVI      equ 02h
+CR4_TSD      equ 04h;1=time stamp disable
+CR4_DE       equ 08h
+CR4_PSE      equ 10h;1=page size extensions enabled
+CR4_PAE      equ 20h
+CR4_MCE      equ 40h
+CR4_PGE      equ 80h
 
 ;--- descriptor
 

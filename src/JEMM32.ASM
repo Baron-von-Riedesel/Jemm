@@ -36,8 +36,9 @@
 ;--- equates
 
 ;--- assembly time constants
+;--- TODO: check ?NMI code - since v5.86 NMIs are handled as exceptions!
 
-?NMI        equ 1       ; std=1, 1=allow NMIs inside the monitor
+?NMI        equ 1       ; std=1, 1=allow NMIs inside the monitor;
 ?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06 if noone hooked int 6
 ?ISRFLGS    equ 0       ; std=0, 1=display PIC ISR flags
 ;?CLEARBOOTFLGS equ 0    ; std=0, 1=clear boot flags in XBDA
@@ -153,7 +154,6 @@ endif
 ;--- next 2 vars must be consecutive
 pV86Hooks       dd 0    ; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
 dwHookProc      dd 0
-pControlProc    dd offset _ret
 
 ;-- byte vars (variable)
 
@@ -368,14 +368,14 @@ endif
 
 ;--- print string at [ESP+4];
 ;--- usually with nested execution, using int 10h, ah=0Eh.
-;--- By setting ?AUXOUT one may change this to write to COM1;
+;--- By setting ?AUXIO one may change this to write to COMx;
 ;--- this can be handled in protected-mode.
 
 PrintString proc
     push esi
     push edi
 ;    @dprintf 1, <"PrintString",10>
-ife ?AUXOUT
+ife ?AUXIO
     sub esp,size Client_Reg_Struc
     mov edi, esp
     call Save_Client_State
@@ -388,7 +388,7 @@ endif
     lodsb
     and al,al
     jz @@done
- if ?AUXOUT
+ if ?AUXIO
     call AuxPutChar
  elseif ?USEINT10
     mov ah,0Eh
@@ -403,7 +403,7 @@ endif
  endif
     jmp @@nextchar
 @@done:
-ife ?AUXOUT
+ife ?AUXIO
     call End_Nest_Exec
     mov esi, esp
     call Restore_Client_State
@@ -416,107 +416,8 @@ endif
 
 PrintString endp
 
-if ?AUXOUT
-
-.text$01w segment dword flat public 'CODE'
-wCsrPos dw 0,0
-.text$01w ends
-
-COMNO       equ 1
-_XONXOFF_   equ 1
-XON         equ 11h
-XOFF        equ 13h
-
-;--- display a char in AL
-
-AuxPutChar proc
-
-	pushad
-	movzx ebx, word ptr ds:[400h + (COMNO-1)*2]
-	lea edx, [ebx+5]	;LSR - Line Status Register
-	mov cx, -1
-	movzx ecx, cx
-	xchg al, ah
-@@:
-	in al, dx
-	test al, 40h		;TEMT - transmitter empty?
-	loopz @B
-if _XONXOFF_
-	test al, 1			;char received
-	jz noxoff
-	mov edx, ebx
-	in al, dx
-	cmp al, XOFF
-	jnz noxoff
-waitxon:
-	add edx, 5
-@@: 					;wait till new char arrived
-	in al, dx
-	test al, 1
-	jz @B
-	mov edx, ebx
-	in al, dx
-	cmp al, XON			;wait till XON received
-	jnz waitxon
-noxoff:
-endif
-	xchg al, ah
-	mov edx, ebx
-	out dx, al
-	call setcsrpos
-	popad
-	ret
-
-setcsrpos:
-	cmp al, 13
-	jz col00
-	cmp al, 10
-	jz nochg
-	cmp al, 8
-	jz back
-	inc byte ptr [wCsrPos]
-	retn
-back:
-	dec byte ptr [wCsrPos]
-	retn
-col00:
-	mov byte ptr [wCsrPos], 0
-nochg:
-	retn
-
-AuxPutChar endp
-
-;--- get a char in AL
-
-AuxGetChar proc
-
-	push ebx
-	push ecx
-	push edx
-
-	movzx ebx, word ptr ds:[400h + (COMNO-1)*2]
-	lea edx, [ebx+6]	;MSR - modem status register
-	in al, dx			;DSR - modem(=DCE) ready?
-	and al, 20h
-	jz error
-	dec edx				;LSR - Line Status Register
-@@:
-	in al, dx
-	test al, 01h		;DR - Data ready?
-	jz @B
-	mov edx, ebx
-	in al, dx
-	mov ah, 00
-	jmp exit
-error:
-	xor eax, eax
-exit:
-	pop edx
-	pop ecx
-	pop ebx
-	ret
-AuxGetChar endp
-
+if ?AUXIO
+	include auxio.inc
 endif
 
 ;--- helper routines
@@ -715,14 +616,29 @@ if ?FASTMON
 @FASTMON macro x
     push x
     jmp short @@v86_monitor
-    endm
+endm
+
+;--- v5.86
+@FASTMON2 macro x
+    push 0
+    push x
+    jmp short v86_monitor2
+endm
 
     align 4
+
+v86_monitor2:
+	jmp @@v86_monitor
+	align 4
 
 int00 label near
     INTNO = 0
     REPT ?FASTENTRIES
+     if INTNO LT 8
+        @FASTMON2 INTNO
+     else
         @FASTMON INTNO
+     endif
         INTNO = INTNO+1
     ENDM
 endif
@@ -752,11 +668,11 @@ V86_Monitor PROC public
 
 ;--- Three cases are considered:
 
-;--- case 1: exception (with error code) in V86 mode
+;--- case 1: exception (with error code) in V86 mode (08,0A,0B,0C,0D,0E);
 ;--- pushes a IRETDV86 + error code
 ;--- and the IDT entries have pushed the INT#
 
-    CMP ESP, ?TOS - (sizeof IRETDV86 + 8)    ; exception in v86 mode?
+    CMP ESP, ?TOS - (sizeof IRETDV86 + 8)    ; exception with errcode in v86 mode?
     JZ V86_Exception
 
     sub esp, 4      ; v5.85: added ( to make V86FRAME "match" Client_Reg_Struc )
@@ -783,7 +699,7 @@ V86_Monitor PROC public
     CMP EBP, ?TOS - sizeof V86FRAME         ; int/irq in v86 mode?
     JNZ @@IRQOREXC
 
-;--- simple INT in v86-mode
+;--- simple INT (or EXC w/o errcode) in v86-mode
 
 if ?V86DBG
   if ?SELINTLOG
@@ -844,9 +760,10 @@ int_handled:
 
     align 4
 
-;-- IRQ, NMI or exception in ring 0
+;-- IRQ, NMI or exception in ring 0;
 ;-- an exception may be with or without error code
 ;-- an allowed IRQ will have a known ESP and FLAT_CODE_SEL as CS
+;--- ESP=EBP=V86FRAME
 
 @@IRQOREXC:
 
@@ -869,7 +786,7 @@ endif
 ;--- IRQs in ring 0 will only occur "controlled".
 ;--- This simplifies identifying them (Jemm doesn't reprogram the PICs!)
 
-    lea eax,[esp + 8*4 + 3*4 + 4 + 4]   ;PUSHAD + IRET32 + INT# +X
+    lea eax,[esp + sizeof PUSHADS + sizeof IRETD32 +2*4] ;PUSHADS + X + INT# + IRETD32
     cmp eax,[dwStackR0]             ;is ESP that of an IRQ?
     jnz ring0_exc
 @@isnmi:
@@ -1048,9 +965,14 @@ endif
 
     call Begin_Nest_Exec
 @@waitkey:
+if ?AUXIO
+    call AuxGetChar
+    cmp al,1Bh
+    jnz @@waitkey
+else
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, 00
     mov byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, V86IOPL shl 4 ;set IOPL=3 (to be safe)
-if ?SAFEKBD    
+ if ?SAFEKBD    
 ;--- v5.85: kbd interrupt may be dysfunctional because INT 15h, AH=4Fh is hooked.
 ;---        hence restore INT 15h before calling INT 16h, AH=00h.
     mov eax,[OldInt15]
@@ -1060,16 +982,17 @@ if ?SAFEKBD
     mov eax,[OldInt16]
     xchg eax,ds:[16h*4]  ;make sure we have a safe keyboard
     push eax
-endif
+ endif
 ;--- call INT 16h, AH=00 in v86-mode
     mov eax,16h
     call Exec_Int
-if ?SAFEKBD
+ if ?SAFEKBD
     pop dword ptr ds:[16h*4]
     pop dword ptr ds:[15h*4] ;v5.85: restore INT 15h      
-endif
+ endif
     cmp byte ptr [ebp].Client_Reg_Struc.Client_EAX, 1Bh
     jnz @@waitkey
+endif
     push offset szCRLF       ;print a CR/LF
     call PrintString
     cmp [bFatal],1
@@ -1101,7 +1024,7 @@ Int06_Entry proc
 Int06_Entry endp
 endif
 
-;--- exception in V86 mode
+;--- exception in V86 mode with error code
 
 V86_Exception proc
 
@@ -1132,7 +1055,7 @@ endif
     JNZ @@V86_TEST_EXC      ; no, check further
 @@Is_BP:
 
-;--- a monitor "bp" ( used to switch back from v86 to protected-mode )
+;--- a monitor "bp", used to switch back from v86 to protected-mode?
 ;--- EAX=flat selector
 
     MOV ES,EAX
@@ -1196,6 +1119,8 @@ endif
     mov esp,?TOS - sizeof IRETDV86
     iretd                       ; will it ever hit this?
 
+;--- exc 0Dh in v86, no BP
+
 @@NoBPOPC:
 
 if ?BPOPC ne 0F4h
@@ -1225,35 +1150,36 @@ if ?EMUDBG
 endif
 
     cmp al,0Fh                  ; check if potentially mov <reg>,cr#
-    je ExtendedOp
+    je ExtendedOp               ; ExtendedOp will jmp back to V86_Exc0D if no emulation happened
     mov cl,0
     mov edi, esi
-    cmp al,0F3h					; REP prefix?
+    cmp al,0F3h                 ; REP prefix?
     setz ch
-    jnz @@norepprefix
+    jnz @F
     inc esi
     mov al,[esi]
-@@norepprefix:
-    cmp al,66h                  ; 66 prefix
+@@:
+    cmp al,66h                  ; 66 prefix?
     setz ah
-    jnz @@nosizeprefix
+    jnz @F
     inc esi
     mov al,[esi]
-@@nosizeprefix:
+@@:
 
-;--- what about the remaining prefixes? 64,65,67,26,2E,36,3E?
+;--- to be fixed: at least OUTS may accept a segment prefix (64,65,26,2E,36,3E)!
+;--- and prefix 67h max cause a GPF at least...
 
     cmp al,6Ch
     JB V86_Exc0D
-    cmp al,6Fh                  ; string IO ?
+    cmp al,6Fh                  ; string IO (opcodes 6C, 6D, 6E, 6F)?
     JBE @@DoIO_String
     CMP AL,0E4H
     JB V86_Exc0D
-    CMP AL,0E7H                 ; IN/OUT xx ?
+    CMP AL,0E7H                 ; IN AL|AX,xx or OUT xx,AL|AX (opcodes E4, E5, E6, E7)?
     JBE @@DoIO_Im
     CMP AL,0ECH
     JB V86_Exc0D
-    CMP AL,0EFH                 ; IN/OUT DX ?
+    CMP AL,0EFH                 ; IN/OUT DX (opcodes EC, ED, EE, EF)?
     JBE @@DoIO_DX
     JMP V86_Exc0D
 
@@ -1277,22 +1203,34 @@ if ?ROMRO
 endif
 
 ;*************************************************************
-; unhandled exception in v86-mode. simulate a v86 exception 06.
+; unhandled exception in v86-mode.
+;--- this has been modified for v5.86.
+;--- previously, just exceptions with error code were handled here;
+;--- since such exceptions aren't usually handled by v86-code,
+;--- the default behavior was to terminate the application;
+;--- exception was exc 0Dh, which was routed to INT 06 unless V86EXC0D
+;--- option was set.
+;
+;--- now, exc 0,1,3,4,5,6 and 7 are also handled here.
+;--- however, they are all routed to INTs.
+
 ; this notifies any hookers about the problem. If noone has hooked
 ; v86-int 06, we finally end at the monitor again, display a register
 ; dump and then try to terminate the current PSP.
 ;*************************************************************
 
 ;--- unhandled v86-mode exception xxh occured
+;--- ecx=exc#
 
 @@V86_EXC_NOT0D0E:
-if ?V86EXC0D
+if ?V86EXC0D  ;option V86EXC0D supported?
 	jmp noexcrtn
 endif
 
 ;--- unhandled v86-mode exception 0Dh occured.
 ;--- the emulated "special register" moves,
 ;--- I/O instructions and HLT have been handled here...
+;--- ecx undefined
 
 V86_Exc0D::
 
@@ -1305,6 +1243,18 @@ if ?V86EXC0D
     mov eax,0Dh
     jnz v86excrtn
 noexcrtn:
+endif
+;--- v5.86: call V86 Fault handler.
+;--- they'll either just RET or chain to the default handler (V86_Fault)
+	mov eax,[ebp].Client_Reg_Struc.Client_Int
+	call [vmm_service_table.pV86Faults]
+	jmp v86excrtn2
+V86_Fault::
+
+;--- v5.86: route exc 0,1,3,4,5,6,7 to INT
+if 1
+	cmp eax,8
+	jb v86excrtn
 endif
 
 ;--- if "noone" has hooked v86 int 06 vector, there's
@@ -1323,6 +1273,7 @@ endif
     mov eax,6
 v86excrtn:
     call [vmm_service_table.pSimulate_Int]
+v86excrtn2:
     @v86popregX
     add ESP,4+4         ; skip error code & "int#" 
     IRETD               ; return to virtual 86-Mode
@@ -1333,12 +1284,15 @@ v86excrtn:
 
 ; IO command has been trapped
 
-;--- opcode E4-E7 (IN AL,XX ; IN AX,XX ; OUT XX, AL ; OUT XX, AX)
 
-@@DoIO_String:  ;<- entry for opcode 6C-6F
+;--- opcodes 6C-EF (INS, OUTS), in AL
+;--- CH=01 if rep prefix, else 00
+;--- AH=01 if 66h prefix, else 00
+
+@@DoIO_String:
     rol ecx,16
     mov cx,word ptr [ebp].Client_Reg_Struc.Client_ES
-    test al,2
+    test al,2    ;OUTS opcode?
     jz @@isstrin
     mov cx,word ptr [ebp].Client_Reg_Struc.Client_DS
 @@isstrin:
@@ -1348,10 +1302,16 @@ v86excrtn:
     or cl,ch   ;set REP bit
     JMP @@DoIO_DX
 
+;--- opcodes E4-E7 (IN AL,XX ; IN AX,XX ; OUT XX, AL ; OUT XX, AX)
+
 @@DoIO_Im:
     INC ESI
     MOVZX EDX,BYTE PTR [ESI]              ; get I/O port in DX
-@@DoIO_DX:      ;<- entry for opcode EC-EF, expects DX = Client_DX
+
+;--- entry opcodes EC-EF (IN AL|AX,DX ; OUT DX,AL|AX)
+;--- DX = Client_DX
+
+@@DoIO_DX:
     inc esi
     and ah,al   ;if AH still 1, it is DWORD IO
     shl ah,4
@@ -1776,7 +1736,7 @@ MoveMemoryPhys endp
 ?WT equ 0       ; std=0, 1=set WT bit in PTE for mem moves
 
 if ?WT
-?PA equ PTF_PRESENT or PTF_RW or PTF_USER or PTF_WT
+?PA equ PTF_PRESENT or PTF_RW or PTF_USER or PTF_PWT
 else
 ?PA equ PTF_PRESENT or PTF_RW or PTF_USER
 endif
@@ -2632,7 +2592,7 @@ if ?FASTBOOT
     mov bl,0    ;bit 0: 0="full" reboot, 1=fastboot
 endif
     mov eax, DEVICE_REBOOT_NOTIFY
-    call pControlProc
+    call vmm_service_table.pControlProc
     test [bV86Flags], V86F_ALTBOOT
     jz Reboot_1
 
@@ -2653,7 +2613,7 @@ Reboot_1::      ;<--- entry from FASTBOOT (see above)
     MOV WORD PTR DS:[@RESET_FLAG],1234H ; 1234h=warm boot
 
 if 1
-    MOV AL,0Fh  ;disable NMI, set shutdown byte
+    MOV AL,0Fh  ;set shutdown byte; bit 7: 0=enable NMI 
     out 70h,al
     MOV AL,0    ;software-reset
     out 71h,al
@@ -2691,7 +2651,7 @@ ife ?USETRIPLEFAULT
     rep movsb
     and byte ptr ds:[47Bh],not 20h  ;reset VDS bit
     mov eax, DEVICE_REBOOT_NOTIFY
-    call pControlProc
+    call vmm_service_table.pControlProc
 @@:
   endif
     xor edx, edx
@@ -2791,7 +2751,8 @@ vmm_service_table label VMM_SERV_TABLE
     dd offset dwStackCurr
     dd MoveMemory
     dd offset pV86Hooks	;v5.85
-    dd offset pControlProc	;v5.86
+    dd offset V86_Fault	;v5.86
+    dd offset _ret		;v5.86: control proc
 
 endif
 

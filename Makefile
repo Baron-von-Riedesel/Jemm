@@ -112,7 +112,7 @@ COFFDEP2=$(COFFMODS:.\=build\JEMMEX\)
 
 
 !if $(JWLINK32)
-LINK32=jwlink format raw bin file {$(COFFMODS:.\=)} name jemm32.bin option offs=0x110000, start=_start, map=jemm32.map, quiet
+LINK32=jwlink format raw bin file {$(COFFMODS:.\=)} name jemm32.bin disable 1014 op offs=0x110000, start=_start, map=jemm32.map, quiet
 !elseif $(WLINK32)
 LINK32= wlink format raw bin file {$(COFFMODS:.\=)} name jemm32.bin option offs=0x110000, start=_start, map=jemm32.map, quiet
 !else
