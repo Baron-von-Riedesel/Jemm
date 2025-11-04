@@ -34,7 +34,7 @@ endif
 
 ;--- entry from real-mode - must be at offset 0.
 ;--- This is a true VCPI entry, meaning SS:ESP still on host stack.
-;--- CS,DS,ES=Flat
+;--- CS,DS,ES=Flat (v5.86: CS is correct, but DS/ES was just an assumption)
 ;--- ecx->VMMS structure
 ;--- edi=phys page for protected-mode stack
 ;--- ebp=vcpi entry (if ?USEVCPIEXIT is 1)
@@ -42,8 +42,14 @@ endif
 
 start proc stdcall public
 
+;--- v5.86: don't assume DS/ES are flat. It's true for Jemm, but
+;--- another program may have hooked into int 67h, ax=DE0Ch!
+	mov eax, cs
+	add eax, 8
+	mov ds, eax
+	mov es, eax
+
 	or edi, PTF_PRESENT or PTF_RW or PTF_USER
-	mov eax, ds
 
 ;--- set the 4kB stack allocated in 16-bit init code
 ;--- to be fixed: don't modify PTEs of the F8000000-F83FFFFF region, it's

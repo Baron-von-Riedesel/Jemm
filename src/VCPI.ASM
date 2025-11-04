@@ -116,10 +116,15 @@ VCPI_GetInterface   PROC
 ;--- Since this label is located in .text$2, 1 page should suffice.
 
 if ?CODEIN2PAGE
-    mov ecx, 440h+8 ;this is offset in page table for 112000h
+    mov ecx, (440h+2*4) ;this is offset in page table for 112000h
 else
-    mov ecx, 440h+4 ;this is offset in page table for 111000h
+    mov ecx, (440h+1*4) ;this is offset in page table for 111000h
 endif
+	test [bV86Flags], V86F_SB ;v5.86: new functionality for SB option
+	jz @F
+	mov ecx, pPg0PartEnd     ;end address of monitor part in page table 0
+	shr ecx, 10
+@@:
     add word ptr [ebp].Client_Reg_Struc.Client_EDI,cx
     shr ecx, 2
 @@vgiloop:

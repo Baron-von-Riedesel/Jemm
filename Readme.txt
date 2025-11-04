@@ -213,9 +213,8 @@
                <l> kB; setting MAXSEXT=0 will make JemmEx behave like a
                v3.0 XMM.
  NOE801        don't use int 15h, ax=E801h to get amount of extended memory.
- NOE820        for JemmEx, removed in v5.80, since required by XMS v3.5.
-               JemmExL still understands this option, which tells it not to use
-               int 15h, ax=E820h to get amount of extended memory.
+ NOE820        don't use int 15h, ax=E820h to get amount of extended memory;
+               option is ignored unless MAXSEXT=0 is set.
  X2MAX=m       limit for free extended memory in kB reported by XMS V2 
                (default 65535). It is reported that some old applications
                need a value of <m>=32767.
@@ -328,10 +327,19 @@
 
  4.8 Option SB
 
- Option SB was supposed to help Creative's SoundBlaster emulation drivers for
- SB PCI devices. It translates an exception 0Dh with error code 0x1A that
- may have occured in V86 mode to an INT 3. That's rather obscure and most
- likely was just a misunderstanding.
+ Option SB is supposed to help Creative's SoundBlaster emulation drivers for
+ SB PCI devices. It does 2 things:
+
+ a) It translates an exception 0Dh with error code 0x1A that may have occured
+    in V86 mode to an INT 3. It's unclear what this is supposed to fix.
+ b) Since v5.86, it "identity maps" region 0-0x3fffff in the first page table
+    and includes the monitor code into the shared address space returned by
+    VCPI function 01.
+
+ With b), Creative's SBINIT/SBEINIT tools should be compatible with Jemm.
+ However, due to the rather hackish nature of those drivers ( they modify
+ Jemm's IDT/GDT and page tables), one may experience negative effects on
+ stability.
 
 
  5. Compatibility
@@ -348,10 +356,11 @@
    with a 16-byte header ( somewhat similar to DOS MCBs ). Instead, the UMB
    addresses and sizes are stored in a table in extended memory, not accessible
    by external programs. The table can hold up to 8 blocks.
- - MS Emm386 tries to map physical memory in its linear address space, in such
-   a way that linear and physical addresses are identical. This isn't done by
-   Jemm, because it may consume quite a lot of physical memory for paging
+ - MS Emm386 tries to map all of physical memory in its linear address space,
+   in such a way that linear and physical addresses are identical. This isn't
+   done by Jemm, because it may consume quite a lot of physical memory for paging
    tables - at least if 4KB pages are used, as it is the case with MS Emm386.
+   See option SB, though, which triggers this kind of mapping for the first 4 MB.
  - Both Jemm and MS Emm386 supply the NOVCPI commandline option. However, the
    effects differ: with Jemm, VCPI function DE01h will be deactivated by this
    option, thus refusing to start any VCPI client. In contrast, MS Emm386's
@@ -498,7 +507,7 @@
    option MAX=32752K ( that's 32MB minus 16kB) should help; alternately, try
    setting environment variable "DPMIMEM=MAXMEM 16383".
 
- - The JEMM ;-) DOS Extender (used for "Strike Commander" and "Privateer")
+ - The JEMM ;-) DOS extender (used for "Strike Commander" and "Privateer")
    isn't compatible with the VME option. This requirement is a strong sign
    that this extender switches to V86 mode on its own, which is a bad idea
    for a VCPI client.

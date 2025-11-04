@@ -448,10 +448,12 @@ if ?PGE
 endif
     loop @B
 
-if ?MAPEXTMEM
+if 1;?MAPEXTMEM
 
 ;-- for VCPI intruders, identity map remaining PTEs in page tab 0.
 
+	test [esi].JEMMINIT.V86Flags, V86F_SB
+	jz nomapping
     push eax
  if 1
     movzx eax, di
@@ -470,7 +472,7 @@ if ?MAPEXTMEM
 ;--- with PSE, there's no big loss, since just the page dir
 ;--- has to be adjusted. However, possible intruders most
 ;--- likely won't understand 4MB PDEs.
- if 1
+ if 0
     sub edi, 2000h-4	; =pagedir+4
     mov ecx, 1FFh
 ;--- bit 7=1: PSE 4MB page
@@ -483,6 +485,7 @@ if ?MAPEXTMEM
     loop @B
  endif
     pop eax
+nomapping:
 endif
 
 ;-- init system page table with the rest.
@@ -733,6 +736,7 @@ endif
 
     lea ecx,[edi+1000h-1]
     and cx,0F000h
+    mov [pPg0PartEnd],ecx   ;v5.86: store end of monitor in page tab 0
     sub ecx, edi
     mov [pSmallHeap], edi
     mov [dwHeapSize], ecx

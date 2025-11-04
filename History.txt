@@ -15,6 +15,8 @@
  - JemmEx: option NOE820 reintroduced; it's a noop unless MAXSEXT is 0.
  - fixed option UNLOAD: on 80386/80486 cpus, it wasn't safe.
  - JLM QPIEmu: added function ax=5000h.
+ - functionality of cmdline option SB has been extended to make Jemm
+   compatible with SB emulation drivers SBINIT/SBEINIT for SB PCI cards.
 
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.

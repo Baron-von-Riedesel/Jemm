@@ -137,6 +137,7 @@ if ?SAFEKBD
 OldInt15        dd 0        ; v5.85: original INT 15h vector
 OldInt16        dd 0        ; store to have a safe keyboard input
 endif
+pPg0PartEnd     dd 0
 
     public  pSmallHeap
     public  dwHeapSize

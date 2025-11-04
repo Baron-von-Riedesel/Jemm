@@ -27,9 +27,9 @@ ifndef ?SAFEKBD
 ?SAFEKBD        equ 0       ; 1=use original vector for int 16h kbd poll
 endif
 ?DYNTRAPP60     equ 1       ; 1=trap port 60h conditionally only
-ifndef ?MAPEXTMEM
-?MAPEXTMEM      equ 0       ; 1="identity map" extended memory (SBEINIT.COM/386SWAT may need this)
-endif
+;ifndef ?MAPEXTMEM          ; v5.86: obsolete; now covered by SB option
+;?MAPEXTMEM      equ 0       ; 1="identity map" extended memory (SBEINIT.COM/386SWAT may need this)
+;endif
 
 GDT_SIZE        equ 200h    ; size of GDT
 
