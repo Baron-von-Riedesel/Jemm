@@ -1,7 +1,7 @@
 
  History
 
- __.__.2025: v5.86
+ __.__.2026: v5.86
  - service table: added control proc member to allow Jemm to call out on
    certain events; currently "device_reboot_notify" is the only call-out.
  - service table: added v86faults member - allows programs to hook into
@@ -15,8 +15,9 @@
  - JemmEx: option NOE820 reintroduced; it's a noop unless MAXSEXT is 0.
  - fixed option UNLOAD: on 80386/80486 cpus, it wasn't safe.
  - JLM QPIEmu: added function ax=5000h.
- - functionality of cmdline option SB has been extended to make Jemm
-   compatible with SB emulation drivers SBINIT/SBEINIT for SB PCI cards.
+ - reintroduced compatibility with SB emulation drivers SB(E)INIT for SB PCI
+   cards by extending functionality of cmdline option SB.
+ - increased NMI stability.
 
  10.01.2025: v5.85
  - fixed: VDS func ax=810Ch: set ZF if disable cnt reaches zero.
@@ -26,7 +27,7 @@
  - fixed: it was assumed that value for TR to be loaded in VCPI function
    ax=DE0Ch ( switch from v86- to protected-mode) had bits 0-2 cleared.
  - linear address region 110000-3FFFFF is now only mapped as far as needed by
-   the monitor program.
+   the monitor program (looses SB(E)INIT compatibility).
  - optional kernel-debugger-aware variant calls int 68h for deinitialization.
  - cmdline switch NOVMW added.
  - easier log displays via macro @dprintf.

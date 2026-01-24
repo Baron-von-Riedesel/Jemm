@@ -52,7 +52,7 @@ endif
 externdef OldInt19:dword
 externdef OldInt67:dword
 
-externdef pPg0PartEnd:dword
+;externdef pPg0PartEnd:dword
 externdef pSavedVecs:dword
 externdef dwV86IDT:dword
 externdef dwFeatures:dword

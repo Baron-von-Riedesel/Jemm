@@ -137,7 +137,7 @@ if ?SAFEKBD
 OldInt15        dd 0        ; v5.85: original INT 15h vector
 OldInt16        dd 0        ; store to have a safe keyboard input
 endif
-pPg0PartEnd     dd 0
+;pPg0PartEnd     dd 0
 
     public  pSmallHeap
     public  dwHeapSize
@@ -614,35 +614,29 @@ endif
 
 if ?FASTMON
 
-@FASTMON macro x
-    push x
-    jmp short @@v86_monitor
-endm
-
-;--- v5.86
-@FASTMON2 macro x
-    push 0
-    push x
-    jmp short v86_monitor2
-endm
-
     align 4
 
-v86_monitor2:
+v86_monitor2:   ;v5.86: label needed because the 32 entries won't fit in 128 bytes anymore
+	push dword ptr [esp]
 	jmp @@v86_monitor
 	align 4
 
+;--- v5.86: "fast" entries 0-7 get a fake error code now;
+;---        thus they are handled as exceptions by the monitor.
+
 int00 label near
-    INTNO = 0
-    REPT ?FASTENTRIES
-     if INTNO LT 8
-        @FASTMON2 INTNO
-     else
-        @FASTMON INTNO
-     endif
-        INTNO = INTNO+1
-    ENDM
-endif
+INTNO = 0
+REPT ?FASTENTRIES	;32 "fast" entries
+	push INTNO
+ if INTNO LT 8
+	jmp short v86_monitor2
+ else
+	jmp short @@v86_monitor
+ endif
+INTNO = INTNO+1
+ENDM
+
+endif ;?FASTMON
 
     align 4
     
@@ -667,14 +661,22 @@ V86FRAME ends
 
 V86_Monitor PROC public
 
-;--- Three cases are considered:
+;--- Three cases must be handled:
 
 ;--- case 1: exception (with error code) in V86 mode (08,0A,0B,0C,0D,0E);
-;--- pushes a IRETDV86 + error code
-;--- and the IDT entries have pushed the INT#
+;--- on the stack: IRETDV86, error code, int#
+;--- v5.86: entry code for int 0-7 does now push a "faked" error code!
+;--- so they are now also treated as exceptions.
 
-    CMP ESP, ?TOS - (sizeof IRETDV86 + 8)    ; exception with errcode in v86 mode?
+    CMP ESP, ?TOS - (sizeof IRETDV86 + 2*4) ; exception with errcode in v86 mode?
     JZ V86_Exception
+
+;--- case 2: EXC or IRQ (HLT emu, Yield) in v86 monitor; monitor reentered?
+
+    CMP ESP, ?TOS - (sizeof IRETDV86 + 1*4)
+    JNZ @@IRQOREXC
+
+;--- case 3: normal INT/IRQ (or EXC > 7 without error code)
 
     sub esp, 4      ; v5.85: added ( to make V86FRAME "match" Client_Reg_Struc )
     PUSHAD
@@ -692,15 +694,6 @@ V86_Monitor PROC public
 ;-- valid frame.
 
     MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
-
-;--- case 2 & 3:
-; - INT executed in V86 mode     EBP = ?TOS - sizeof V86FRAME
-; - EXC/IRQ (HLT) in v86 monitor EBP < ?TOS - sizeof V86FRAME
-
-    CMP EBP, ?TOS - sizeof V86FRAME         ; int/irq in v86 mode?
-    JNZ @@IRQOREXC
-
-;--- simple INT (or EXC w/o errcode) in v86-mode
 
 if ?V86DBG
   if ?SELINTLOG
@@ -761,45 +754,74 @@ int_handled:
 
     align 4
 
-;-- IRQ, NMI or exception in ring 0;
-;-- an exception may be with or without error code
-;-- an allowed IRQ will have a known ESP and FLAT_CODE_SEL as CS
-;--- ESP=EBP=V86FRAME
+;--- IRQ, NMI or exception in ring 0 - monitor reentered;
+;--- exceptions without error code will have a faked one here;
+;--- an allowed IRQ will have a known ESP and FLAT_CODE_SEL as CS
+;--- ESP -> int#, if exc:errorc, IRETD32
+;--- DS,ES=valid selectors (not for NMI)
 
 @@IRQOREXC:
 
-if ?V86DBG
-  if ?SELINTLOG
-    bt cs:[logintbm],ecx
-    jnc @F
-  endif
-    @dprintf ?V86DBG, <"V86 IRQ/EXC, #=%X EBP=%X, CS:EIP=%X:%X, EFL=%X, SS:ESP=%X:%X",10>, cx,\
-        ebp, word ptr [ebp].V86FRAME._Cs, [ebp].V86FRAME._Eip, [ebp].V86FRAME._Efl, word ptr [ebp].V86FRAME._Ss, [ebp].V86FRAME._Esp
-@@:
-endif
+    PUSHAD
+    MOV EBP,ESP		; ebp -> Client_Reg_Struc
+;--- v5.86: fixed, V86FRAME._IntNo isn't correct for IRQs!
+;    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
+    MOVZX ECX,byte ptr [EBP+sizeof PUSHADS] ;load 1 byte ONLY!
+
 if ?NMI
     cmp ecx,2       ;NMI?
-    JZ @@isnmi
+;--- v5.86: for NMIs, selectors DS & ES might not be set;
+;--- worse, even SS might have an unexpected value;
+;--- so the code below isn't fully "NMI-safe".
+    jnz @F
+    push ds
+    mov eax, cs
+    add eax, 8
+    mov ds, eax    ;ensure DS is set
+    call @@runv86
+    pop ds
+    @v86popreg
+    add ESP,4+4    ;skip int# & filler
+    IRETD
+@@:
 endif
-    cmp word ptr [ebp].V86FRAME._Cs, FLAT_CODE_SEL
+
+;--- v5.86: fixed, V86FRAME got another member in v5.85;
+;--- so since IRQs don't push error codes, the -4 displacement is necessary!
+    cmp word ptr [ebp-4].V86FRAME._Cs, FLAT_CODE_SEL
     JNZ ring0_exc
 
 ;--- IRQs in ring 0 will only occur "controlled".
 ;--- This simplifies identifying them (Jemm doesn't reprogram the PICs!)
-
-    lea eax,[esp + sizeof PUSHADS + sizeof IRETD32 +2*4] ;PUSHADS + X + INT# + IRETD32
-    cmp eax,[dwStackR0]             ;is ESP that of an IRQ?
+;--- A ring0 IRQ will have pushed IRETD32, int# and PUSHADS:
+    lea eax,[ebp + sizeof PUSHADS + 4 + sizeof IRETD32]
+    cmp eax,cs:[dwStackR0]      ;is ESP that of an IRQ?
     jnz ring0_exc
-@@isnmi:
+
+if ?V86DBG
+  if ?SELINTLOG
+    cmp ecx,32
+    jnc @F
+    bt cs:[logintbm],ecx
+    jnc @F
+  endif
+    @dprintf ?V86DBG, <"V86 IRQ in PL0, int=%X ebp=%X, cs:eip=%X:%X, efl=%X",10>, ecx,\
+        ebp, word ptr [ebp-4].V86FRAME._Cs, [ebp-4].V86FRAME._Eip, [ebp-4].V86FRAME._Efl
+@@:
+endif
+
+    call @@runv86
+    @v86popreg
+    add ESP,4      ;skip int#
+    IRETD
+@@runv86:
     mov ebp, ?TOS - sizeof Client_Reg_Struc
     push ecx
     call Begin_Nest_Exec
     pop eax
     call Exec_Int
     call End_Nest_Exec
-    @v86popreg
-    add ESP,4+4         ; skip int#
-    IRETD
+    ret
     align 4
 
 V86_Monitor ENDP
@@ -1018,7 +1040,7 @@ Int06_Entry proc
     push 6
     pushad
     mov ebp, esp        ; ebp -> Client_Reg_Struc
-    mov eax, ss
+    mov eax, ss         ; might be better to use "mov eax,cs" "add eax,8"
     mov ds, eax
     jmp @@Is_BP
     align 4
@@ -1026,6 +1048,9 @@ Int06_Entry endp
 endif
 
 ;--- exception in V86 mode with error code
+;--- v5.86: exceptions 0-8 have pushed a "fake" error code.
+;--- esp -> int#, error code, IRET32D
+;--- DS,ES = NULL
 
 V86_Exception proc
 
@@ -1224,7 +1249,7 @@ endif
 ;--- ecx=exc#
 
 @@V86_EXC_NOT0D0E:
-if ?V86EXC0D  ;option V86EXC0D supported?
+if ?V86EXC0D  ;option V86EXC0D supported? (should be 1)
 	jmp noexcrtn
 endif
 
@@ -1623,8 +1648,9 @@ Int10_Entry proc public
 isint10:
     pop eax
     push 10h
-    jmp V86_Monitor
+    jmp V86_Monitor ;enter monitor as INT 10h
 maybeexc10:
+;--- assuming entry from v86-mode!
     movzx eax, word ptr [esp+4].IRETDV86._Cs
     shl eax, 4
     add eax, [esp+4].IRETDV86._Eip
@@ -1639,9 +1665,9 @@ maybeexc10:
     test al,80h     ;a FPU error pending?
     jz isint10      ;if no, then it's an Int 10h
     pop eax
-    push 0          ;push a 0 as error code 
+    push 0          ;push 0 as error code 
     push 10h
-    jmp V86_Monitor
+    jmp V86_Monitor ;enter monitor as EXC 10h
     align 4
 Int10_Entry endp
 
@@ -1996,6 +2022,7 @@ Simulate_Far_Ret endp
 ;--- EBP -> client struct
 ;--- cx: new CS
 ;--- edx: new EIP (hiword ignored)
+;--- current v86 CS:IP is pushed onto the v86 stack
 
 Simulate_Far_Call proc public
     xchg edx, [EBP].Client_Reg_Struc.Client_EIP
@@ -2014,7 +2041,9 @@ Simulate_Far_Call proc public
     align 4
 Simulate_Far_Call endp
 
-;--- prepare for nested execution. Push the "back" bp onto the client's stack
+;--- prepare for nested execution.
+;--- store current v86 cs:ip onto the v86 stack, and
+;--- set current v86 cs:ip to the "back" bp.
 
 Begin_Nest_Exec proc public
     mov ecx,[dwRSeg]

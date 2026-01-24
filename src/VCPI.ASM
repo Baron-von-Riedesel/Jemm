@@ -120,11 +120,13 @@ if ?CODEIN2PAGE
 else
     mov ecx, (440h+1*4) ;this is offset in page table for 111000h
 endif
-	test [bV86Flags], V86F_SB ;v5.86: new functionality for SB option
+if 0 ; not needed - the monitor code beyond the shared space isn't touched by SBEINIT
+	test [bV86Flags], V86F_SB
 	jz @F
 	mov ecx, pPg0PartEnd     ;end address of monitor part in page table 0
 	shr ecx, 10
 @@:
+endif
     add word ptr [ebp].Client_Reg_Struc.Client_EDI,cx
     shr ecx, 2
 @@vgiloop:

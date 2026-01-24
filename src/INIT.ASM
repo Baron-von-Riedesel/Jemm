@@ -580,6 +580,10 @@ else
     mov [dwV86IDT], esi
     add edi, 100h*8
 endif
+
+;--- esi -> IDT
+;--- edi -> code int x entries (x=0..ff)
+
 if ?FASTMON
     mov eax, offset int00
 nextfastidtentry:
@@ -590,19 +594,12 @@ nextfastidtentry:
     mov [esi+2],ebx
     mov [esi+6],dx
     add eax, 4
-    add esi, 8
+    add esi, 8	;next IDT entry
     dec ecx
-if 1
-;--- v5.86: the first 8 entries are now 6 bytes long
-    cmp cl,100h-8    ;ff,fe,fd,fc,fb,fa,f9,f8
-    jb @F
-    add eax, 2
-@@:
-endif
     cmp cl,100h - ?FASTENTRIES
     jnz nextfastidtentry
 ;   @dprintf ?INITDBG, <10>
-    mov edx, 0E9006Ah or (?FASTENTRIES shl 8) ;push byte 20h, jmp xxxx
+    mov edx, 0E9006Ah or (?FASTENTRIES shl 8) ;push byte ?FASTENTRIES, jmp xxxx
 else
     mov edx, 0E9006Ah       ;push byte 00h, jmp xxxx
 endif
@@ -736,7 +733,7 @@ endif
 
     lea ecx,[edi+1000h-1]
     and cx,0F000h
-    mov [pPg0PartEnd],ecx   ;v5.86: store end of monitor in page tab 0
+;    mov [pPg0PartEnd],ecx   ;v5.86: store end of monitor in page tab 0
     sub ecx, edi
     mov [pSmallHeap], edi
     mov [dwHeapSize], ecx
