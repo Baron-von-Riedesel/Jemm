@@ -773,6 +773,8 @@ if ?NMI
 ;--- v5.86: for NMIs, selectors DS & ES might not be set;
 ;--- worse, even SS might have an unexpected value;
 ;--- so the code below isn't fully "NMI-safe".
+;--- Don't PUSH/POP registers FS/GS; if VCPI protected-mode entry
+;--- is used, those registers may contain "invalid" values!
     jnz @F
     push ds
     mov eax, cs
@@ -800,8 +802,6 @@ endif
 
 if ?V86DBG
   if ?SELINTLOG
-    cmp ecx,32
-    jnc @F
     bt cs:[logintbm],ecx
     jnc @F
   endif
@@ -815,6 +815,7 @@ endif
     add ESP,4      ;skip int#
     IRETD
 @@runv86:
+;--- running v86-mode will reset registers FS & GS to 0!
     mov ebp, ?TOS - sizeof Client_Reg_Struc
     push ecx
     call Begin_Nest_Exec
@@ -1047,8 +1048,9 @@ Int06_Entry proc
 Int06_Entry endp
 endif
 
-;--- exception in V86 mode with error code
-;--- v5.86: exceptions 0-8 have pushed a "fake" error code.
+;--- exception in V86 mode with error code.
+;--- IDT entry for gate 10h will have pushed a fake error code for float exceptions.
+;--- v5.86: exceptions 0-8 will have pushed a fake error code.
 ;--- esp -> int#, error code, IRET32D
 ;--- DS,ES = NULL
 
@@ -1066,8 +1068,8 @@ if ?V86DBG
     bt cs:[logintbm],ecx
     jnc @F
   endif
-    @dprintf ?V86DBG, <"exception in v86-mode, #=%X, CS:IP=%X:%X",10>, cx,\
-        word ptr [ebp].Client_Reg_Struc.Client_CS, word ptr [ebp].Client_Reg_Struc.Client_EIP
+    @dprintf ?V86DBG, <"exception in v86-mode, #=%X, errc=%X, cs:ip=%X:%X",10>, ecx,
+        [ebp].Client_Reg_Struc.Client_Error, word ptr [ebp].Client_Reg_Struc.Client_CS, word ptr [ebp].Client_Reg_Struc.Client_EIP
 @@:
 endif
     MOV EAX,SS
@@ -1112,8 +1114,7 @@ endif
     cmp esi, NUMBP
     jae @@No_BP
     call [esi*4+bptable]
-    mov esp,ebp
-    @v86popreg
+    @v86popregX
     add ESP,4+4         ; skip int# + error code
     IRETD
 
@@ -1163,8 +1164,8 @@ if ?SB
     je @@notsb                  ; SB option not turned on
     inc [EBP].Client_Reg_Struc.Client_EIP   ; skip INT 3 opcode
     @v86popregX
-    add esp,4+4                 ; discard excess GPF error code
-    push 3                      ; simulate an INT 3
+    add esp,4+4                 ; discard GPF error code & INT#
+    push 3                      ; simulate an INT 3 (no exception!)
     jmp V86_Monitor
 @@notsb:
 endif
@@ -1277,11 +1278,9 @@ endif
 	jmp v86excrtn2
 V86_Fault::
 
-;--- v5.86: route exc 0,1,3,4,5,6,7 to INT
-if 1
+;--- v5.86: route exc 0-7 to INT
 	cmp eax,8
 	jb v86excrtn
-endif
 
 ;--- if "noone" has hooked v86 int 06 vector, there's
 ;--- no need to route v86 exceptions to v86-mode, since
@@ -2143,8 +2142,7 @@ Resume_Exec proc public
     push [dwStackCurr]
     pushad
     mov [dwStackCurr],esp
-    mov esp,ebp
-    @v86popreg          ; load GPRs with their v86 values
+    @v86popregX         ; load GPRs with their v86 values
     add ESP,4+4         ; skip call return + error code
     IRETD               ; and jump to v86 mode
     align 4

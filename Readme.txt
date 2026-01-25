@@ -305,7 +305,7 @@
 
  JemmEx only: this option limits amount of "super-extended" memory. Setting
  MAXSEXT=0 disables this feature. If enabled, JemmEx must exclusively manage
- this type of memory, To achieve this, interrupt 15h, AX=0xE820 is hooked and
+ this type of memory; to achieve this, interrupt 15h, AX=0xE820 is hooked and
  any memory region beyond 4 GB that's marked as available is changed to
  "reserved" ( tool MEMSTAT may be used to verify this behavior ).
 
@@ -332,13 +332,12 @@
 
  a) It translates an exception 0Dh with error code 0x1A that may have occured
     in V86 mode to an INT 3. It's unclear what this is supposed to fix.
- b) Since v5.86, it "identity maps" region 0-0x3fffff in the first page table
-    and includes the monitor code into the shared address space returned by
-    VCPI function 01.
+ b) Since v5.86, it "identity maps" region 0-0x3fffff in the first page table.
+    This mapping was done generally until v5.85.
 
- With b), Creative's SBINIT/SBEINIT tools should be compatible with Jemm.
+ With b), Creative's SBINIT/SBEINIT tools should again be compatible with Jemm.
  However, due to the rather hackish nature of those drivers ( they modify
- Jemm's IDT/GDT and page tables), one may experience negative effects on
+ Jemm's IDT/GDT and page tables ), one may experience negative effects on
  stability.
 
 
@@ -501,7 +500,7 @@
    MS CodeView v4.1, for example, may refuse to start then.
 
  - Some DOS programs will crash if too much VCPI memory is offered. Jemm's
-   default is 128MB, it can be changed with option MAX=xxx. Popular
+   default is 120 MB, it can be changed with option MAX=xxx. Popular
    programs that may cause troubles are programs that use Borland's DPMI hosts
    DPMI16BI.OVL/DPMI32VM.OVL (coupled with RTM.EXE/32RTM.EXE). Setting Jemm
    option MAX=32752K ( that's 32MB minus 16kB) should help; alternately, try

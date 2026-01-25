@@ -21,3 +21,10 @@ xmstest2:   XMS block allocation
 xmstest3:   test XMS functions 0Eh/8Eh (get handle information)
 xmstest4:   test XMS resize function 8Fh
 xmstest5:   test XMS resize function 0Fh
+
+Debug scripts:
+test0c.deb  test stack exception 0Ch
+test0c1.deb test stack exception 0Ch
+test0d.deb  test GPF
+test10.deb  test floating point exception 10h
+test11.deb  test alignment check exception 11h

@@ -2,7 +2,7 @@
 a
 mov sp,1
 push ax
-
 int 3
+
 g=100
 q

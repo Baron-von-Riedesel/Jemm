@@ -2,7 +2,7 @@
 a
 mov sp,ffff
 pop ax
-
 int 3
+
 g=100
 q
