@@ -511,6 +511,8 @@ VCPI_PM_Entry PROC
 
 ;--- only VCPI functions 03, 04 and 05 are allowed
 ;--- which use registers EAX (AH) and EDX only.
+;--- NMIs are NOT supposed to occur - they will crash the monitor;
+;--- the VCPI client is responsible for masking NMIs!
 
     cli                 ; don't allow interruptions
     mov ebp, ss

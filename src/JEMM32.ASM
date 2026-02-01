@@ -36,7 +36,6 @@
 ;--- equates
 
 ;--- assembly time constants
-;--- TODO: check ?NMI code - since v5.86 NMIs are handled as exceptions!
 
 ?NMI        equ 1       ; std=1, 1=allow NMIs inside the monitor;
 ?SKIPINT06  equ 1       ; std=1, 1=skip routing v86 exc to v86 int06 if noone hooked int 6
@@ -155,6 +154,9 @@ endif
 ;--- next 2 vars must be consecutive
 pV86Hooks       dd 0    ; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
 dwHookProc      dd 0
+if ?NMI
+TmpReg          dd 0    ; v5.87; used to temp. store a register in NMI handling
+endif
 
 ;-- byte vars (variable)
 
@@ -762,35 +764,23 @@ int_handled:
 
 @@IRQOREXC:
 
+if ?NMI
+;--- v5.87: handle NMIs in PL0 before anything else
+	cmp byte ptr [esp],2
+	jz handle_nmi
+endif
+
     PUSHAD
     MOV EBP,ESP		; ebp -> Client_Reg_Struc
 ;--- v5.86: fixed, V86FRAME._IntNo isn't correct for IRQs!
 ;    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
     MOVZX ECX,byte ptr [EBP+sizeof PUSHADS] ;load 1 byte ONLY!
 
-if ?NMI
-    cmp ecx,2       ;NMI?
-;--- v5.86: for NMIs, selectors DS & ES might not be set;
-;--- worse, even SS might have an unexpected value;
-;--- so the code below isn't fully "NMI-safe".
-;--- Don't PUSH/POP registers FS/GS; if VCPI protected-mode entry
-;--- is used, those registers may contain "invalid" values!
-    jnz @F
-    push ds
-    mov eax, cs
-    add eax, 8
-    mov ds, eax    ;ensure DS is set
-    call @@runv86
-    pop ds
-    @v86popreg
-    add ESP,4+4    ;skip int# & filler
-    IRETD
-@@:
-endif
-
 ;--- v5.86: fixed, V86FRAME got another member in v5.85;
 ;--- so since IRQs don't push error codes, the -4 displacement is necessary!
-    cmp word ptr [ebp-4].V86FRAME._Cs, FLAT_CODE_SEL
+;--- v5.87: don't use V86FRAME struct here, it's confusing.
+;    cmp word ptr [ebp-4].V86FRAME._Cs, FLAT_CODE_SEL
+    cmp word ptr [ebp + sizeof PUSHADS + 4].IRETD32._Cs, FLAT_CODE_SEL
     JNZ ring0_exc
 
 ;--- IRQs in ring 0 will only occur "controlled".
@@ -800,16 +790,17 @@ endif
     cmp eax,cs:[dwStackR0]      ;is ESP that of an IRQ?
     jnz ring0_exc
 
+;--- it's an IRQ - DS should be set correctly
+
 if ?V86DBG
   if ?SELINTLOG
-    bt cs:[logintbm],ecx
+    bt [logintbm],ecx
     jnc @F
   endif
     @dprintf ?V86DBG, <"V86 IRQ in PL0, int=%X ebp=%X, cs:eip=%X:%X, efl=%X",10>, ecx,\
         ebp, word ptr [ebp-4].V86FRAME._Cs, [ebp-4].V86FRAME._Eip, [ebp-4].V86FRAME._Efl
 @@:
 endif
-
     call @@runv86
     @v86popreg
     add ESP,4      ;skip int#
@@ -823,6 +814,93 @@ endif
     call Exec_Int
     call End_Nest_Exec
     ret
+
+if ?NMI
+
+handle_nmi:
+;--- v5.87: the NMI might have intercepted a monitor entry sequence
+;--- BEFORE the PUSHAD!
+	cmp esp, ?TOS
+	jnc frame_ok
+	cmp esp, ?TOS - sizeof Client_Reg_Struc
+	jb frame_ok
+;--- bad - no full client struct on the stack;
+;--- it must be completed before v86 code can run.
+	add esp, 2*4	;skip the 2 dwords pushed by NMI entry code
+	mov ss:[TmpReg], eax
+	mov eax, ?TOS - sizeof IRETDV86
+	sub eax, esp   ;eax = size to save/restore
+;--- setup ESP, ES & save GPRs by a "pushad"
+	mov esp, ss:[dwStackCurr]
+	sub esp, eax
+	xchg eax, ss:[TmpReg]
+	pushad
+	mov eax, ss
+	mov es, eax   ;since it's an entry from v86 mode, ES is NULL
+;--- 1. save the PL0 values at old ESP (3-5 dwords)
+	lea edi, [esp + sizeof PUSHADS]
+	mov esi, ?TOS - sizeof IRETDV86
+	mov ecx, ss:[TmpReg]
+	sub esi, ecx
+	push ecx
+	shr ecx, 2
+	cld
+	rep movsd es:[edi], ss:[esi]
+;--- 2. copy the GPRs to the v86 client area
+	mov edi, ?TOS - sizeof Client_Reg_Struc
+	lea esi, [esp+4]
+	mov ecx, (sizeof PUSHADS) shr 2
+	rep movsd es:[edi], ss:[esi]
+;--- 2a. reset IF in v86 client area
+	mov ebx, ss:[edi+2*4].IRETDV86._Efl
+	and byte ptr ss:[edi+2*4].IRETDV86._Efl+1,not 2
+;--- 3. run v86 code
+	call nmi_runv86
+;--- 3a. copy flags back into client area
+	mov ss:[edi+2*4].IRETDV86._Efl, ebx
+;--- 4. copy the PL0 values back
+	pop ecx
+	lea esi,[esp + sizeof PUSHADS]
+	mov edi,?TOS - sizeof IRETDV86
+	sub edi, ecx
+	shr ecx, 2
+	cld
+	mov eax, edi
+	rep movsd es:[edi], ss:[esi]
+	mov [esp+sizeof PUSHADS], eax
+;--- 5. restore GPRs & ESP and return to interrupted PL0 code
+	@v86popreg
+	pop esp
+	iretd
+
+frame_ok:
+    pushad
+    call nmi_runv86
+    @v86popreg
+    add ESP,4+4    ;skip int# & fake error code
+    IRETD
+
+nmi_runv86:
+;--- v5.86: for NMIs, selectors DS & ES might not be set;
+;--- SS should be ok, unless an intruder has setup its own stack;
+;--- Don't PUSH/POP registers FS/GS; if VCPI protected-mode entry
+;--- is used, those registers may contain "invalid" values!
+    push ds
+    mov eax, ss
+    mov ds, eax    ;ensure DS is set
+    mov ecx, 2
+    call @@runv86
+;--- v5.87: old value of DS may be invalid - check first!
+;   pop ds
+	pop eax
+	verr ax
+	jz @F
+	xor eax, eax
+@@:
+	mov ds, eax
+	ret
+endif
+
     align 4
 
 V86_Monitor ENDP
@@ -849,9 +927,10 @@ HandleException proc
     mov eax, ss                 ; the stack size is not known
     lar eax, eax
     test eax,400000h
-    jnz @@is32
+    jnz @F
     movzx esp,sp                ; make sure ESP is valid
-@@is32:
+@@:
+if 0 ;v5.87: since v5.86, exceptions < 8 will push a faked error code
     @v86popreg                  ; that's actually just a POPAD
     add esp, 4                  ; v5.85: skip the "filler" dword
 
@@ -861,8 +940,9 @@ HandleException proc
 ;    mov dword ptr [esp+4],0
 @@:
     pushad
+endif
 	jmp @F
-handle_exception_ebp::          ; <--- entry exc 06 v86
+handle_exception_ebp::          ; <--- entry exc 06 (and more) in v86
     mov esp,ebp
 @@:
     mov ax, FLAT_DATA_SEL
@@ -870,7 +950,7 @@ handle_exception_ebp::          ; <--- entry exc 06 v86
     mov ES, eax
     cld
 
-;--- since it's an exception in ring0, the Client_Reg_Struc
+;--- if it's an exception in ring0, the Client_Reg_Struc
 ;--- may miss all fields beyond Client_Reg_EFlags!
 
     @dprintf ?EXCDBG, <"Exception dump, exception %X at cs:eip=%X:%X",10>, [ebp].Client_Reg_Struc.Client_Int,\
@@ -885,6 +965,7 @@ handle_exception_ebp::          ; <--- entry exc 06 v86
     mov ebx, ss
     lea ecx,[ebp + Client_Reg_Struc.Client_ESP] ;in ring 0, esp & ss are also missing
     jmp @@isring0
+
 @@isv86:
 
 ;--- exception in V86 mode: display next 8 bytes of [cs:eip]
@@ -2043,6 +2124,7 @@ Simulate_Far_Call endp
 ;--- prepare for nested execution.
 ;--- store current v86 cs:ip onto the v86 stack, and
 ;--- set current v86 cs:ip to the "back" bp.
+;--- modifies EAX,ECX,EDX
 
 Begin_Nest_Exec proc public
     mov ecx,[dwRSeg]
@@ -2140,9 +2222,9 @@ Exec_Int endp   ;fall through
 
 Resume_Exec proc public
     push [dwStackCurr]
-    pushad
+    pushad              ; save PL0 GPRs
     mov [dwStackCurr],esp
-    @v86popregX         ; load GPRs with their v86 values
+    @v86popregX         ; load ESP with EBP and restore v86 GPRs
     add ESP,4+4         ; skip call return + error code
     IRETD               ; and jump to v86 mode
     align 4
