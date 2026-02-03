@@ -8,6 +8,8 @@
 # COFF Linker JWlink                OW Wlink
 # Make        MS Nmake              OW Wmake              
 #
+# since v5.87, JWasm must be v2.21+, Masm must be v8+
+#
 # note: OW Wmake must be used with the -ms option!
 #
 # note: WLink < v1.8 shouldn't be used as COFF linker. It contains a bug 

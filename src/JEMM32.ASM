@@ -54,7 +54,7 @@ endif
 
 ?SELINTLOG equ ?V86DBG
 
-MAXBLOCKSIZE equ 40000h ; std=256 kB
+MAXBLOCKSIZE equ 40000h ; size for mem moves (XMS, int 15h ah=87h); std=256 kB
 
 ;--- publics/externals
 
@@ -369,55 +369,76 @@ PageFaultFF endp
 
 endif
 
-;--- print string at [ESP+4];
-;--- usually with nested execution, using int 10h, ah=0Eh.
 ;--- By setting ?AUXIO one may change this to write to COMx;
 ;--- this can be handled in protected-mode.
 
 PrintString proc
     push esi
-    push edi
-;    @dprintf 1, <"PrintString",10>
-ife ?AUXIO
-    sub esp,size Client_Reg_Struc
-    mov edi, esp
-    call Save_Client_State
-    call Begin_Nest_Exec
-    mov esi, [esp+size Client_Reg_Struc + 8 + 4]
-else
-    mov esi, [esp+8+4]
-endif
-@@nextchar:
+    mov esi, [esp+4+4]
+nextchar:
     lodsb
-    and al,al
-    jz @@done
+    cmp al,0
+    jz done
  if ?AUXIO
     call AuxPutChar
- elseif ?USEINT10
+ else
+  if ?USEINT10
     mov ah,0Eh
     mov word ptr [EBP].Client_Reg_Struc.Client_EAX,ax
     mov word ptr [EBP].Client_Reg_Struc.Client_EBX,0007
     mov eax,10h
     call Exec_Int
- else
+  else
     mov byte ptr [EBP].Client_Reg_Struc.Client_EAX,al
     mov eax,29h
     call Exec_Int
+  endif
  endif
-    jmp @@nextchar
-@@done:
-ife ?AUXIO
-    call End_Nest_Exec
-    mov esi, esp
-    call Restore_Client_State
-    add esp,size Client_Reg_Struc
-endif
-    pop edi
+    jmp nextchar
+done:
     pop esi
     ret 4
     align 4
 
 PrintString endp
+
+;--- sprintf
+;--- edi -> output string
+
+sprintfx proc
+    push esi
+    mov esi, [esp+4+4]
+@@nextchar:
+    lodsb
+    and al,al
+    jz @@done
+    cmp al,'%'
+    jz is_fmt
+    stosb
+    jmp @@nextchar
+@@done:
+ife ?AUXIO
+endif
+    pop esi
+    ret 4
+
+is_fmt:
+    lodsb
+    mov bl,al
+    lodsb
+    movsx eax, al
+    call rendernum
+    jmp @@nextchar
+
+rendernum:    
+	MOV eax, ss:[ebp+eax]	;use SS prefix here!
+	cmp bl,2
+	jz b2a
+	cmp bl,4
+	jz w2a
+	jmp dw2a
+
+sprintfx endp
 
 if ?AUXIO
 	include auxio.inc
@@ -452,150 +473,66 @@ b2a proc            ; display BYTE in al into EDI
     align 4
 b2a endp
 
-?WSTARG equ 2
-
-excitem struct
-_bSize      db ?
-bOfs        db ?
-if ?WSTARG eq 2
-dwTarget    dw ?
-else
-dwTarget    dd ?
-endif
-excitem ends
-
-@excitem macro size_, src, dst
-if ?WSTARG eq 2
-    excitem {size_, src, LOWWORD(offset dst - offset exc_str)}
-else
-    excitem {size_, src, offset dst}
-endif
-    endm
-
-;--- render register contents
-;--- [ESP+4]: item descriptor
-;--- may modify all general purpose registers except EBP
-
-renderitems proc
-    pop eax
-    pop esi     ;get parameter
-    push eax
-@@nextitem:
-    mov al, [esi].excitem._bSize
-    cmp al, -1
-    jz @@done_exc
-    mov bl, al
-    movsx eax, [esi].excitem.bOfs
-if ?WSTARG
-    movzx edi, [esi].excitem.dwTarget
-    add edi, offset exc_str
-else
-    mov edi, [esi].excitem.dwTarget
-endif
-    add esi, size excitem
-    MOV eax, ss:[ebp+eax]   ;use SS prefix here!
-    push offset @@nextitem
-    cmp bl,2
-    jz b2a
-    cmp bl,4
-    jz w2a
-    jmp dw2a
-@@done_exc:
-    ret
-renderitems endp
-
 .text$01w segment dword flat public 'CODE'
 
-exc_str label byte
-    DB 13,10, ?NAME, ": exception "
-exc_no db 2 dup (' ')
-    db " occured at CS:EIP="
-exc_cs db 4 dup (' ')
-    db ':'
-exc_eip db 8 dup (' ')
-    db ", ERRC="
-exc_errc db 8 dup (' ')
-    db 13,10
-    db "SS:ESP="
-exc_ss db 4 dup (' ')
-    db ':'
-exc_esp db 8 dup (' ')
-    db " EBP="
-exc_ebp db 8 dup (' ')
-    db " EFL="
-exc_efl db 8 dup (' ')
-    DB " CR0="
-exc_cr0 db 8 dup (' ')
-    DB " CR2="
-exc_cr2 db 8 dup (' ')
-    db 13,10
-    db "EAX="
-exc_eax db 8 dup (' ')
-    db " EBX="
-exc_ebx db 8 dup (' ')
-    db " ECX="
-exc_ecx db 8 dup (' ')
-    db " EDX="
-exc_edx db 8 dup (' ')
-    db " ESI="
-exc_esi db 8 dup (' ')
-    db " EDI="
-exc_edi db 8 dup (' ')
-    db 13,10
-    db 0
+;--- stack frame for exceptions
 
-exc_str2 label byte
-    db "DS="
-exc_ds db 4 dup (' ')
-    db " ES="
-exc_es db 4 dup (' ')
-    db " FS="
-exc_fs db 4 dup (' ')
-    db " GS="
-exc_gs db 4 dup (' ')
+EXCFRAME struct
 if ?ISRFLGS
-    db " ISR="
-exc_isr db 4 dup (' ')
+	org -36
+_isr      dd ?
+endif
+	org -32
+_cr2      dd ?
+_cr0      dd ?
+_esp      dd ?
+_ss       dd ?
+_gs       dd ?
+_fs       dd ?
+_es       dd ?
+_ds       dd ?
+	Client_Reg_Struc <?>
+EXCFRAME ends
+
+exc_str label byte
+    DB 13,10, ?NAME
+    db ": exception %",        2, EXCFRAME.Client_Int
+    db " occured at CS:EIP=%", 4, EXCFRAME.Client_CS
+    db ':%',                   8, EXCFRAME.Client_EIP
+    db ", ERRC=%",             8, EXCFRAME.Client_Error
+    db 13,10
+    db "SS:ESP=%",             4, EXCFRAME._ss
+    db ':%',                   8, EXCFRAME._esp
+    db " EBP=%",               8, EXCFRAME.Client_EBP
+    db " EFL=%",               8, EXCFRAME.Client_EFlags
+    DB " CR0=%",               8, EXCFRAME._cr0
+exc_cr2 label byte
+    DB " CR2=%",               8, EXCFRAME._cr2
+    db 13,10
+    db "EAX=%",                8, EXCFRAME.Client_EAX
+    db " EBX=%",               8, EXCFRAME.Client_EBX
+    db " ECX=%",               8, EXCFRAME.Client_ECX
+    db " EDX=%",               8, EXCFRAME.Client_EDX
+    db " ESI=%",               8, EXCFRAME.Client_ESI
+    db " EDI=%",               8, EXCFRAME.Client_EDI
+    db 13,10
+    db "DS=%",                 4, EXCFRAME._ds
+    db " ES=%",                4, EXCFRAME._es
+    db " FS=%",                4, EXCFRAME._fs
+    db " GS=%",                4, EXCFRAME._gs
+if ?ISRFLGS
+    db " ISR=%",               4, EXCFRAME._isr
 endif
     db ' [CS:IP]='
-exc_csip db 8*3 dup (' ')
-    db CR,LF,0
-exc_str2a db'Press ESC to abort program ', 0
     db 0
+sizeexcstr equ ($ - offset exc_str) + 1*2 + 6*4 + 13*8 + ?ISRFLGS * 4 + 8*3 - 21
 
+exc_str2a db'Press ESC to abort program '
+    db 0
 exc_str3 db 13, ?NAME, ': unable to continue. Please reboot '
     db 0
 szCRLF db CR,LF
     db 0
-
-exc_format label excitem
-    @excitem 2, Client_Reg_Struc.Client_Int   , exc_no
-    @excitem 4, Client_Reg_Struc.Client_CS    , exc_cs
-    @excitem 8, Client_Reg_Struc.Client_EIP   , exc_eip
-    @excitem 8, Client_Reg_Struc.Client_Error , exc_errc
-    @excitem 4, -4                            , exc_ss
-    @excitem 8, -8                            , exc_esp
-    @excitem 8, Client_Reg_Struc.Client_EBP   , exc_ebp
-    @excitem 8, Client_Reg_Struc.Client_EFlags, exc_efl
-    @excitem 8, -12                           , exc_cr0
-    @excitem 8, -16                           , exc_cr2
-    @excitem 8, Client_Reg_Struc.Client_EAX   , exc_eax
-    @excitem 8, Client_Reg_Struc.Client_EBX   , exc_ebx
-    @excitem 8, Client_Reg_Struc.Client_ECX   , exc_ecx
-    @excitem 8, Client_Reg_Struc.Client_EDX   , exc_edx
-    @excitem 8, Client_Reg_Struc.Client_ESI   , exc_esi
-    @excitem 8, Client_Reg_Struc.Client_EDI   , exc_edi
-    db -1
-
-exc_v86segregs label excitem
-    @excitem 4, Client_Reg_Struc.Client_DS    , exc_ds
-    @excitem 4, Client_Reg_Struc.Client_ES    , exc_es
-    @excitem 4, Client_Reg_Struc.Client_FS    , exc_fs
-    @excitem 4, Client_Reg_Struc.Client_GS    , exc_gs
-if ?ISRFLGS
-    @excitem 4, -4                            , exc_isr
-endif
-    db -1
 
     align 4
 
@@ -766,11 +703,17 @@ int_handled:
 
 if ?NMI
 ;--- v5.87: handle NMIs in PL0 before anything else
-	cmp byte ptr [esp],2
+	cmp dword ptr [esp],2
 	jz handle_nmi
 endif
-
     PUSHAD
+;--- v5.87: check moved here (was in handle_exception)
+    mov eax, ss                 ; check SS size - just in case
+    lar eax, eax
+    test eax,400000h
+    jnz @F
+    movzx esp,sp
+@@:
     MOV EBP,ESP		; ebp -> Client_Reg_Struc
 ;--- v5.86: fixed, V86FRAME._IntNo isn't correct for IRQs!
 ;    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
@@ -781,14 +724,14 @@ endif
 ;--- v5.87: don't use V86FRAME struct here, it's confusing.
 ;    cmp word ptr [ebp-4].V86FRAME._Cs, FLAT_CODE_SEL
     cmp word ptr [ebp + sizeof PUSHADS + 4].IRETD32._Cs, FLAT_CODE_SEL
-    JNZ ring0_exc
+    JNZ handle_exception_r0
 
 ;--- IRQs in ring 0 will only occur "controlled".
 ;--- This simplifies identifying them (Jemm doesn't reprogram the PICs!)
 ;--- A ring0 IRQ will have pushed IRETD32, int# and PUSHADS:
     lea eax,[ebp + sizeof PUSHADS + 4 + sizeof IRETD32]
     cmp eax,cs:[dwStackR0]      ;is ESP that of an IRQ?
-    jnz ring0_exc
+    jnz handle_exception_r0
 
 ;--- it's an IRQ - DS should be set correctly
 
@@ -821,9 +764,9 @@ handle_nmi:
 ;--- v5.87: the NMI might have intercepted a monitor entry sequence
 ;--- BEFORE the PUSHAD!
 	cmp esp, ?TOS
-	jnc frame_ok
+	jnc handle_nmi_std
 	cmp esp, ?TOS - sizeof Client_Reg_Struc
-	jb frame_ok
+	jb handle_nmi_std
 ;--- bad - no full client struct on the stack;
 ;--- it must be completed before v86 code can run.
 	add esp, 2*4	;skip the 2 dwords pushed by NMI entry code
@@ -873,7 +816,7 @@ handle_nmi:
 	pop esp
 	iretd
 
-frame_ok:
+handle_nmi_std:
     pushad
     call nmi_runv86
     @v86popreg
@@ -913,37 +856,31 @@ Int06_V86Entry proc
     jmp handle_exception_ebp
 Int06_V86Entry endp
 
-;--- handle exceptions (ring 0 protected-mode and v86-mode)
-;--- display current register set
+;--- handle exceptions (ring 0 protected-mode and v86-mode);
+;--- display current register set;
 ;--- if it is caused by external protected-mode code, display REBOOT option
 ;--- else jump to v86-mode and try to abort current PSP
+;--- handle_exception_r0: esp & ebp -> PUSHADS + exc# + (faked) errc + IRETD32
+;--- v5.87: reworked - segment registers and [CS:E/IP] are now always displayed.
 
-;--- handle exceptions in ring0 protected-mode
+handle_exception proc
 
-ring0_exc proc
-ring0_exc endp
-
-HandleException proc
-    mov eax, ss                 ; the stack size is not known
-    lar eax, eax
-    test eax,400000h
-    jnz @F
-    movzx esp,sp                ; make sure ESP is valid
-@@:
-if 0 ;v5.87: since v5.86, exceptions < 8 will push a faked error code
-    @v86popreg                  ; that's actually just a POPAD
-    add esp, 4                  ; v5.85: skip the "filler" dword
-
-    cmp dword ptr [esp],8       ; exc #8?
-    jnc @F
-    push dword ptr [esp]        ; emulate error code for exc 0-7 
-;    mov dword ptr [esp+4],0
-@@:
-    pushad
-endif
+handle_exception_r0::           ; <--- entry exc in ring 0
+;--- v5.87: display for segment registers added
+	push ds
+	push es
+	push fs
+	push gs
 	jmp @F
-handle_exception_ebp::          ; <--- entry exc 06 (and more) in v86
+
+handle_exception_ebp::          ; <--- entry exc in v86
     mov esp,ebp
+;--- v5.87: handle segment registers similar to PL0
+	push [ebp].Client_Reg_Struc.Client_DS
+	push [ebp].Client_Reg_Struc.Client_ES
+	push [ebp].Client_Reg_Struc.Client_FS
+	push [ebp].Client_Reg_Struc.Client_GS
+	mov edx,0ffff0h+0ffffh
 @@:
     mov ax, FLAT_DATA_SEL
     mov ds, eax
@@ -958,29 +895,45 @@ handle_exception_ebp::          ; <--- entry exc 06 (and more) in v86
 
     test byte ptr [ebp].Client_Reg_Struc.Client_EFlags+2,2   ;V86 mode?
     jnz @@isv86
-    mov byte ptr [exc_ds],' '   ;used as flag (see below)
+    mov esi, [ebp].Client_Reg_Struc.Client_EIP
     lar eax, [ebp].Client_Reg_Struc.Client_CS
+    lsl edx, [ebp].Client_Reg_Struc.Client_CS
     and ah,60h
-    jnz @@isring3	; well, ring3 code is not supposed to run in Jemm's context...
+    jnz @@isring3	; ring3 protected-mode code is not supposed to run in Jemm's context...
     mov ebx, ss
     lea ecx,[ebp + Client_Reg_Struc.Client_ESP] ;in ring 0, esp & ss are also missing
     jmp @@isring0
 
 @@isv86:
 
-;--- exception in V86 mode: display next 8 bytes of [cs:eip]
+;--- setup ESI to CS:IP
 
     movzx esi,word ptr [ebp].Client_Reg_Struc.Client_CS
     shl esi,4
     add esi,[ebp].Client_Reg_Struc.Client_EIP
-    mov cl,8
-    mov edi,offset exc_csip
-@@nextitem:
-    lods byte ptr [esi]
-    call b2a
-    inc edi
-    dec cl
-    jnz @@nextitem
+
+@@isring3:
+    mov ebx,dword ptr [ebp].Client_Reg_Struc.Client_SS
+    MOV ecx,dword ptr [ebp].Client_Reg_Struc.Client_ESP
+@@isring0:
+    push ebx                     ; ebp-20 == SS
+    push ecx                     ; ebp-24 == ESP
+
+    mov eax, cr0
+    push eax                     ; ebp-28
+    mov eax, cr2
+if 1 ;v5.80: display cr4 instead of cr2 if no page fault
+;--- CR4 exists only if cpuid is supported
+	cmp [dwFeatures],0
+	jz @F
+	mov exc_cr2 + 3, '2'
+	cmp byte ptr [ebp].Client_Reg_Struc.Client_Int, 0Eh
+	jz @F
+	mov exc_cr2 + 3, '4'
+	@mov_eax_cr4
+@@:
+endif
+    push eax                     ; ebp-32
 
 if ?ISRFLGS
     mov al,0Bh      ;irq 8-15 in service?
@@ -990,60 +943,54 @@ if ?ISRFLGS
     mov al,0Bh      ;irq 0-7 in service?
     out 20h,al
     in al,20h
-    push eax
+    push eax        ; ebp-36
 endif
 
-    push offset exc_v86segregs   ;render V86 segment registers
-    call renderitems
-@@isring3:
-    mov ebx,dword ptr [ebp].Client_Reg_Struc.Client_SS
-    MOV ecx,dword ptr [ebp].Client_Reg_Struc.Client_ESP
-@@isring0:
-    push ebx                     ; ebp-4 == SS
-    push ecx                     ; ebp-8 == ESP
-    mov eax, cr0
-    push eax                     ; ebp-12
-    mov eax, cr2
-if 1 ;v5.80: display cr4 instead of cr2 if no page fault
-;--- CR4 exists only if cpuid is supported
-	cmp [dwFeatures],0
-	jz @F
-	mov exc_cr2-2,'2'
+;--- setup EDI, used as output buffer
+
+	lea edi,[esp - sizeexcstr]
+    and edi,not 3
+
+    push edi
+
+;--- v5.87: sprintfx replaced render_items
+    push offset exc_str
+    call sprintfx            ;this will call v86-mode
+
+;--- render up to 8 bytes at cs:eip;
+    mov cl,8
+@@nextitem:
+    cmp edx, esi
+    jb done_cseip
+;--- for page faults, check CR2!
 	cmp byte ptr [ebp].Client_Reg_Struc.Client_Int, 0Eh
-	jz @F
-	mov exc_cr2-2,'4'
-	@mov_eax_cr4
+	jnz @F
+	mov eax, cr2
+	cmp eax, esi
+	jz done_cseip
 @@:
-endif
-    push eax                     ; ebp-16
+    lodsb
+    call b2a
+    mov al,' '
+    stosb
+    dec cl
+    jnz @@nextitem
+done_cseip:
+    mov eax,0A0Dh
+    stosd
 
-    push offset exc_format
-    call renderitems
-
-    mov esp,ebp
+    pop edi
 
     mov eax,ss
     cmp ax, FLAT_DATA_SEL
-    jnz @@external_exc
-if 0
-    cmp [ebp].Client_Reg_Struc.Client_Int, 0Ch  ;stack exception?
-    jz @@external_exc
-endif
-    jmp @@printexcstr
-@@external_exc:
+    jz @F
     mov [bFatal],1
-@@printexcstr:
-    @v86popreg
     push ds
-    pop ss
-    mov esp, ?TOS - sizeof Client_Reg_Struc + sizeof PUSHADS
-    pushad
-    mov ebp, esp
-
-;--- reinit ring 0 stack
-
-    mov esp,?TOS - ?STKSIZE
-    mov [dwStackCurr],esp
+    pop ss    ;to be fixed: modifying SS may make EDI invalid!
+@@:
+    mov esp, ?TOS - ?STKSIZE
+    mov [dwStackCurr],esp  ; reinit ring 0 stack
+    mov ebp, ?TOS - sizeof Client_Reg_Struc
 
 ;--- reset client's AC flag
 ;--- since we use v86-mode for displays now
@@ -1057,18 +1004,12 @@ endif
     mov ecx, [bpstart]
     mov dword ptr [ecx], (?BPOPC shl 24) or (?BPOPC shl 16) or (?BPOPC shl 8) or ?BPOPC
 
-    push offset exc_str
-    call PrintString         ;this will call v86-mode
-
-    cmp byte ptr [exc_ds],' '   ;segments rendered? (v86 mode exc?)
-    jz @F
-    push offset exc_str2
+    call Begin_Nest_Exec
+    push edi
     call PrintString
-@@:
     push offset exc_str2a    ; "press ESC ..."
     call PrintString
 
-    call Begin_Nest_Exec
 @@waitkey:
 if ?AUXIO
     call AuxGetChar
@@ -1113,7 +1054,7 @@ endif
     jmp @@waitkey
     align 4
 
-HandleException endp
+handle_exception endp
 
 if ?BPOPC ne 0F4h
 ;--- true IDT 06 entry
