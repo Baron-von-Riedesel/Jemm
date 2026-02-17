@@ -14,10 +14,10 @@ wCsrPos dw 0,0
 
 ;--- display a char in AL
 
-AuxPutChar proc
+AuxPutChar proc public
 
 	pushad
-	movzx ebx, word ptr ds:[400h + (COMNO-1)*2]
+	movzx ebx, word ptr cs:[400h + (COMNO-1)*2]
 	lea edx, [ebx+5]	;LSR - Line Status Register
 	mov cx, -1
 	movzx ecx, cx
@@ -59,13 +59,13 @@ setcsrpos:
 	jz nochg
 	cmp al, 8
 	jz back
-	inc byte ptr [wCsrPos]
+	inc byte ptr ss:[wCsrPos]
 	retn
 back:
-	dec byte ptr [wCsrPos]
+	dec byte ptr ss:[wCsrPos]
 	retn
 col00:
-	mov byte ptr [wCsrPos], 0
+	mov byte ptr ss:[wCsrPos], 0
 nochg:
 	retn
 
@@ -79,7 +79,7 @@ AuxGetChar proc
 	push ecx
 	push edx
 
-	movzx ebx, word ptr ds:[400h + (COMNO-1)*2]
+	movzx ebx, word ptr cs:[400h + (COMNO-1)*2]
 	lea edx, [ebx+6]	;MSR - modem status register
 	in al, dx			;DSR - modem(=DCE) ready?
 	and al, 20h

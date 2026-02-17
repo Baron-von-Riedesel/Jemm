@@ -588,8 +588,7 @@ if ?FASTMON
     mov eax, offset int00
 nextfastidtentry:
 ;   @dprintf ?INITDBG, <".">
-    mov edx, eax
-    shr edx, 16
+    shld edx, eax, 16
     mov [esi+0],ax
     mov [esi+2],ebx
     mov [esi+6],dx
@@ -1275,7 +1274,7 @@ endif
 
     mov eax, ds:[ecx+06h*4]
     mov [OldInt06],eax
-if ?SAFEKBD    
+if 0;?SAFEKBD    
     mov eax, ds:[ecx+15h*4]
     mov [OldInt15],eax
     mov eax, ds:[ecx+16h*4]

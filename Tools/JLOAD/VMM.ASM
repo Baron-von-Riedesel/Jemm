@@ -1653,6 +1653,9 @@ _PageDecommit proc public
 _PageDecommit endp
 
 ;--- _PageCommitPhys(page, npages, physpg, flags)
+;--- page: linear page number
+;--- npages:# of pages (region must NOT be committed)
+;--- physpg: physical page # to commit.
 ;--- flags: use PC_INCR to map a contiguous phys region;
 ;--- PC_USER and PC_WRITEABLE also relevant;
 ;--- v5.83: added PC_CACHEWT and PC_CACHEDIS;

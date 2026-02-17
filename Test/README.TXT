@@ -6,6 +6,8 @@ ems56:      alter map and call
 ems57:      EMS copy
 ems57a:     copy EMS to EMS, 1 MB
 ems5b:      alternate map register set
+exc00:      v86 divide error
+exc06:      v86 invalid opcode exception
 frameres:   reset page frame mapping to a known value
 hlttest:    emulation of HLT, IF=1
 hlttest2:   emulation of HLT, IF=0

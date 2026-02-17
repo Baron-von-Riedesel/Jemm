@@ -1,4 +1,6 @@
 
+ v5.87:
+
  v5.86:
    - Jemm's control notifications handled (DEVICE_REBOOT_NOTIFY).
    - fixed: 16-bit debug displays.

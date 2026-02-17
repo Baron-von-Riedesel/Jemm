@@ -45,7 +45,7 @@ externdef DmaChn:DMAREQ
 externdef bBpTab:byte
 externdef bNoPool:byte
 externdef OldInt06:dword
-if ?SAFEKBD
+if 0;?SAFEKBD
 externdef OldInt15:dword
 externdef OldInt16:dword
 endif

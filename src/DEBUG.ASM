@@ -38,10 +38,13 @@ if ?KD
 	ret
 @@:
 endif
-if ?USEMONO
+if ?AUXIO
+	call AuxPutChar
+else
+ if ?USEMONO
 	mov edi,0B0000h
 	mov ebx,7
-else
+ else
 	MOV EDI,0B8000h
 	CMP BYTE ptr SS:[463h],0B4h
 	JNZ @@IS_COLOR
@@ -50,14 +53,14 @@ else
 	movzx EBX, WORD PTR SS:[44Eh]
 	ADD EDI, EBX
 	MOVZX EBX, BYTE PTR SS:[462h]
-endif
+ endif
 	mov esi, edi
 	MOVZX ECX, BYTE PTR SS:[EBX*2+450h+1] ;ROW
-if ?USEMONO
+ if ?USEMONO
 	MOV EAX, 80
-else
+ else
 	MOVZX EAX, WORD PTR SS:[44Ah]
-endif
+ endif
 	MUL ECX
 	MOVZX EDX, BYTE PTR SS:[EBX*2+450h]   ;COL
 	ADD EAX, EDX
@@ -69,27 +72,30 @@ endif
 	MOV SS:[EDI], AL
 	MOV byte ptr SS:[EDI+1], 07
 	INC DL
-if ?USEMONO
+ if ?USEMONO
 	cmp dl,80
-else
+ else
 	CMP DL, BYTE PTR SS:[44Ah]
-endif
+ endif
 	JB @@OLDLINE
 @@NEWLINE:
 	MOV DL, 00
 	INC DH
-if ?USEMONO
+ if ?USEMONO
 	CMP DH, 24
-else
+ else
 	CMP DH, BYTE PTR SS:[484h]
-endif
+ endif
 	JBE @@OLDLINE
 	DEC DH
 	CALL @@SCROLL_SCREEN
 @@OLDLINE:
 	MOV SS:[EBX*2+450h],DX
+endif
 	POPAD
 	RET
+
+ife ?AUXIO
 
 ;--- scroll screen up 1 line
 ;--- esi -> start screen
@@ -97,18 +103,18 @@ endif
 @@SCROLL_SCREEN:
 	CLD
 	mov edi,esi
-if ?USEMONO
+ if ?USEMONO
 	mov eax,80
-else
+ else
 	movzx eax,word ptr ss:[44Ah]
-endif
+ endif
 	push eax
 	lea esi, [esi+2*eax]
-if ?USEMONO
+ if ?USEMONO
 	mov CL, 24
-else
+ else
 	MOV CL, SS:[484h]
-endif
+ endif
 	mul cl
 	mov ecx,eax
 @@nextcell:
@@ -122,7 +128,7 @@ endif
 	mov ss:[edi],ax
 	add edi,2
 	loop @@nextcell2
-if SLOWDOWN
+ if SLOWDOWN
 	mov ecx,SLOWDOWN
 @@:
 	in al,61h
@@ -130,8 +136,9 @@ if SLOWDOWN
 	jz @B
 	mov ah,al
 	loop @B
-endif
+ endif
 	retn
+endif
 
 VPUTCHR ENDP
 

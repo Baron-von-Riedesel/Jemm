@@ -23,9 +23,9 @@ endif
 
 ?CODEIN2PAGE    EQU 0       ; 1=move code away from first page
 ?USETRIPLEFAULT EQU 0       ; 1=use triple fault to reboot
-ifndef ?SAFEKBD
-?SAFEKBD        equ 0       ; 1=use original vector for int 16h kbd poll
-endif
+;ifndef ?SAFEKBD            ; v5.87: obsolete
+;?SAFEKBD        equ 0       ; 1=use original vector for int 16h kbd poll
+;endif
 ?DYNTRAPP60     equ 1       ; 1=trap port 60h conditionally only
 ;ifndef ?MAPEXTMEM          ; v5.86: obsolete; now covered by SB option
 ;?MAPEXTMEM      equ 0       ; 1="identity map" extended memory (SBEINIT.COM/386SWAT may need this)

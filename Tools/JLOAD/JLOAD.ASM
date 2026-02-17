@@ -195,7 +195,7 @@ _DATA ends
 CCONST segment
 
 dUsage  db "JLoad v",?VERSIONHIGH+'0',".",@CatStr(!",%?VERSIONLOW/10,%?VERSIONLOW mod 10,!")
-		db " Copyright japheth 2008-2024",13,10
+		db " Copyright japheth 2008-2026",13,10
 		db "JLoad loads JLMs (Jemm Loadable Modules) into Jemm's address space.",13,10
 		db "It can be run as a DOS device driver or from the command line.",13,10
 		db "usage:",13,10

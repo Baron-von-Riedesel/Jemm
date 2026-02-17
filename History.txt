@@ -4,7 +4,7 @@
  __.__.____: v5.87
 
  - fixed regression in v5.86: exceptions in PL0 were displayed incorrectly.
- - fixed: NMIs that occured while no full client region was setup caused
+ - fixed: NMIs that occured while no full stack frame was setup caused
    a crash.
  - segment registers DS/ES/FS/GS and [CS:IP] now also displayed for PL0
    exceptions.

@@ -132,7 +132,7 @@ OldInt06        dd 0
 dwHeapSize      label dword ; used during Init only
 OldInt19        dd 0
 OldInt67        dd 0
-if ?SAFEKBD
+if 0;?SAFEKBD
 OldInt15        dd 0        ; v5.85: original INT 15h vector
 OldInt16        dd 0        ; store to have a safe keyboard input
 endif
@@ -165,7 +165,7 @@ endif
 bNoPool         DB  0   ; flags pooling with XMS memory
 bNoInvlPg       DB  -1  ; <> 0 -> dont use INVLPG
 bV86Flags       DB  0   ; other flags 
-bFatal          db  0   ; fatal exception, dont call DOS
+bReentered      db  0   ; count exception handler reentered
 
 bIs486          db  0   ; cpu is 486 or better (INVLPG opcode available)
 if ?PGE
@@ -402,8 +402,9 @@ done:
 
 PrintString endp
 
-;--- sprintf
-;--- edi -> output string
+;--- sprintfx - formatted output
+;--- edi -> output buffer
+;--- edx must be preserved!
 
 sprintfx proc
     push esi
@@ -423,26 +424,19 @@ endif
     ret 4
 
 is_fmt:
+    push offset @@nextchar
     lodsb
     mov bl,al
     lodsb
     movsx eax, al
-    call rendernum
-    jmp @@nextchar
-
-rendernum:    
-	MOV eax, ss:[ebp+eax]	;use SS prefix here!
-	cmp bl,2
-	jz b2a
-	cmp bl,4
-	jz w2a
-	jmp dw2a
+    mov eax, ss:[ebp+eax]   ;use SS prefix here!
+    cmp bl,2
+    jz b2a
+    cmp bl,4
+    jz w2a
+    jmp dw2a
 
 sprintfx endp
-
-if ?AUXIO
-	include auxio.inc
-endif
 
 ;--- helper routines
 
@@ -472,6 +466,10 @@ b2a proc            ; display BYTE in al into EDI
     ret
     align 4
 b2a endp
+
+if ?AUXIO
+	include auxio.inc
+endif
 
 .text$01w segment dword flat public 'CODE'
 
@@ -525,14 +523,12 @@ if ?ISRFLGS
 endif
     db ' [CS:IP]='
     db 0
-sizeexcstr equ ($ - offset exc_str) + 1*2 + 6*4 + 13*8 + ?ISRFLGS * 4 + 8*3 - 21
+;----------------------------------- byte  word  dword [cs:ip] crlf    %
+sizeexcstr equ ($ - offset exc_str) + 1*2 + 6*4 + 13*8  + 8*3   + 2 - 20*3 + (?ISRFLGS * (4-3))
 
-exc_str2a db'Press ESC to abort program '
-    db 0
-exc_str3 db 13, ?NAME, ': unable to continue. Please reboot '
-    db 0
-szCRLF db CR,LF
-    db 0
+exc_str2 db 'Press ESC to abort program, F1/F2 for reboot ', 0
+exc_str3 db 13, ?NAME, ': unable to continue - press F1/F2 for reboot ', 0
+szCRLF db CR, LF, 0
 
     align 4
 
@@ -657,7 +653,9 @@ endif
 	mov es, eax
 	mov eax, ecx
 	mov ecx, [edx+4*ecx]
+	mov esp,[dwStackCurr]   ;v5.87: don't run on top of stack, it's reserved for client state
 	call [dwHookProc]
+	mov esp,ebp
 	jnc int_handled
 	MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo
 @@:
@@ -704,7 +702,7 @@ int_handled:
 if ?NMI
 ;--- v5.87: handle NMIs in PL0 before anything else
 	cmp dword ptr [esp],2
-	jz handle_nmi
+	jz handle_nmi_pl0
 endif
     PUSHAD
 ;--- v5.87: check moved here (was in handle_exception)
@@ -714,7 +712,7 @@ endif
     jnz @F
     movzx esp,sp
 @@:
-    MOV EBP,ESP		; ebp -> Client_Reg_Struc
+    MOV EBP,ESP		; ebp -> Client_Reg_Struc if exception
 ;--- v5.86: fixed, V86FRAME._IntNo isn't correct for IRQs!
 ;    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
     MOVZX ECX,byte ptr [EBP+sizeof PUSHADS] ;load 1 byte ONLY!
@@ -733,7 +731,8 @@ endif
     cmp eax,cs:[dwStackR0]      ;is ESP that of an IRQ?
     jnz handle_exception_r0
 
-;--- it's an IRQ - DS should be set correctly
+;--- it's an IRQ - DS should be set correctly;
+;--- however, EBP cannot be used as Client_Reg_Struc pointer.
 
 if ?V86DBG
   if ?SELINTLOG
@@ -760,88 +759,78 @@ endif
 
 if ?NMI
 
-handle_nmi:
-;--- v5.87: the NMI might have intercepted a monitor entry sequence
-;--- BEFORE the PUSHAD!
-	cmp esp, ?TOS
-	jnc handle_nmi_std
-	cmp esp, ?TOS - sizeof Client_Reg_Struc
-	jb handle_nmi_std
-;--- bad - no full client struct on the stack;
-;--- it must be completed before v86 code can run.
-	add esp, 2*4	;skip the 2 dwords pushed by NMI entry code
-	mov ss:[TmpReg], eax
-	mov eax, ?TOS - sizeof IRETDV86
-	sub eax, esp   ;eax = size to save/restore
-;--- setup ESP, ES & save GPRs by a "pushad"
-	mov esp, ss:[dwStackCurr]
-	sub esp, eax
-	xchg eax, ss:[TmpReg]
-	pushad
-	mov eax, ss
-	mov es, eax   ;since it's an entry from v86 mode, ES is NULL
-;--- 1. save the PL0 values at old ESP (3-5 dwords)
-	lea edi, [esp + sizeof PUSHADS]
-	mov esi, ?TOS - sizeof IRETDV86
-	mov ecx, ss:[TmpReg]
-	sub esi, ecx
-	push ecx
-	shr ecx, 2
-	cld
-	rep movsd es:[edi], ss:[esi]
-;--- 2. copy the GPRs to the v86 client area
-	mov edi, ?TOS - sizeof Client_Reg_Struc
-	lea esi, [esp+4]
-	mov ecx, (sizeof PUSHADS) shr 2
-	rep movsd es:[edi], ss:[esi]
-;--- 2a. reset IF in v86 client area
-	mov ebx, ss:[edi+2*4].IRETDV86._Efl
-	and byte ptr ss:[edi+2*4].IRETDV86._Efl+1,not 2
-;--- 3. run v86 code
-	call nmi_runv86
-;--- 3a. copy flags back into client area
-	mov ss:[edi+2*4].IRETDV86._Efl, ebx
-;--- 4. copy the PL0 values back
-	pop ecx
-	lea esi,[esp + sizeof PUSHADS]
-	mov edi,?TOS - sizeof IRETDV86
-	sub edi, ecx
-	shr ecx, 2
-	cld
-	mov eax, edi
-	rep movsd es:[edi], ss:[esi]
-	mov [esp+sizeof PUSHADS], eax
-;--- 5. restore GPRs & ESP and return to interrupted PL0 code
-	@v86popreg
-	pop esp
-	iretd
+;--- v5.87: reworked the NMI code for PL0;
 
-handle_nmi_std:
+?NMISTKSIZE equ ?STKSIZE shr 1
+
+handle_nmi_pl0:
+    add esp, 2*4    ;skip the dword's pushed by NMI entry code
+    mov ss:[TmpReg], esp
+
+    mov esp, cs:[dwStackCurr]
+    sub esp, ?NMISTKSIZE
+
+    sub ss:[dwStackCurr], 2 * ?NMISTKSIZE
+
+    push ss:[TmpReg]
     pushad
-    call nmi_runv86
-    @v86popreg
-    add ESP,4+4    ;skip int# & fake error code
-    IRETD
-
-nmi_runv86:
-;--- v5.86: for NMIs, selectors DS & ES might not be set;
-;--- SS should be ok, unless an intruder has setup its own stack;
-;--- Don't PUSH/POP registers FS/GS; if VCPI protected-mode entry
-;--- is used, those registers may contain "invalid" values!
     push ds
+    push es
     mov eax, ss
-    mov ds, eax    ;ensure DS is set
+    mov ds, eax
+    mov es, eax
+
+	mov ebp,[esp+sizeof PUSHADS +2*4]  ;get old ESP
+	push dword ptr [ebp+2*4]           ;save IRET32 frame
+	push dword ptr [ebp+1*4]
+	push dword ptr [ebp+0*4]
+
+if 1
+;--- save current client state
+    sub esp, sizeof Client_Reg_Struc
+    mov ebp, ?TOS - sizeof Client_Reg_Struc
+    mov edi, esp
+    call Save_Client_State
+endif
+    call nmiv86
+if 1
+    mov esi, esp
+    call Restore_Client_State
+    add esp, sizeof Client_Reg_Struc
+endif
+;--- restore IRET32 frame
+	mov ebp, [esp+3*4+2*4+sizeof PUSHADS]   ;get old ESP
+	pop dword ptr [ebp+0*4]
+	pop dword ptr [ebp+1*4]
+	pop dword ptr [ebp+2*4]
+
+    @dprintf ?NMIDBG, <"NMI PL0 exit, PL3 CS:IP=%X:%X SS:SP=%X:%X",10>,\
+        [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, [ebp].Client_Reg_Struc.Client_SS, [ebp].Client_Reg_Struc.Client_ESP
+
+    pop es
+    pop ds
+;--- restore GPRs and stack
+    popad
+    pop esp
+    add ss:[dwStackCurr], 2 * ?NMISTKSIZE
+    iretd
+
+nmiv86::
+;--- NMI must be masked - else the IRETD to enter v86 will re-trigger it...
+    mov al,80h
+    out 70h,al
+    in al,71h
+
+;--- run NMI interrupt in v86; registers eax,ecx,edx may be trashed if called by PL0, but shouldn't matter
     mov ecx, 2
     call @@runv86
-;--- v5.87: old value of DS may be invalid - check first!
-;   pop ds
-	pop eax
-	verr ax
-	jz @F
-	xor eax, eax
-@@:
-	mov ds, eax
-	ret
+
+;--- the v86 NMI handler hopefully has reset the NMI request, so let's unmask it...
+    mov al,0
+    out 70h,al
+    in al,71h
+    ret
+
 endif
 
     align 4
@@ -861,7 +850,10 @@ Int06_V86Entry endp
 ;--- if it is caused by external protected-mode code, display REBOOT option
 ;--- else jump to v86-mode and try to abort current PSP
 ;--- handle_exception_r0: esp & ebp -> PUSHADS + exc# + (faked) errc + IRETD32
-;--- v5.87: reworked - segment registers and [CS:E/IP] are now always displayed.
+;--- v5.87: reworked a) segment registers and [CS:E/IP] are now always displayed.
+;---        b) F1/F2 accepted for fastboot/reboot
+;---        c) Yield() & port 60h access used instead of INT 16h
+;---        d) sprintfx() for formatted output introduced
 
 handle_exception proc
 
@@ -885,6 +877,7 @@ handle_exception_ebp::          ; <--- entry exc in v86
     mov ax, FLAT_DATA_SEL
     mov ds, eax
     mov ES, eax
+    inc [bReentered]
     cld
 
 ;--- if it's an exception in ring0, the Client_Reg_Struc
@@ -948,16 +941,15 @@ endif
 
 ;--- setup EDI, used as output buffer
 
-	lea edi,[esp - sizeexcstr]
-    and edi,not 3
-
-    push edi
+    sub esp, (sizeexcstr and not 3) + 4
+    mov edi,esp
 
 ;--- v5.87: sprintfx replaced render_items
     push offset exc_str
-    call sprintfx            ;this will call v86-mode
+    call sprintfx
 
-;--- render up to 8 bytes at cs:eip;
+;--- render up to 8 bytes at cs:eip (=esi);
+;--- edx = segment limit
     mov cl,8
 @@nextitem:
     cmp edx, esi
@@ -979,17 +971,6 @@ done_cseip:
     mov eax,0A0Dh
     stosd
 
-    pop edi
-
-    mov eax,ss
-    cmp ax, FLAT_DATA_SEL
-    jz @F
-    mov [bFatal],1
-    push ds
-    pop ss    ;to be fixed: modifying SS may make EDI invalid!
-@@:
-    mov esp, ?TOS - ?STKSIZE
-    mov [dwStackCurr],esp  ; reinit ring 0 stack
     mov ebp, ?TOS - sizeof Client_Reg_Struc
 
 ;--- reset client's AC flag
@@ -1004,54 +985,76 @@ done_cseip:
     mov ecx, [bpstart]
     mov dword ptr [ecx], (?BPOPC shl 24) or (?BPOPC shl 16) or (?BPOPC shl 8) or ?BPOPC
 
+;--- display the exception info
     call Begin_Nest_Exec
-    push edi
-    call PrintString
-    push offset exc_str2a    ; "press ESC ..."
+    push esp
     call PrintString
 
+    mov eax,ss
+    cmp ax, FLAT_DATA_SEL
+    jz @F
+    inc [bReentered]
+    push ds
+    pop ss
+@@:
+    mov esp, ?TOS - ?STKSIZE
+    mov [dwStackCurr],esp    ; reinit ring 0 stack
+
+prompt:
+    mov eax, offset exc_str2 ; "press ESC ..."
+    cmp bReentered, 2
+    jb @F
+    mov eax, offset exc_str3 ; "press F1/F2 to reboot..."
+@@:
+    push eax
+    call PrintString
 @@waitkey:
 if ?AUXIO
     call AuxGetChar
     cmp al,1Bh
     jnz @@waitkey
 else
-    mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1, 00
-    mov byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, V86IOPL shl 4 ;set IOPL=3 (to be safe)
- if ?SAFEKBD    
-;--- v5.85: kbd interrupt may be dysfunctional because INT 15h, AH=4Fh is hooked.
-;---        hence restore INT 15h before calling INT 16h, AH=00h.
-    mov eax,[OldInt15]
-    xchg eax,ds:[15h*4]
+    cmp [bReentered],2
+    jnc @F
+    in al, 21h
     push eax
-
-    mov eax,[OldInt16]
-    xchg eax,ds:[16h*4]  ;make sure we have a safe keyboard
-    push eax
- endif
-;--- call INT 16h, AH=00 in v86-mode
-    mov eax,16h
-    call Exec_Int
- if ?SAFEKBD
-    pop dword ptr ds:[16h*4]
-    pop dword ptr ds:[15h*4] ;v5.85: restore INT 15h      
- endif
-    cmp byte ptr [ebp].Client_Reg_Struc.Client_EAX, 1Bh
+    mov al, not 1 ;allow PIT timer irq
+    out 21h,al
+    call Yield
+    pop eax
+    out 21h,al
+@@:
+    in al, 64h
+    test al, 01h; kbd input buffer full?
+    jz @@waitkey
+    mov ah, al
+    in al, 60h
+    test ah, 20h; is it input from PS/2 mouse?
+    jnz @@waitkey
+    cmp al, 3Bh ; F1?
+    jz softboot
+    cmp al, 3Ch ; F2?
+    jz _Reboot
+    cmp [bReentered],2
+    jnc @@waitkey
+    cmp al, 1   ; ESC?
     jnz @@waitkey
 endif
     push offset szCRLF       ;print a CR/LF
     call PrintString
-    cmp [bFatal],1
-    jz @@nodoscall
+    mov [bReentered],0
     mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 4C7Fh
     mov eax,21h
     call Exec_Int
-;--- if v86 returned (or exception is fatal), there is nothing to do than wait
-@@nodoscall:
-    or [bFatal],1
-    push offset exc_str3 
-    call PrintString
-    jmp @@waitkey
+    mov [bReentered],2
+    jmp prompt
+softboot:
+;--- _SoftBoot expects to be called by int 15h, ax=4F53 (Ctrl-Alt-Del pressed)
+;--- this has to be emulated.
+    mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 4F53h
+    or byte ptr [ebp].Client_Reg_Struc.Client_EFlags, 1 ;set carry flag
+    or byte ptr ds:[@KB_FLAG],1100b    ; set key status CTRL & ALT
+    jmp _SoftBoot
     align 4
 
 handle_exception endp
@@ -1072,18 +1075,18 @@ endif
 
 ;--- exception in V86 mode with error code.
 ;--- IDT entry for gate 10h will have pushed a fake error code for float exceptions.
-;--- v5.86: exceptions 0-8 will have pushed a fake error code.
+;--- v5.86: exceptions 0-7 will have pushed a fake error code.
 ;--- esp -> int#, error code, IRET32D
 ;--- DS,ES = NULL
 
 V86_Exception proc
 
-	pushad
-	mov ebp, esp
+    pushad
+    mov ebp, esp
 
 ;--- now ebp -> Client_Reg_Struc
 
-	mov ecx, [ebp].Client_Reg_Struc.Client_Int
+    mov ecx, [ebp].Client_Reg_Struc.Client_Int
 if ?V86DBG
 ;--- this happens quite often, so better activate selectively
   if ?SELINTLOG
@@ -1098,6 +1101,11 @@ endif
     MOV DS,EAX
 
     mov esp,[dwStackCurr]
+
+if ?NMI
+    cmp ecx,2
+    jz nmi_pl3
+endif
 
 ;    @dprintf ?V86DBG, <"V86_Exception, esp=%X, cs:eip=%X:%X",10>, esp,[ebp].Client_Reg_Struc.Client_CS,[ebp].Client_Reg_Struc.Client_EIP
 
@@ -1136,9 +1144,13 @@ endif
     cmp esi, NUMBP
     jae @@No_BP
     call [esi*4+bptable]
+exc_exit:
     @v86popregX
     add ESP,4+4         ; skip int# + error code
     IRETD
+nmi_pl3:                ; v5.87
+    call nmiv86
+    jmp exc_exit
 
 @@No_BP:
 if ?BPOPC ne 0F4h
@@ -1157,7 +1169,7 @@ endif
 if 0
 ;--- doing a HLT with interrupts disabled will freeze the machine
 ;--- (or at least wait for a NMI). MS Emm386 does so. Should Jemm as well?
-    test byte ptr [ESP].IRETDV86._Efl+2,2
+    test byte ptr [ESP].IRETDV86._Efl+1,2
     jz @@run_hlt
 endif
     call EnableInts
@@ -2293,6 +2305,7 @@ endif
     pop ds
     push ss
     pop es
+_SoftBoot::
     mov esp,[dwStackCurr]
     cld
     call Begin_Nest_Exec

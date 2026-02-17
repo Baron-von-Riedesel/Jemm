@@ -8,7 +8,7 @@
 # COFF Linker JWlink                OW Wlink
 # Make        MS Nmake              OW Wmake              
 #
-# since v5.87, JWasm must be v2.21+, Masm must be v8+
+# since v5.87, JWasm must be v2.21+ (with fixed "negative offset"-bug)
 #
 # note: OW Wmake must be used with the -ms option!
 #
@@ -137,7 +137,7 @@ LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 	@$(ASM) -c -nologo -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<
 
 {src\}.asm{$(OUTD2)}.obj:
-	@$(ASM) -c -nologo -coff -D?SAFEKBD=1 -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
+	@$(ASM) -c -nologo -coff -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
 
 ALL: $(BUILD) $(OUTD1) $(OUTD2) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE
 

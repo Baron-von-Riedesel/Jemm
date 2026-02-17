@@ -113,7 +113,7 @@ formatitem:
 	mov [longarg],1
 	inc esi
 @@:
-	lodsb
+	lodsb cs:[esi]
 	mov [fmt],esi
 	cmp al,'x'
 	je handle_x
@@ -135,7 +135,7 @@ handle_c:
 	mov eax,ss:[edi]
 	add edi, 4
 @@:
-	call VPUTCHR
+	call dochar
 	retn
 
 handle_s:
@@ -182,21 +182,29 @@ print_string:		;print string ESI, size EAX
 	.if flag == 1
 		.while sdword ptr ebx > 0
 			mov eax, [fillchr]
-			call VPUTCHR	;print leading filler chars
+			call dochar	;print leading filler chars
 			dec ebx
 		.endw
 	.endif
 
 	.while byte ptr cs:[esi]
 		lodsb cs:[esi]
-		call VPUTCHR		;print char of string
+		call dochar		;print char of string
 	.endw
 
 	.while sdword ptr ebx > 0
 		mov eax, [fillchr]
-		call VPUTCHR		;print trailing spaces
+		call dochar		;print trailing spaces
 		dec ebx
 	.endw
 	retn
+dochar:
+	cmp al,10
+	jnz @F
+	mov al,13
+	call @F
+	mov al,10
+@@:
+	jmp VPUTCHR
 
 dprintf endp
