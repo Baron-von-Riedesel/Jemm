@@ -8,6 +8,7 @@
    a crash.
  - segment registers DS/ES/FS/GS and [CS:IP] now also displayed for PL0
    exceptions.
+ - NMIs are masked while NMI exceptions are handled.
 
  25.01.2026: v5.86
  - service table: added control proc member to allow Jemm to call out on

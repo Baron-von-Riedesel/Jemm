@@ -100,13 +100,32 @@ rECX    dd ?
 rEAX    dd ?
 PUSHADS ends
 
+;--- RETF stack frame for 16bit
+
+RETFWS struct
+union
+ struct
+_Ip     dw ?
+_Cs     dw ?
+ ends
+_CsIp   dd ?
+ends
+RETFWS ends
+
+;--- IRET stack frame for 16bit
+
+IRETWS struct
+        RETFWS <?>
+_Fl     dw ?
+IRETWS ends
+
 ;--- IRET stack frame for 32bit protected-mode
 
-IRETD32 struct
+IRETDS struct
 _Eip    dd ?    ;+0
 _Cs     dd ?    ;+4 
 _Efl    dd ?    ;+8
-IRETD32 ends
+IRETDS ends
 
 ;--- stack frame expected by ring0-IRETD to switch to v86-mode
 

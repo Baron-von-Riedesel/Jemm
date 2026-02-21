@@ -67,7 +67,7 @@ if ?DMAPT or ?VDS
 ?DMABUFFMAX     EQU 128             ; max DMA-Buffer size in kB
 endif
 
-?FASTENTRIES    equ 32
+?FASTENTRIES    equ 32-1
 
 	include x86.inc
 

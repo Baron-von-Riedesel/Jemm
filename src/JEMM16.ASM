@@ -30,11 +30,11 @@ psp dw ?
 blsiz dw ?
 MCB ends
 
-IRET16 struct
-wIP dw ?
-wCS dw ?
-wFL dw ?
-IRET16 ends
+IRETWS struct
+_Ip  dw ?
+_Cs  dw ?
+_Fl  dw ?
+IRETWS ends
 
 ;--- @DefineBP: macro to define a v86-"breakpoint"
 
@@ -192,8 +192,8 @@ int1340common:
 iret_with_new_CY:
 	push bp
 	mov bp,sp
-	rcr byte ptr [bp+2].IRET16.wFL,1
-	rol byte ptr [bp+2].IRET16.wFL,1
+	rcr byte ptr [bp+2].IRETWS._Fl,1
+	rol byte ptr [bp+2].IRETWS._Fl,1
 	pop bp
 	iret
 
@@ -240,7 +240,7 @@ exit_iret:
   ife ?HOOK13
 	push bp
 	mov bp,sp
-	and byte ptr [bp+2].IRET16.wFL,not 1  ;clear CF
+	and byte ptr [bp+2].IRETWS._Fl,not 1  ;clear CF
 	pop bp
 	iret
   else
