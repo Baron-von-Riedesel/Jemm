@@ -4,7 +4,7 @@
 	.386
     .model flat
     
-	include jlm.inc
+	include JLM.INC
 
 	.code
 
