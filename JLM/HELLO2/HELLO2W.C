@@ -3,8 +3,8 @@
 // OW inline assembly doesn't know values of enums!
 // therefore it needs external module jlmw.asm
 
-#include <jlm.h>
-#include "jlmw.h"
+#include <JLM.H>
+#include "JLMW.h"
 
 struct Client_Reg_Struc * pcl;
 
