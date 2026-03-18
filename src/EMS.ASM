@@ -43,14 +43,14 @@ endif
 ;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 @emmpushreg macro
-    SUB ESP,4+4
+    SUB ESP, CRS_SIZEX
     PUSHAD
-    MOV EBP,ESP
+    MOV EBP, ESP
     endm
 @emmpopreg macro
     mov esp, ebp
     POPAD
-    ADD ESP,4+4
+    ADD ESP, CRS_SIZEX
     endm
 
 ;--- EMS page descriptor
@@ -244,6 +244,7 @@ Int67_Entry PROC public
     MOV DS,ECX
     MOV ES,ECX
 
+;--- must be one source line without concatenation operator \, or Masm complains
     @dprintf ?V86DBG, <"Int 67h in v86-mode, CS:EIP=%X:%X EBP=%X AX=%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, ebp, ax
 
     mov ecx,[dwRSeg]
@@ -268,7 +269,7 @@ if ?VCPI
   if ?VCPIDBG
     bt vcpidbgfilt,cx
     jnc nodbgout
-    @dprintf ?VCPIDBG, <"VCPI rm, in: ax=%X cx=%X edx=%X">, word ptr [ebp].Client_Reg_Struc.Client_EAX,
+    @dprintf ?VCPIDBG, <"VCPI rm, in: ax=%X cx=%X edx=%X">, word ptr [ebp].Client_Reg_Struc.Client_EAX,\
         word ptr [ebp].Client_Reg_Struc.Client_ECX, [ebp].Client_Reg_Struc.Client_EDX
     call [VCPI_Call_Table+ECX*4]
     @dprintf ?VCPIDBG, <", out: ax=%X edx=%X",10>, ax, edx
@@ -1077,10 +1078,11 @@ ems4_move_memory PROC
     shl edi,4
     add edi,esi     ; edi -> EMS region buffer address
 
+ifdef __JWASM__ ;masm emits "string or text literal too long"
     @dprintf ?EMSDBG, <"EMM 57h: siz=%X src=%X/%X/%X/%X, dst=%X/%X/%X/%X">, [edi].EMM57.e57_dwSize,\
         [edi].EMM57.e57_bSrcTyp, [edi].EMM57.e57_wSrcHdl, [edi].EMM57.e57_wSrcSeg, [edi].EMM57.e57_wSrcOfs,\
         [edi].EMM57.e57_bDstTyp, [edi].EMM57.e57_wDstHdl, [edi].EMM57.e57_wDstSeg, [edi].EMM57.e57_wDstOfs
-
+endif
     mov ecx,[edi].EMM57.e57_dwSize
     test ecx,ecx
     je @@ok                        ; always succeeds if no bytes are moved

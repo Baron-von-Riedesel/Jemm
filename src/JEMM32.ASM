@@ -155,7 +155,7 @@ endif
 pV86Hooks       dd 0    ; v86 hook proc installed? ( address of variable exported by VMM_SERV_TABLE )
 dwHookProc      dd 0
 if ?NMI
-TmpReg          dd 0    ; v5.87; used to temp. store a register in NMI handling
+OldESP          dd 0    ; v5.87; used to temp. store ESP in NMI handling
 endif
 
 ;-- byte vars (variable)
@@ -324,7 +324,7 @@ endif
     mov dword ptr [dqSavedInt01+4], ecx
     or byte ptr [ebp].Client_Reg_Struc.Client_EFlags+1, 1  ;TF=1
     @v86popregX             ; return to V86, execute 1 instruction
-    ADD ESP,4+4
+    ADD ESP, CRS_SIZEX
     iretd
 
 ;--- returned to monitor after 1 instruction run in v86 mode
@@ -440,12 +440,12 @@ sprintfx endp
 
 ;--- helper routines
 
-dw2a proc            ; display DWORD in eax into EDI
+dw2a proc           ; display DWORD in eax into EDI
     push eax
     shr eax,16
     call w2a
     pop eax
-dw2a endp            ; fall through
+dw2a endp           ; fall through
 w2a proc            ; display WORD in ax into EDI
     push eax
     mov al,ah
@@ -456,8 +456,8 @@ b2a proc            ; display BYTE in al into EDI
     push eax
     shr al,4
     call @@nibout
-    pop eax     ; fall through
-@@nibout:               ; display NIBBLE in al[0..3] into EDI
+    pop eax         ; fall through
+@@nibout:           ; display NIBBLE in al[0..3] into EDI
     and al,0Fh
     cmp al,10
     sbb al,69H
@@ -683,7 +683,7 @@ endif
     MOV [EBP].V86FRAME._Efl, EDX
 int_handled:
     @v86popreg
-    add ESP,4+4         ; skip int#
+    add ESP, CRS_SIZEX  ; skip fields between PUSHADS and IRETDV86
     IRETD               ; return to v86-mode
 
     align 4
@@ -718,16 +718,14 @@ endif
     cmp word ptr [ebp + sizeof PUSHADS + 4].IRETDS._Cs, FLAT_CODE_SEL
     JNZ handle_exception_r0
 
-;--- IRQs in ring 0 will only occur "controlled".
-;--- This simplifies identifying them (Jemm doesn't reprogram the PICs!)
-;--- A ring0 IRQ will have pushed IRETDS, int# and PUSHADS:
+;--- IRQs in ring 0 will only occur controlled - after EnableInts() has been called.
+;--- EnableInts will have setup variable dwStackR0 - thus it's possible to identify IRQs;
+;--- a ring0 IRQ will have pushed IRETDS, int# and PUSHADS:
     lea eax,[ebp + sizeof PUSHADS + 4 + sizeof IRETDS]
-    cmp eax,cs:[dwStackR0]      ;is ESP that of an IRQ caused by calling Yield()?
+    cmp eax,cs:[dwStackR0]
     jnz handle_exception_r0
 
 ;--- it's an IRQ - DS should be set correctly;
-;--- however, EBP cannot be used as Client_Reg_Struc pointer.
-
 ;--- v5.86: fixed, V86FRAME._IntNo isn't correct for IRQs!
 ;    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
     MOV ECX, [EBP+sizeof PUSHADS]
@@ -753,8 +751,8 @@ if ?NMI
 
 handle_nmi_pl0:
 
-    add esp, 2*4    ;skip the dword's pushed by NMI entry code
-    mov ss:[TmpReg], esp
+    add esp, 4+4    ;skip the dword's pushed by NMI entry code (=CRS_SIZEX)
+    mov ss:[OldESP], esp
 
 ;--- since an NMI can occur at any time, ESP may be inside the v86 client register region;
 ;--- then ESP has to be setup with dwStackCurr.
@@ -766,7 +764,7 @@ handle_nmi_pl0:
     jnc @F
     mov esp, cs:[dwStackCurr]
 @@:
-    push ss:[TmpReg]
+    push ss:[OldESP]
     pushad
     push ds
     push es
@@ -775,7 +773,7 @@ handle_nmi_pl0:
     mov es, eax
     jnc @F
 ;--- save IRETD frame
-    mov ebp,[esp+2*4+sizeof PUSHADS]  ;get old ESP (=[TmpReg])
+    mov ebp,[esp+2*4+sizeof PUSHADS]  ;get old ESP
     push [ebp].IRETDS._Efl
     push [ebp].IRETDS._Cs
     push [ebp].IRETDS._Eip
@@ -804,8 +802,7 @@ handle_nmi_pl0:
     pop [ebp].IRETDS._Cs
     pop [ebp].IRETDS._Efl
 @@:
-    @dprintf ?NMIDBG, <"NMI PL0 exit, PL3 CS:IP=%X:%X SS:SP=%X:%X",10>,\
-        [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, [ebp].Client_Reg_Struc.Client_SS, [ebp].Client_Reg_Struc.Client_ESP
+    @dprintf ?NMIDBG, <"NMI PL0 exit, PL3 CS:IP=%X:%X SS:SP=%X:%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, [ebp].Client_Reg_Struc.Client_SS, [ebp].Client_Reg_Struc.Client_ESP
     pop es
     pop ds
 ;--- restore GPRs and ESP
@@ -838,7 +835,7 @@ endif
 @@runv86:
 ;--- running v86-mode will reset registers FS & GS to 0!
     mov ebp, ?TOS - sizeof Client_Reg_Struc
-    call Begin_Nest_Exec  ;sets CS:IP to RSEG:BPBack, old CS:IP is "pushed" onto stack
+    call Begin_Nest_Exec  ;simulates a FAR call (CS:IP = RSEG:BPBack)
     mov eax, [esp+4]
     call Exec_Int         ;runs an INT xx - push current CS:IP & flags; run INT xx
     call End_Nest_Exec    ;simulates a RETF
@@ -896,8 +893,7 @@ handle_exception_ebp::          ; <--- entry exc in v86
 ;--- if it's an exception in ring0, the Client_Reg_Struc
 ;--- may miss all fields beyond Client_Reg_EFlags!
 
-    @dprintf ?EXCDBG, <"Exception dump, exception %X at cs:eip=%X:%X",10>, [ebp].Client_Reg_Struc.Client_Int,\
-        [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
+    @dprintf ?EXCDBG, <"Exception dump, exception %X at cs:eip=%X:%X",10>, [ebp].Client_Reg_Struc.Client_Int, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP
 
     test byte ptr [ebp].Client_Reg_Struc.Client_EFlags+2,2   ;V86 mode?
     jnz @@isv86
@@ -1073,7 +1069,9 @@ softboot:
 handle_exception endp
 
 if ?BPOPC ne 0F4h
-;--- true IDT 06 entry
+
+;--- true IDT 06 entry if breakpoint is ARPL
+
 Int06_Entry proc
     push 0              ;exc 06 has no error code, set a dummy one
     push 6
@@ -1124,7 +1122,7 @@ endif
 
     CMP ECX,0DH             ; general protection exception?
     JNZ @@V86_TEST_EXC      ; no, check further
-@@Is_BP:
+@@Is_BP:                    ; <--- entry from INT 06 if breakpoint is ARPL
 
 ;--- a monitor "bp", used to switch back from v86 to protected-mode?
 ;--- EAX=flat selector
@@ -1156,12 +1154,12 @@ endif
     jb @@No_BP
     cmp esi, NUMBP
     jae @@No_BP
-    call [esi*4+bptable]
+    call [esi*4+offset bptable]
 exc_exit:
     @v86popregX
-    add ESP,4+4         ; skip int# + error code
+    add ESP, CRS_SIZEX          ; skip int# + error code
     IRETD
-nmi_pl3:                ; v5.87
+nmi_pl3:                        ; v5.87: handle NMI occured in PL3
     call nmiv86
     jmp exc_exit
 
@@ -1176,14 +1174,15 @@ endif
     INC [EBP].Client_Reg_Struc.Client_EIP   ; Jump over the HLT instruction
 
 ;    mov esp,[dwStackCurr]     ; v5.87: in V86_Exception, register ESP is already setup correctly.
-if 0
 ;--- doing a HLT with interrupts disabled will freeze the machine
-;--- (or at least wait for a NMI). MS Emm386 does so. Should Jemm as well?
+;--- (or at least wait for a NMI); That's MS Emm386 compatible.
+
+if 0 ; activate if HLT should be a NOP if IF==0
     test byte ptr [ESP].IRETDV86._Efl+1,2
-    jz @@run_hlt
+    jz exc_exit
 endif
     call EnableInts
-    STI                         ; give Interrupts free and then wait
+    STI                         ; give Interrupts free and wait for IRQ
     HLT
     CLI
     call DisableInts
@@ -1205,19 +1204,15 @@ if ?SB
     jne @@notsb
     test [bV86Flags],V86F_SB
     je @@notsb                  ; SB option not turned on
-    inc [EBP].Client_Reg_Struc.Client_EIP   ; skip INT 3 opcode
+    inc [EBP].Client_Reg_Struc.Client_EIP   ; skip INT 3 opcode (shouldn't this be checked first?)
     @v86popregX
-    add esp,4+4                 ; discard GPF error code & INT#
+    add esp, CRS_SIZEX          ; discard GPF error code & INT#
     push 3                      ; simulate an INT 3 (no exception!)
     jmp V86_Monitor
 @@notsb:
 endif
 
-if ?EMUDBG
-    push eax
     @dprintf ?EMUDBG, <"Opcode %X %X %X caused GPF at %X",10>, byte ptr [esi], byte ptr [esi+1], byte ptr [esi+2], esi
-    pop eax
-endif
 
     cmp al,0Fh                  ; check if potentially mov <reg>,cr#
     je ExtendedOp               ; ExtendedOp will jmp back to V86_Exc0D if no emulation happened
@@ -1237,7 +1232,7 @@ endif
 @@:
 
 ;--- to be fixed: at least OUTS may accept a segment prefix (64,65,26,2E,36,3E)!
-;--- and prefix 67h max cause a GPF at least...
+;--- and prefix 67h may cause a GPF at least...
 
     cmp al,6Ch
     JB V86_Exc0D
@@ -1343,7 +1338,7 @@ v86excrtn:
     call [vmm_service_table.pSimulate_Int]
 v86excrtn2:
     @v86popregX
-    add ESP,4+4         ; skip error code & "int#" 
+    add ESP, CRS_SIZEX  ; skip error code & "int#" 
     IRETD               ; return to virtual 86-Mode
 
     align 4
@@ -1419,7 +1414,7 @@ endif
     mov [ebp].Client_Reg_Struc.Client_EAX, eax
 @@isout:
     @v86popregX
-    ADD ESP,4+4
+    ADD ESP, CRS_SIZEX
     IRETD
 
     align 4
@@ -2044,18 +2039,20 @@ Yield endp
 
 ;--- simulate an RETF in v86-mode
 ;--- INP: EBP -> client struct
-;--- modifies EAX,ECX
+;--- modifies EAX,ECX,EDX
+;--- v5.87: take care of SP wrap
 
 Simulate_Far_Ret proc public
-    MOVZX eax, word ptr [EBP].Client_Reg_Struc.Client_ESP
+    MOVZX edx, word ptr [EBP].Client_Reg_Struc.Client_ESP
     MOVZX ecx, word ptr [EBP].Client_Reg_Struc.Client_SS
     SHL ecx, 4
-    add ecx, eax
-    MOV eax, [ecx].RETFWS._CsIp
-    mov word ptr [EBP].Client_Reg_Struc.Client_EIP, ax
-    shr eax,16
+    MOVZX eax, word ptr [ecx+edx]
+    mov [EBP].Client_Reg_Struc.Client_EIP, eax
+    add dx, 2
+    MOV ax, [ecx+edx]
+    add dx, 2
     mov [EBP].Client_Reg_Struc.Client_CS, eax
-    ADD [EBP].Client_Reg_Struc.Client_ESP,sizeof RETFWS  ; if ESP is to increase, adjust it last!
+    mov word ptr [EBP].Client_Reg_Struc.Client_ESP, dx ; if ESP is to increase, adjust it last!
     ret
     align 4
 Simulate_Far_Ret endp
@@ -2066,20 +2063,24 @@ Simulate_Far_Ret endp
 ;--- edx: new IP -> client_reg_struct.eip
 ;--- current v86 CS:IP is pushed onto the v86 stack
 ;--- modifies EAX, ECX, EDX
+;--- v5.87: take care of SP wrap
 
 Simulate_Far_Call proc public
-    xchg edx, [EBP].Client_Reg_Struc.Client_EIP
-    xchg cx, word ptr [EBP].Client_Reg_Struc.Client_CS
+    movzx ecx, cx
+    movzx edx, dx
+    sub word ptr [EBP].Client_Reg_Struc.Client_ESP, sizeof RETFWS ; if ESP is to decrease, adjust it first!
     push ecx
-    MOVZX ecx, word ptr [EBP].Client_Reg_Struc.Client_SS
-    MOVZX eax, word ptr [EBP].Client_Reg_Struc.Client_ESP
-    sub ax, sizeof RETFWS
-    mov word ptr [EBP].Client_Reg_Struc.Client_ESP, ax   ; if ESP is to decrease, adjust it first!
+    push edx
+    MOV dx, word ptr [EBP].Client_Reg_Struc.Client_ESP
+    MOV cx, word ptr [EBP].Client_Reg_Struc.Client_SS
     shl ecx, 4
-    add eax, ecx
-    mov [eax].RETFWS._Ip, dx
-    pop ecx
-    mov [eax].RETFWS._Cs, cx
+    mov eax, [EBP].Client_Reg_Struc.Client_EIP
+    mov [ecx+edx], ax
+    add dx, 2
+    mov eax, [EBP].Client_Reg_Struc.Client_CS
+    mov [ecx+edx], ax
+    pop [EBP].Client_Reg_Struc.Client_EIP
+    pop [EBP].Client_Reg_Struc.Client_CS
     ret
     align 4
 Simulate_Far_Call endp
@@ -2087,22 +2088,25 @@ Simulate_Far_Call endp
 ;--- simulate an IRET in v86-mode
 ;--- INP: EBP -> Client_Reg_Struc
 ;--- modifies EAX,ECX,EDX
+;--- v5.87: take care of SP wrap
 
 Simulate_Iret proc public
-    MOVZX eax, word ptr [EBP].Client_Reg_Struc.Client_ESP
+    MOVZX edx, word ptr [EBP].Client_Reg_Struc.Client_ESP
     MOVZX ecx, word ptr [EBP].Client_Reg_Struc.Client_SS
     SHL ecx, 4
-    add eax, ecx
-    MOV edx, [eax].IRETWS._CsIp
-    MOV cx, [eax].IRETWS._Fl
-    mov word ptr [EBP].Client_Reg_Struc.Client_EIP, dx
-    shr edx,16
-    mov [EBP].Client_Reg_Struc.Client_CS, edx
+    movzx eax, word ptr [ecx+edx]
+    mov [EBP].Client_Reg_Struc.Client_EIP, eax
+    add dx, 2
+    mov ax, word ptr [ecx+edx]
+    mov [EBP].Client_Reg_Struc.Client_CS, eax
+    add dx, 2
+    mov ax, word ptr [ecx+edx]
 if 1
-    or ch, V86IOPL shl 4  ;to be safe, set IOPL=3 for v86
+    or ah, V86IOPL shl 4  ;to be safe, set IOPL=3 for v86
 endif
-    mov word ptr [EBP].Client_Reg_Struc.Client_EFlags, cx
-    ADD [EBP].Client_Reg_Struc.Client_ESP,sizeof IRETWS   ; if ESP is to increase, adjust it last!
+    mov word ptr [EBP].Client_Reg_Struc.Client_EFlags, ax
+    add dx, 2
+    mov word ptr [EBP].Client_Reg_Struc.Client_ESP, dx   ; if ESP is to increase, adjust it last!
     ret
     align 4
 Simulate_Iret endp
@@ -2111,6 +2115,7 @@ Simulate_Iret endp
 ;--- INP: EBP -> Client_Reg_Struc
 ;--- INP: EAX == INT #
 ;--- modifies EAX, ECX, EDX
+;--- v5.87: take care of SP wrap
 
 Simulate_Int proc
 
@@ -2123,27 +2128,29 @@ Simulate_Int proc
 	call [dwHookProc]   ;expects: eax=int#, ecx=hookproc, ebp->client regs
 	jnc int_handled
 @@:
-    mov edx,[eax*4]
-    movzx eax,word ptr [EBP].Client_Reg_Struc.Client_ESP
-    MOVZX ECX,word ptr [EBP].Client_Reg_Struc.Client_SS   ; get address of v86 SS:SP
-    SUB AX, sizeof IRETWS
+    sub word ptr [EBP].Client_Reg_Struc.Client_ESP, sizeof IRETWS; if ESP is to decrease, adjust it first!
+    shl eax, 2
+    push dword ptr [eax]
+    movzx edx, word ptr [EBP].Client_Reg_Struc.Client_ESP
+    MOVZX ecx, word ptr [EBP].Client_Reg_Struc.Client_SS   ; get address of v86 SS:SP
     SHL ECX,4
-    ADD ECX, EAX
-    MOV [EBP].Client_Reg_Struc.Client_ESP,eax   ; if ESP is to decrease, adjust it first!
 
-    MOV EAX,[EBP].Client_Reg_Struc.Client_CS    ; get v86 CS:IP into EAX
-    shl EAX, 16
-    MOV AX,word ptr [EBP].Client_Reg_Struc.Client_EIP
-    MOV [ECX].IRETWS._CsIp,EAX                  ; set CS:IP on the stack frame
+    MOV EAX,[EBP].Client_Reg_Struc.Client_EIP
+    MOV [ecx+edx], ax                           ; set IP on the stack frame
+    add dx, 2
+    MOV EAX,[EBP].Client_Reg_Struc.Client_CS
+    MOV [ecx+edx], ax                           ; set CS on the stack frame
 
-    MOV word ptr [EBP].Client_Reg_Struc.Client_EIP,DX   ;found in IVT
-    SHR EDX,16
-    MOV [EBP].Client_Reg_Struc.Client_CS,EDX
+    pop eax  ; get CS:IP from IVT
+    MOV word ptr [EBP].Client_Reg_Struc.Client_EIP, AX
+    shr eax, 16
+    MOV [EBP].Client_Reg_Struc.Client_CS, EAX
+    add dx, 2
 
-    MOV EAX,[EBP].Client_Reg_Struc.Client_EFlags; + v86 Flags
-    MOV [ECX].IRETWS._Fl,AX     ; and store them onto v86 stack
-    and AH,not (1+2)            ; clear TF+IF; what about RF?
-    mov [EBP].Client_Reg_Struc.Client_EFlags,eax
+    MOV EAX, [EBP].Client_Reg_Struc.Client_EFlags
+    MOV [ecx+edx], AX                           ; set FL on the stack frame
+    and AH, not (1+2)                           ; clear TF+IF; RF?
+    mov [EBP].Client_Reg_Struc.Client_EFlags, eax
 int_handled:
     ret
     align 4
@@ -2188,7 +2195,7 @@ Resume_Exec proc public
     pushad              ; save PL0 GPRs
     mov [dwStackCurr],esp
     @v86popregX         ; load ESP with EBP and restore v86 GPRs
-    add ESP,4+4         ; skip call return + error code
+    add ESP, CRS_SIZEX  ; skip extra fields in Client_Reg_Struc
     IRETD               ; and jump to v86 mode
     align 4
 Resume_Exec endp
@@ -2307,7 +2314,7 @@ endif
     CMP AL,1100B            ; If not,  continue working
     POP EAX
     JNZ @@v86mon
-    sub esp, 2*4            ; room for "error code" and "int#"
+    sub esp, CRS_SIZEX      ; space for fields between PUSHADS and IRETDV86
     PUSHAD
     MOV EBP,ESP             ; ebp -> Client_Reg_Struc
 

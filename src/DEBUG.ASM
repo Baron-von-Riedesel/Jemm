@@ -13,7 +13,8 @@
 	include jemm32.inc		;declarations for Jemm32
 	include debug.inc
 
-SLOWDOWN equ 256            ;to slow down debug displays
+?WAIT     equ 1             ;wait for "SPACE released" on LF
+?SLOWDOWN equ 256           ;slow down factor for debug displays
 
 ;--- publics/externals
 
@@ -67,6 +68,8 @@ else
 	MOV DH,CL
 	LEA EDI, [EDI+EAX*2]
 	MOV AL, [ESP+1Ch]
+	CMP AL, 13
+	JZ done
 	CMP AL, 10
 	JZ @@NEWLINE
 	MOV SS:[EDI], AL
@@ -79,6 +82,26 @@ else
  endif
 	JB @@OLDLINE
 @@NEWLINE:
+ if ?WAIT
+@@wait:
+	in al,64h
+	test al,1
+	jz @@wait
+	mov ah,al
+	in al,60h
+	test ah,20h   ;PS/2 mouse?
+	jnz @@wait
+	cmp al,39h+80h;space released?
+	jnz @@wait
+ elseif ?SLOWDOWN
+	mov ecx,?SLOWDOWN*100
+@@:
+	in al,61h
+	cmp al,ah
+	jz @B
+	mov ah,al
+	loop @B
+ endif
 	MOV DL, 00
 	INC DH
  if ?USEMONO
@@ -91,6 +114,7 @@ else
 	CALL @@SCROLL_SCREEN
 @@OLDLINE:
 	MOV SS:[EBX*2+450h],DX
+done:
 endif
 	POPAD
 	RET
@@ -128,15 +152,6 @@ ife ?AUXIO
 	mov ss:[edi],ax
 	add edi,2
 	loop @@nextcell2
- if SLOWDOWN
-	mov ecx,SLOWDOWN
-@@:
-	in al,61h
-	cmp al,ah
-	jz @B
-	mov ah,al
-	loop @B
- endif
 	retn
 endif
 

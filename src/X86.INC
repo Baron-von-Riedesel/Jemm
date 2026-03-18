@@ -115,7 +115,7 @@ RETFWS ends
 ;--- IRET stack frame for 16bit
 
 IRETWS struct
-        RETFWS <?>
+        RETFWS <>
 _Fl     dw ?
 IRETWS ends
 

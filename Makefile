@@ -10,6 +10,9 @@
 #
 # since v5.87, JWasm must be v2.21+ (with fixed "negative offset"-bug)
 #
+# assembling with Masm may trigger jwlink warning "target displacement
+#      xxxx ignored for segment fixup"; can be safely ignored!
+#
 # note: OW Wmake must be used with the -ms option!
 #
 # note: WLink < v1.8 shouldn't be used as COFF linker. It contains a bug 

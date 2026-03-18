@@ -3,8 +3,10 @@
 ifndef name_
 name_ equ 0
 endif
+?DBGOUT = ?DBGOUT + name_
 endm
 
+?DBGOUT = 0
 @dbgdef ?V86DBG  ;1=enable displays in V86 monitor
 @dbgdef ?V86XDBG ;1=enable more displays in V86 monitor (IRQs!)
 @dbgdef ?DMADBG  ;1=enable DMA related displays
@@ -26,10 +28,11 @@ endm
 @dbgdef ?EXCDBG  ;1=enable displays in exception handler
 @dbgdef ?PHYSDBG ;1=enable displays in physical memory handling
 @dbgdef ?MAPDBG  ;1=enable mapping handling
+@dbgdef ?NMIDBG  ;1=enable displays for NMI handling
 
 ?USEMONO equ 0  ;1=use monochrome monitor for dbg displays
 
-?DBGOUT  equ ?V86DBG + ?DMADBG + ?VDSDBG + ?EMSDBG + ?UMBDBG + ?A20DBG + ?EMBDBG + ?EMUDBG + ?I15DBG + ?VCPIDBG + ?USEMONO + ?POOLDBG + ?INITDBG + ?HLTDBG + ?UNLDBG + ?RBTDBG + ?EXCDBG + ?PHYSDBG + ?MAPDBG
+;?DBGOUT  equ ?V86DBG + ?DMADBG + ?VDSDBG + ?EMSDBG + ?UMBDBG + ?A20DBG + ?EMBDBG + ?EMUDBG + ?I15DBG + ?VCPIDBG + ?USEMONO + ?POOLDBG + ?INITDBG + ?HLTDBG + ?UNLDBG + ?RBTDBG + ?EXCDBG + ?PHYSDBG + ?MAPDBG + ?NMIDBG
 
 CStr macro text:vararg
 local sym
@@ -74,7 +77,8 @@ dprintf proto c :ptr, :vararg
  endif
 endm
 else
-@dprintf textequ <;>
+@dprintf macro bCond, fmt, args:vararg
+endm
 endif
 
 @DebugBreak macro

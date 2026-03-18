@@ -1244,7 +1244,7 @@ endif
     shr eax,12                  ; convert bytes to 4k pages
     call Pool_Init2
 
-    @dprintf ?INITDBG, <"EMS/VCPI memory handling initialised, MaxMem4K=%X",10,"end of preallocated EMS, physical=%X">, [dwMaxMem4K], edi
+    @dprintf ?INITDBG, <"EMS/VCPI memory handling initialised, MaxMem4K=%X",10,"end of preallocated EMS, physical=%X",10>, [dwMaxMem4K], edi
 
 if ?INTEGRATED
 

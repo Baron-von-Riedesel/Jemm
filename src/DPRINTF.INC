@@ -51,6 +51,27 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 
 i64toa endp
 
+;--- dprintf has to preserve eflags, but usage of local vars will include a "sub esp,xxx"!
+;--- hence dprintf() needs a special prologue:
+
+@dprologue macro procname,flag,parmbyte,localbyte,reglist,userparms
+;if flag
+;  if parmbyte + localbyte
+	push ebp
+	mov ebp,esp
+;  endif
+;  if localbyte
+	lea esp,[esp-localbyte]
+;  endif
+;endif
+;  for r,reglist
+;	push r
+;  endm
+  exitm %localbyte
+endm
+
+OPTION PROLOGUE: @dprologue
+
 dprintf proc c public fmt:ptr, args:vararg
 
 local flag:byte
@@ -71,7 +92,7 @@ nextchar:
 	je done
 	cmp al,'%'
 	je formatitem
-	call VPUTCHR
+	call dochar
 	jmp nextchar
 done:
 	popfd
@@ -198,6 +219,7 @@ print_string:		;print string ESI, size EAX
 		dec ebx
 	.endw
 	retn
+
 dochar:
 	cmp al,10
 	jnz @F
@@ -208,3 +230,5 @@ dochar:
 	jmp VPUTCHR
 
 dprintf endp
+
+OPTION PROLOGUE: prologuedef

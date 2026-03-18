@@ -654,7 +654,7 @@ nextitem:
 		mov ax,dx
 		dec ax
 		pusha
-		invoke printf, CStr("Memory activated by UMBPCI found at %X-%X, included", LF), es:[bx+0], ax
+		invoke printf, CStr("Memory activated by UMBPCI found at %X-%X, included", LF), word ptr es:[bx+0], ax
 		popa
 		add bx,2+2
 	.endw
@@ -3222,6 +3222,7 @@ if ?INTEGRATED eq 0
 endif
 	xor ax,ax
 $EX338:
+	@dprintf ?INITRMDBG, <"mainex: exit, ax=%X [bp]=%X %X",10>, ax, [bp+0], [bp+2]
 	ret
 exit1:
 	mov ax,1

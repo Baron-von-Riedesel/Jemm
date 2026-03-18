@@ -40,6 +40,9 @@ ifdef ?PE
 .drectve segment info
 	db "-subsystem:native -dll -fixed:no"
 .drectve ends
+.hdr$2 segment flat
+	db "PX"
+.hdr$2 ends
 else
 	public ddb
 endif

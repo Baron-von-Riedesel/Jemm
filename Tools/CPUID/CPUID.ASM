@@ -262,6 +262,8 @@ is386:
 @@:
 	mov eax,80000000h
 	cpuid
+	and eax, eax ;bit 31 set?
+	jns no8ex
 	mov di, ax
 	invoke printf, CStr("CPUID.80000000: EAX=%lX",lf), eax
 

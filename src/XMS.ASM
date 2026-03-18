@@ -70,8 +70,9 @@ endif
 ;--- registers EAX, ECX and ESI dont hold client values!
 
 xms_handler proc public
-    call Simulate_Far_Ret                       ; emulate a RETF in v86
+    call Simulate_Far_Ret                       ; emulate a RETF in v86, modifies EDX
     mov eax,[ebp].Client_Reg_Struc.Client_EAX   ; restore EAX
+    mov edx,[ebp].Client_Reg_Struc.Client_EDX   ; restore EDX
 if ?INTEGRATED
     mov esi,[ebp].Client_Reg_Struc.Client_ESI
     mov ecx,[ebp].Client_Reg_Struc.Client_ECX
@@ -1436,8 +1437,7 @@ endif
     mov dword ptr [XMS_Handle_Table],eax
 ife ?INTEGRATED
     test eax,0FFFF0000h      ;if size of array is null, disable pooling
-    setz [bNoPool]
-    jz @@noxmsarray
+    jz @@noxmspool
 endif
     movzx edx,word ptr [ecx].XMS_HANDLETABLE.xht_pArray+0;offset
     movzx eax,word ptr [ecx].XMS_HANDLETABLE.xht_pArray+2;segment
@@ -1445,8 +1445,7 @@ endif
     add eax,edx
 ife ?INTEGRATED
     and eax, eax        ;if the array pointer is NULL, disable pooling
-    setz [bNoPool]
-    jz @@noxmsarray
+    jz @@noxmspool
 endif
     cmp eax, 100000h    ;is handle array in HMA?
     jb @@nohmaadjust
@@ -1465,8 +1464,12 @@ endif
 @@nohmaadjust:
     mov [XMS_Handle_Table.xht_pArray],eax
 @@noxmsarray:
-
     ret
+ife ?INTEGRATED
+@@noxmspool:
+    mov [bNoPool], 1
+    ret
+endif
 XMS_Init endp
 
 .text$04 ends

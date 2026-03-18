@@ -2,9 +2,20 @@
 ;--- 16 bit part of Jemm;
 ;--- to be assembled with JWasm or Masm v6.1+
 
+;--- _RTEXT must be first segment; it has to be defined *before* .model.
+_RTEXT segment para public 'CODE'
+_RTEXT ends
+
 	.286
-;	.model tiny		;NO model, _TEXT should be PARA aligned
+ifdef __JWASM__
+	.model tiny
+else
+	.model small	;Masm bug: .model tiny rejects using SEG operator
+DGROUP group _TEXT
+endif
 	option proc:private
+
+DGROUP group _RTEXT
 
 	include jemm.inc
 	include jemm16.inc
@@ -51,22 +62,7 @@ CONST ends
 	exitm <offset sym>
 endm
 
-_TEXT segment para public 'CODE'
-_TEXT ends
-
-_TEXT32 segment para public 'CODE'
-code32:
-ifdef __JWASM__ ;JWasm allows to include binary data directly
-	incbin <jemm32.bin>
-;	align 16
-else
-	.nolist
-	include _jemm32.inc
-	.list
-endif
-_TEXT32 ends
-
-_DATA segment word public 'DATA'
+	.data
 
 wLow    dw RSEG_END     ;resident low memory required by driver
 
@@ -84,9 +80,8 @@ if 0;?A20PORTS
 wBiosA20    DW 1+2  ;default: trap both kbdc + ps2 ports
 endif
 
-_DATA ends
+	.const
 
-CONST segment word public 'CONST'
 intvecs label INTMOD
 	INTMOD <15h,offset NEW15, offset OLDINT15>
 if ?INTEGRATED
@@ -101,21 +96,18 @@ endif
 	INTMOD <19h,offset NEW19, -1>
 	db -1
 
-CONST ends
+	.data?	;ensure _BSS is defined
 
-_BSS segment word public 'BSS'
-_BSS ends
-
-_STACK segment para STACK  'STACK'
-	db 1024 dup(?)		; application stack
+STACK segment para STACK 'STACK'
+	org 1024		; application stack
 stacktop label byte
-_STACK ends
+STACK ends
 
-DGROUP group _TEXT,_TEXT32,_DATA,CONST,_BSS,_STACK
+DGROUP group STACK	;here stack has to be added to dgroup manually
 
 	.386P	;privileged instructions are used
 
-_TEXT SEGMENT
+_RTEXT SEGMENT
 
 	ASSUME DS:NOTHING,ES:NOTHING,FS:ERROR,GS:ERROR
 
@@ -228,7 +220,12 @@ if ?INTEGRATED
  if ?XMS35
 	CMP AX,0E820h	; memmap
 	JZ memmap
+  ifdef __JWASM__
 xms_smax_noe820 equ $ - 1
+  else
+    org $-1
+xms_smax_noe820 db ?
+  endif
  endif
 endif
 	db 0EAh
@@ -371,11 +368,22 @@ endif
 
 RSEG_END equ $ - device_header
 
+_RTEXT ends
 ;
 ; installation part of the virtual Monitor
 ;
+	.code
 
-	assume DS:DGROUP;, ES:SEG0000
+	assume ds:DGROUP
+
+code32:
+ifdef __JWASM__ ;JWasm allows to include binary data directly
+	incbin <jemm32.bin>
+else
+	.nolist
+	include _jemm32.inc
+	.list
+endif
 
 if ?UNLOAD
 
@@ -548,7 +556,7 @@ endif
 	call dword ptr [bp-(4+6)]
 
 ;--- Jemm386 has exited, but we are still in protected mode!
-;--- GDTR no longer valid, IDTR reset to 3FF:00000000
+;--- GDTR no longer valid;
 ;--- for Jemm386, BX contains XMS handle for Jemm386's memory block
 ;--- for JemmEx, BL contains A20 method index
 
@@ -557,7 +565,7 @@ endif
 	mov cr0, eax
 ;--- v5.86: for 80486 compatibility, use a JMP far16 instead of RETF
 	db 0EAh				;jmp FAR16 opcode
-	dw offset @F,seg @F
+	dw offset @F, seg @F ; Masm: SEG operator rejected if .model TINY is used
 @@:
 	LIDT FWORD ptr [bp-6]; reset IDT to 0:3ffh (v5.86: now done AFTER mode switch)
 if 1
@@ -853,13 +861,12 @@ if ?LOAD
 	mov es,es:[002Ch]
 	mov ah,49h
 	int 21h
-	mov bx,0
+	mov bx,4
 @@nextfile:
 	mov ah,3Eh
 	int 21h
-	inc bx
-	cmp bx,5
-	jb @@nextfile
+	dec bx
+	jns @@nextfile
 	mov dx,[wLow]
 	shr dx, 4
 	add dx, 10h
@@ -1107,6 +1114,8 @@ endif
 
 	pop eax  ;load FIRSTPAGE value in EAX
 
+	@dprintf ?INITRMDBG, <"InitJemm: exit, [bp]=%X %X %X %X",10>,[bp+0],[bp+2],[bp+4],[bp+6]
+
 	pop bp
 	pop di
 	pop si
@@ -1146,20 +1155,24 @@ if ?INTEGRATED
 	mul cx
 	add ax,di
 	mov cx,ax
+;--- don't modify the handles that were initialized by v86 monitor code!
 	.while es:[di].XMS_HANDLE.xh_flags != XMSF_INPOOL 
 		add di, sizeof XMS_HANDLE
 	.endw
 	.while di < cx
 		mov ax, XMSF_INPOOL
 		stosw
-		xor eax, eax
-		stosd
-		stosd
+		xor ax, ax
+		stosw
+		stosw
+		stosw
+		stosw
 	.endw
 	mov ax, di
 	add ax, 16-1
 	and al, 0F0h
 	mov [wLow], ax
+	@dprintf ?INITRMDBG, <"endinit: XMS handle array intialized",10>
 endif
 
 if ?INTEGRATED
@@ -1204,6 +1217,7 @@ nextitem:
 	dec ax
 	mov es:[MCB.blsiz],ax
 noconv_increased:
+	@dprintf ?INITRMDBG, <"endinit: done MCB chain check",10>
 endif
 
 if ?MOVEHIGH
@@ -1213,6 +1227,7 @@ if ?MOVEHIGH
 	call LinkChain		;if we moved high
 @@:
 endif
+	@dprintf ?INITRMDBG, <"endinit: exit",10>
 	ret
 endinit endp
 
@@ -1344,7 +1359,7 @@ endif
 	mov es:[bx+3], ax
 	add bx,5
 	mov ds, ax
-	assume DS:_TEXT
+;	assume DS:DGROUP
 	mov word ptr ds:[XMSoldhandler+0],bx
 	mov word ptr ds:[XMSoldhandler+2],es
 if ?A20XMS
@@ -1356,7 +1371,7 @@ if ?A20XMS
 @@xmswithumb:
 endif
 	pop ds
-	assume DS:DGROUP
+;	assume DS:DGROUP
 	sti
 	jmp @@umbdone
 @@umbalreadythere:
@@ -1522,7 +1537,5 @@ GetEMBBase proc stdcall public wHdl:word
 GetEMBBase endp
 
 endif
-
-_TEXT ENDS
 
 	end start

@@ -71,11 +71,11 @@ endif
     add [ebp].Client_Reg_Struc.Client_EIP,3 ; jump over emulated instruction
     @v86popregX
     call RunEmuInstr
-    add esp,4+4                 ; eat error code & "int#"
+    add esp, CRS_SIZEX  ; skip error code & int#
     iretd
 if EMUCLTS
 @@clts:
-	clts                ; 0f 06 is clts opcode
+    clts                ; 0f 06 is clts opcode
     jmp @@invdshare
 endif
 @@invd:
@@ -105,7 +105,7 @@ endif
     @rdmsr              ; rdmsr opcode
 
 @@twoeat:
-    add esp,4+4         ; eat return address and error code
+    add esp, CRS_SIZEX          ; skip error code & int#
     add [esp].IRETDV86._Eip,2   ; jump over instruction
     iretd
 

@@ -186,6 +186,10 @@ Client_FS   dd ?    ;+68
 Client_GS   dd ?    ;+72
 Client_Reg_Struc ends
 
+;--- extra bytes in Client_Reg_Struc if PUSHAD and IRETDV86 are removed
+CRS_SIZEX equ (sizeof Client_Reg_Struc - sizeof PUSHADS - sizeof IRETDV86)
+
+
 ;--- entry in IO trap table
 ;--- this is for the default port trap handler;
 ;--- it handles byte ports only.
