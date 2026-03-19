@@ -83,7 +83,7 @@ LINK16=wlink.exe format dos file jemm16.obj,init16.obj name $@.EXE option map=$@
 LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 !endif
 
-32BITDEPS=src\jemm32.inc src\jemm.inc src\external.inc src\debug.inc Makefile
+32BITDEPS=src\jemm32.inc src\jemm.inc src\external.inc src\debug32.inc Makefile
 
 {src\}.asm{$(OUTD3)}.obj:
 	@$(ASM) -c -nologo -coff -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl$(OUTD3)\ -Fo$(OUTD3)\ $<
@@ -101,7 +101,7 @@ $(OUTD3)\$(NAME3).EXE: $(OUTD3)\jemm16.obj $(OUTD3)\init16.obj
 $(OUTD3)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Sg -Fl$(OUTD3)\ -Fo$(OUTD3)\ src\init16.asm
 
-$(OUTD3)\jemm16.obj: src\jemm16.asm $(OUTD3)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
+$(OUTD3)\jemm16.obj: src\jemm16.asm $(OUTD3)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
 	@cd $(OUTD3)
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl ..\..\src\jemm16.asm
 	@cd ..\..

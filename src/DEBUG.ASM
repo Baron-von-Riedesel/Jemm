@@ -11,7 +11,7 @@
 
 	include jemm.inc		;common declarations
 	include jemm32.inc		;declarations for Jemm32
-	include debug.inc
+	include debug32.inc
 
 ?WAIT     equ 1             ;wait for "SPACE released" on LF
 ?SLOWDOWN equ 256           ;slow down factor for debug displays

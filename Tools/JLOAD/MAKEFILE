@@ -63,7 +63,7 @@ $(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).inc $(INC16)
 	@$(ASM) $(NAME).asm
 
 $(OUTDIR)\$(NAME32).INC: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
-	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start='_start@0'
+	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start=_start
 	@bin2inc.exe -q $*.bin $*.inc
 
 !else
@@ -72,7 +72,7 @@ $(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).bin $(INC16)
 	@$(ASM) $(NAME).asm
 
 $(OUTDIR)\$(NAME32).bin: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
-	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start='_start@0'
+	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start=_start
 
 !endif
 

@@ -1,5 +1,6 @@
 
  v5.87:
+   - Linux.mak added to create JLOAD.EXE on Linux.
 
  v5.86:
    - Jemm's control notifications handled (DEVICE_REBOOT_NOTIFY).

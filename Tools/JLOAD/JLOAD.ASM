@@ -252,7 +252,11 @@ _TEXT segment
 
 vmmcode label byte
 ifdef __JWASM__
+ ifdef __UNIX__
+%	incbin <OUTD/JLoad32.bin>  
+ else
 %	incbin <OUTD\JLoad32.bin>  
+ endif
 else
 %	include OUTD\JLoad32.inc
 endif

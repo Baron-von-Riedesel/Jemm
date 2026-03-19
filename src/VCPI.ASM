@@ -13,9 +13,9 @@
 
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
+    include debug32.inc
     include ems.inc         ;EMS definitions
     include vcpi.inc        ;VCPI definitions
-    include debug.inc
 
 ?CLEARTB    equ 1   ;std 1, 1=clear "busy" flag in client's TSS descriptor
 ?VCPITMPSS  equ 1   ;std 1, 1=use a tmp SS sel to avoid hiword(ESP) to be <> 0

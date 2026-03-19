@@ -40,7 +40,7 @@ endif
 ;--- ebp=vcpi entry (if ?USEVCPIEXIT is 1)
 ;--- out: EDX=returncode from JLM
 
-start proc stdcall public
+start proc c public
 
 ;--- v5.86: don't assume DS/ES are flat. It's true for Jemm, but
 ;--- another program may have hooked into int 67h, ax=DE0Ch!

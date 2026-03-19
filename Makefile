@@ -36,7 +36,7 @@
 #
 # To enable (selective) debug displays, enter:
 #   nmake debug=1 dbgopt=-D?VCPIDBG=1
-# This will enable VCPI related displays. For more switches, see DEBUG.INC.
+# This will enable VCPI related displays. For more switches, see DEBUG32.INC.
 
 NAME1=JEMM386
 NAME2=JEMMEX
@@ -134,7 +134,7 @@ LINK16=wlink.exe format dos file jemm16.obj,init16.obj name $@.EXE option map=$@
 LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 !endif
 
-32BITDEPS=src\jemm32.inc src\jemm.inc src\external.inc src\debug.inc Makefile
+32BITDEPS=src\jemm32.inc src\jemm.inc src\external.inc src\debug32.inc Makefile
 
 {src\}.asm{$(OUTD1)}.obj:
 	@$(ASM) -c -nologo -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<
@@ -164,10 +164,10 @@ $(OUTD2)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ src\init16.asm
 
 !if $(MASM)
-$(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug.inc Makefile
+$(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
 
-$(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug.inc Makefile
+$(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
 
 $(OUTD1)\_jemm32.inc: $(OUTD1)\jemm32.bin
@@ -177,10 +177,10 @@ $(OUTD2)\_jemm32.inc: $(OUTD2)\jemm32.bin
 	@bin2inc.exe -q $(OUTD2)\jemm32.bin $(OUTD2)\_jemm32.inc
 
 !else
-$(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
+$(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
 
-$(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug.inc Makefile
+$(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
 	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
 
 !endif

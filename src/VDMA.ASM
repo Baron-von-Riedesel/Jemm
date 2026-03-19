@@ -19,7 +19,7 @@
 
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
-    include debug.inc
+    include debug32.inc
     include dma.inc
 
 ;--- publics/externals
