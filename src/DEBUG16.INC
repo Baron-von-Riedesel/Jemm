@@ -1,17 +1,18 @@
 
-ifndef ?INITRMDBG
-?INITRMDBG  equ 0   ;log real-mode init
+@dbgdef macro name_
+ifndef name_
+name_ equ 0
 endif
-ifndef ?XMSRMDBG
-?XMSRMDBG   equ 0   ;log XMS calls
-endif
-ifndef ?EMXRMDBG
-?EMXRMDBG   equ 0   ;log EMMXXXX0 calls
-endif
-ifndef ?UNLRMDBG
-?UNLRMDBG   equ 0   ;log unload
-endif
-?RMDBG      equ ?INITRMDBG + ?XMSRMDBG + ?EMXRMDBG + ?UNLRMDBG  ; debug displays in real-mode
+?DBGOUT = ?DBGOUT + name_
+endm
+
+?DBGOUT = 0
+@dbgdef ?INITRMDBG  ;1=log real-mode init
+@dbgdef ?XMSRMDBG   ;1=log XMS calls
+@dbgdef ?EMXRMDBG   ;1=log EMMXXXX0 calls
+@dbgdef ?UNLRMDBG   ;1=log unload
+
+;?RMDBG      equ ?INITRMDBG + ?XMSRMDBG + ?EMXRMDBG + ?UNLRMDBG  ; debug displays in real-mode
 
 ?USEMONO equ 0  ;1=use monochrome monitor for dbg displays
 

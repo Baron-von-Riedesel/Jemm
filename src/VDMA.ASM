@@ -12,9 +12,8 @@
 ;--- is called and will do a translation, if required.
 
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -24,7 +23,7 @@
 
 ;--- publics/externals
 
-    include external.inc
+    include extern32.inc
 
 .text$01 SEGMENT
 

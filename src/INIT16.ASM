@@ -2,9 +2,8 @@
 ;--- 16-bit initialization part
 ;--- to be assembled with JWasm or Masm v6.1+
 
-	.MODEL tiny
+	.model tiny
 	.386
-	option proc:private
 
 CStr macro text:VARARG
 local sym
@@ -34,9 +33,7 @@ CPUID1_PSE36 equ 17
 
 NAMEGEN equ <"Jemm">
 
-MAX_EMS_PAGES_ALLOWED equ 800h
-
-PF16 TYPEDEF far16 ptr
+EMS_MAX_PAGES_ALLOWED equ 2048	;std=2048 ( 2048 * 16kB = 32768 kB )
 
 ife ?INTEGRATED
 REGS struct
@@ -60,23 +57,12 @@ endif
 	.data
 
 jemmini JEMMINIT <>
-XMSdriverAddress PF16 0
-dwAllocatedBytes	DD 0;set by AllocAndInitMem()
-xms_mem_largest	DD 0	;largest free block in kB
-xms_mem_free	DD 0	;total free mem in kB
-xms_mem_highest	dd 0	;highest physical address; by XMS v3 (Jemm386) or Int15 (JemmEx)
+dwAllocatedBytes DD 0	;set by AllocAndInitMem()
+
+xms XMSPARAMS <>
 
 if ?INTEGRATED
-xms_max	DD 4095*1024	;MAXEXT= value
- if ?XMS35
-xms_smax	DD 1023*4096*1024	;MAXSEXT= value
-xms_maxhigh	dd -1		; mask for upper memory address limit   
- endif
-xms_num_handles	DW ?XMS_DEFHDLS	;XMSHANDLES= value
 bNoE820	DB 0            ;NOE820 option; it's a noop if MAXSEXT != 0
- if ?XMS35
-xms_smem_used db FALSE  ;set to 1 if any super-extended block is used
- endif
 bNoE801	DB 0
 endif
 bVerbose	DB FALSE
@@ -1007,7 +993,7 @@ xmscall proc stdcall uses si function:BYTE
 	mov edx,[si].REGS._edx
 	mov ah, function
 	@dprintf ?XMSRMDBG, <"xms call: ax=%X ebx=%lX edx=%lX",10>, ax, ebx, edx
-	call [XMSdriverAddress]
+	call [xms.Driver]
 	mov [si].REGS._eax,eax
 	mov [si].REGS._ebx,ebx
 	mov [si].REGS._ecx,ecx
@@ -1017,7 +1003,7 @@ xmscall proc stdcall uses si function:BYTE
 xmscall endp
 
 ;--- get status of XMS memory
-;--- sets global variables xms_mem_largest, xms_mem_free
+;--- sets global variables xms.mem_largest, xms.mem_free
 
 XMSGetMemoryStatus PROC c usev3:word
 
@@ -1025,9 +1011,7 @@ XMSGetMemoryStatus PROC c usev3:word
 	.if usev3
 		invoke xmscall, XMS_V3_QUERYMEM	;get v3 total free memory (edx) and largest free block (eax)
 		.if bl == 0	;BL must be 00
-			mov xms_mem_largest, eax
-			mov xms_mem_free, edx
-			mov xms_mem_highest, ecx
+			mov xms.mem_highest, ecx
 			jmp ok
 		.endif
 	.endif
@@ -1035,14 +1019,14 @@ XMSGetMemoryStatus PROC c usev3:word
 	.if bl == 0
 		movzx eax, ax
 		movzx edx, dx
-		mov xms_mem_largest, eax
-		mov xms_mem_free, edx
-		mov xms_mem_highest, (65535+1024)*1024-1 ;assume max extended memory for v2 (65535 kB)
+		mov xms.mem_highest, (65535+1024)*1024-1 ;assume max extended memory for v2 (65535 kB)
 		jmp ok
 	.endif
 	xor ax,ax
 	ret
 ok:
+	mov xms.mem_largest, eax
+	mov xms.mem_free, edx
 	mov ax,1
 	ret
 
@@ -1074,7 +1058,7 @@ endif
 
 I15CheckRsvdRegion proc uses si di
 local mmap:E820MAP
-	@dprintf ?INITRMDBG,<"I15CheckRsvdRegion: enter",10>
+	@dprintf ?INITRMDBG, <"I15CheckRsvdRegion: enter",10>
 	xor ebx,ebx
 	lea di,mmap
 nextitem:
@@ -1106,7 +1090,7 @@ nextitem:
 	.if bVerbose
 		push cx
 		shl cx,2
-		invoke printf, CStr(<"Int15, ax=E820: reserved region=%04X, size=%u kB",LF>), si, cx
+		invoke printf, CStr("Int15, ax=E820: reserved region=%04X, size=%u kB",LF), si, cx
 		pop cx
 	.endif
 	.while cx
@@ -1127,7 +1111,7 @@ I15CheckRsvdRegion endp
 if ?INTEGRATED
 
 ;--- return size of free extended memory block in EAX
-;--- may set global variables xms_mem_largest, xms_mem_free
+;--- may set global variables xms.mem_largest, xms.mem_free
 ;--- returns free memory in kB in EAX.
 ;--- called by AllocAndInitMem()
 
@@ -1137,14 +1121,14 @@ local maxvalue:DWORD
 local mmap:E820MAP
 
 if ?XMS35
-	cmp xms_smem_used,FALSE
+	cmp xms.smem_used,FALSE
 	jnz @F
 endif
 	cmp [bNoE820],0    ; NOE820 option set?
 	jne @@e801_check
 @@:
 
-	@dprintf ?INITRMDBG,<"I15GetMemoryStatus: get extended memory with int 15, E820",10>
+	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: get extended memory with int 15, E820",10>
 
 ;--- try 0e820h first
 
@@ -1189,7 +1173,7 @@ endif
 	jb e820_itemdone
 @@:
 if ?XMS35
-	test eax, xms_maxhigh	;block start beyond 4GB/1TB?
+	test eax, xms.maxhigh	;block start beyond 4GB/1TB?
 	jnz e820_itemdone
 endif
 	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: available memory found at %lX%08lX",10>, eax, edx
@@ -1224,7 +1208,7 @@ e820_itemdone:
 	jnz e820_nextitem
 e820_bad:
 e820_done:
-	mov eax, xms_mem_largest
+	mov eax, xms.mem_largest
 	and eax, eax
 	jnz _ret
 
@@ -1235,7 +1219,7 @@ e820_done:
 	cmp [bNoE801],0 ;NOE801 option set?
 	jne @@try_88h
 
-	@dprintf ?INITRMDBG,<"I15GetMemoryStatus: get extended memory with int 15, E801",10>
+	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: get extended memory with int 15, E801",10>
 
 	xor ax,ax
 	mov bx,ax
@@ -1280,7 +1264,7 @@ e820_done:
 	mov edx, 1024
 	call I15SetHandle		; set xms block, sizeK in ECX, baseK in EDX
 _ret:
-	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: exit, xms_mem_free=%lX",10>, xms_mem_free
+	@dprintf ?INITRMDBG, <"I15GetMemoryStatus: exit, xms.mem_free=%lX",10>, xms.mem_free
 	ret
 I15GetMemoryStatus endp
 
@@ -1651,9 +1635,9 @@ $L569:
 endif
 	.if bVerbose
 if ?INTEGRATED
-		invoke printf, CStr("I15: largest free block %lu kB, free memory %lu kB", LF), xms_mem_largest, xms_mem_free
+		invoke printf, CStr("I15: largest free block %lu kB, free memory %lu kB", LF), xms.mem_largest, xms.mem_free
 else
-		invoke printf, CStr("XMS: largest free block %lu kB, free memory %lu kB", LF), xms_mem_largest, xms_mem_free
+		invoke printf, CStr("XMS: largest free block %lu kB, free memory %lu kB", LF), xms.mem_largest, xms.mem_free
 endif
 	.endif
 
@@ -1662,10 +1646,10 @@ endif
 ;--- calculate a value for MIN= which will be preallocated.
 
 	.if jemmini.NoPool && (!MinRequest)
-		.if word ptr xms_mem_largest+2 > 0	;more than 64 MB?
+		.if word ptr xms.mem_largest+2 > 0	;more than 64 MB?
 			mov ax, 8000H				;then use 32 MB
 		.else
-			mov ax,WORD PTR xms_mem_largest+0
+			mov ax,WORD PTR xms.mem_largest+0
 			shr ax,1
 		.endif
 		shr ax,4
@@ -1684,7 +1668,7 @@ endif
 		shl eax,4
 		add eax,[kbneeded]
 		mov ecx, kbneeded
-		mov edx, xms_mem_largest
+		mov edx, xms.mem_largest
 		.if eax > edx && ecx < edx
 			sub edx,kbneeded
 			shr edx, 4
@@ -1693,7 +1677,7 @@ endif
 
 ;--- leave a little extended memory, if possible, for programs that want some XMS
 
-		mov edx, xms_mem_largest
+		mov edx, xms.mem_largest
 		mov eax, kbneeded
 		add eax, 384
 
@@ -1703,7 +1687,7 @@ endif
 		add ecx, kbneeded
 
 		.if edx > eax && edx < ecx
-			mov eax, xms_mem_largest
+			mov eax, xms.mem_largest
 			sub eax, [kbneeded]
 			sub eax,384
 			shr eax,4
@@ -1713,7 +1697,7 @@ endif
 
 ;--- default is: all memory
 
-	mov eax, xms_mem_free
+	mov eax, xms.mem_free
 	.if eax > kbneeded
 		sub eax, kbneeded
 	.else
@@ -1724,7 +1708,7 @@ endif
 	.if jemmini.NoPool	;/* Pool sharing off? */
 		mov eax, jemmini.MinMem16k
 		shl eax, 4
-		.if eax < xms_mem_free
+		.if eax < xms.mem_free
 			mov eax, jemmini.MinMem16k
 			shl eax, 4
 			mov PotentialEmsVcpiMemory, eax
@@ -1871,19 +1855,19 @@ else
 	invoke GetEMBBase, jemmini.XMSControlHandle
 	mov jemmini.MonitorStart, eax
  if ?XMS35
-	.if xms_smem_used == FALSE
+	.if xms.smem_used == FALSE
 		mov cs:xms_smax_noe820,0	;disable INT15, ax=e820h check
 		mov jemmini.xms_version,INTERFACE_VER_MAXSEXT0	;make XMM report v3.0 interface
 	.endif
  endif
 endif
 if 0
-	mov ecx, xms_mem_free
+	mov ecx, xms.mem_free
 	shl ecx, 10				;convert kB to bytes
 	add ecx, jemmini.MonitorStart
 	mov jemmini.MaxPhysMem, ecx
 else
-	mov eax, xms_mem_highest
+	mov eax, xms.mem_highest
 	mov jemmini.MaxPhysMem, eax
 endif
 
@@ -2026,7 +2010,7 @@ if ?INTEGRATED
 ;-- get current XMS (must be Jemm386)
 
 	invoke XMSinit
-	les si, XMSdriverAddress
+	les si, xms.Driver
 	cmp byte ptr es:[si],0EBh	;anyone hooked into XMS?
 	jnz @@nouninst
 	@dprintf ?UNLRMDBG, <"TryUnload, no XMS hookers detected",10>
@@ -2072,9 +2056,9 @@ endif
 ife ?INTEGRATED
 	mov dx,ax
 	mov ah, XMS_UNLOCKEMB	;unlock block
-	call [XMSdriverAddress]
+	call [xms.Driver]
 	mov ah, XMS_FREEEMB		;free block
-	call [XMSdriverAddress]
+	call [xms.Driver]
 else
 	movzx bx, al
 	add bx,bx
@@ -2160,7 +2144,7 @@ endif
 @@:
 	invoke printf, ax, cx
 @@nodispframe:
-	invoke printf,CStr(".", LF)
+	invoke printf, CStr(".", LF)
 
 	cmp [si].EMX06.e06_NoVCPI, 0	;_NoVCPI flag
 	jnz @F
@@ -2580,6 +2564,7 @@ local memtype:byte
 local bOptionSet:byte
 local bHelp:byte
 
+	@dprintf ?INITRMDBG, <"mainex enter",10>
 	cld
 	xor di,di		;bOptionSet
 	mov bHelp, FALSE
@@ -2715,7 +2700,7 @@ if ?INTEGRATED
 	invoke FindCommand, CStr("MAXEXT=")
 	.if ax
 		invoke GetValue, ax, 10, TRUE
-		mov xms_max, eax
+		mov xms.max, eax
 	.endif
  if ?XMS35
     call hascpuid
@@ -2727,12 +2712,12 @@ if ?INTEGRATED
 	.386
 	bt edx,CPUID1_PSE36
 	jnc @F
-	mov byte ptr xms_maxhigh,0; allow memory up to 000000ff.ffffffffh   
+	mov byte ptr xms.maxhigh,0; allow memory up to 000000ff.ffffffffh   
 @@:
 	invoke FindCommand, CStr("MAXSEXT=")
 	.if ax
 		invoke GetValue, ax, 10, TRUE
-		mov xms_smax, eax
+		mov xms.smax, eax
 	.endif
  endif
 	invoke FindCommand, CStr("NOE801")
@@ -2753,7 +2738,7 @@ if ?INTEGRATED
 		.elseif ( ax > ?XMS_MAXHDLS )
 			mov ax, ?XMS_MAXHDLS
 		.endif
-		mov xms_num_handles,ax
+		mov xms.num_handles,ax
 	.endif
 	invoke FindCommand, CStr("X2MAX=")
 	.if ax
@@ -3154,7 +3139,7 @@ MONITORMIN equ 20+12+12+4
 	.if jemmini.NoEMS
 		mov ax, 512
 	.else
-		mov ax, MAX_EMS_PAGES_ALLOWED
+		mov ax, EMS_MAX_PAGES_ALLOWED
 	.endif
 	mov jemmini.MaxEMSPages,ax
 

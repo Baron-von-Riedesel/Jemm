@@ -9,8 +9,8 @@ endm
 
 ;--- sections:
 ;--- .text$01: shared page - accessible by VCPI clients (global vars, code )
-;--- .text$01w: exception strings
-;--- .text$01x: GDT/IDT if ?SHAREDGDT/?SHAREDIDT=1
+;--- .text$01g: GDT/IDT if ?SHAREDGDT/?SHAREDIDT=1
+;--- .text$01y: exception strings
 ;--- .text$02: VCPI mode switch routines
 ;--- .text$03: normal code/data
 ;--- .text$04: init code, not copied to extended memory
@@ -46,8 +46,8 @@ externdef bBpTab:byte
 externdef bNoPool:byte
 externdef OldInt06:dword
 if 0;?SAFEKBD
-externdef OldInt15:dword
-externdef OldInt16:dword
+;externdef OldInt15:dword
+;externdef OldInt16:dword
 endif
 externdef OldInt19:dword
 externdef OldInt67:dword

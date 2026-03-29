@@ -1,6 +1,7 @@
 
 ;--- common definitions for both Jemm32 and Jemm16
 
+	option proc:private
 	option casemap:none
 
 LF              EQU 0AH
@@ -41,12 +42,9 @@ else
 endif
 ?MOVEXBDAPM     equ 1       ; 1=move XBDA in protected-mode
 
-?STKSIZE        EQU 200H    ; Size monitor stack for non-reentrant execution
-?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI
-
 ;?GDTOFS         equ ?HLPSTKSIZE
 if ?KD
-GDT_SEL         equ 48h
+GDT_SEL         equ 48h     ; GDT selector, used by kernel debugger
 endif
 
 ;--- define v86-monitor breakpoint ( used to switch back to protected-mode )
@@ -59,6 +57,8 @@ endif
 
 V86IOPL         equ 3       ; IOPL for v86-mode
 
+;--- BIOS constants
+
 SMAP equ 534d4150h
 
 E820MAP struct
@@ -68,6 +68,9 @@ lenlow   dd ?
 lenhigh  dd ?
 type_    dd ?
 E820MAP ends
+
+@XBDA     equ 40Eh ; segment address XBDA
+@MEM_SIZE equ 413h ; base memory size in KB
 
 if ?INTEGRATED
 
@@ -130,9 +133,9 @@ EMX06 ends
 ;--- this is the structure for a "Get VMM info" request
 
 EMX08 struct
-e08_ServiceTable    dd ?
-e08_BPTable         dd ?
-e08_BPTableRM       dd ?
+e08_ServiceTable    dd ?	;linear address service table
+e08_BPTable         dd ?	;linear address BP table
+e08_BPTableRM       dd ?	;segment:offset of BP table
 e08_GDTR            df ?
 e08_IDTR            df ?
 e08_TR              dw ?
@@ -172,9 +175,9 @@ ResUMB            dw 0    ;UMB para where the resident part was moved to
 if ?INTEGRATED
 HmaMin            dw 0    ;min request in KB for HMA
 X2Max             dw -1
-if ?XMS35
+ if ?XMS35
 xms_version       dw INTERFACE_VER
-endif
+ endif
 endif
 if ?KD
 kdofs             dd 0

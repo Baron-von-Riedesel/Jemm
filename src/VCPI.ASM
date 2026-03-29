@@ -6,9 +6,8 @@
 ;--- extended and modified for Jemm by Japheth 
 
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -23,7 +22,7 @@
 ?SAFETSS    equ 0   ;std 0, 1=additionally switch TR (clear "busy" flags!)
 ?SPSYSTEM   equ 1   ;std 1, 1=set shared page at 110000 to "system" instead of r/o
 
-    include external.inc
+    include extern32.inc
 
 if ?VCPI
 
@@ -39,8 +38,6 @@ else
     @seg .text$02,<PARA>
 endif
 .text$02 ENDS
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 .text$03 segment
 
@@ -357,6 +354,7 @@ VCPI_SetMappings ENDP
 ; modifies EAX, SS:ESP (ESI may also be altered according to VCPI docs)
 ;
 
+    .386p
 
 VCPI_V86toPM PROC public
 
@@ -455,10 +453,10 @@ if ?VCPIXDBG
 	mov eax,[esp].IRETDV86._Gs
 	mov [dbgv.vGS],eax
 endif
-    lgdt fword ptr [GDT_PTR]
+    lgdt [GDT_PTR]
     xor eax,eax
     and byte ptr [V86GDT+V86_TSS_SEL+5], NOT 2
-    lidt fword ptr [IDT_PTR]
+    lidt [IDT_PTR]
     lldt ax
     mov al,V86_TSS_SEL
     clts
@@ -466,7 +464,7 @@ endif
 if ?VCPIXDBG
     mov eax,FLAT_DATA_SEL
     mov ss,eax
-    mov esp,dwStackCurr
+    mov esp, [dwStackCurr]
     @dprintf ?VCPIXDBG, <"VCPI pm, ax=DE0C, rm cs:eip=%X:%X, rm ss:esp=%X:%X", 10>,
         word ptr dbgv.vCS, dbgv.vEIP, word ptr dbgv.vSS, dbgv.vESP
     mov esp, offset dbgv
@@ -538,8 +536,8 @@ if ?SAFEMODE
     str [esp+6]
  endif
     sidt [esp+8]
-    lgdt fword ptr [GDT_PTR]
-    lidt fword ptr [IDT_PTR]
+    lgdt [GDT_PTR]
+    lidt [IDT_PTR]
     mov cx, FLAT_DATA_SEL
     mov ss, ecx
     mov ds, ecx

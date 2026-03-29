@@ -3,9 +3,8 @@
 ;--- Public Domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -14,12 +13,10 @@
 
 ;--- publics/externals
 
-    include external.inc
+    include extern32.inc
 
 ?MERGE0HDL equ 1	;std=0, 1=try to merge handles even if hdl to free has size 0
 ?HINF_MSCOMP equ 1	;std=1, 1=full MS compatibility for AH=0Eh
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 .text$01 SEGMENT
 
@@ -98,11 +95,13 @@ if ?INTEGRATED
     xor ax,ax           ; everything else fails
     mov bl,XMS_NOT_IMPLEMENTED
     jmp @@dispatcher_end
+ if ?XMS35
 @@ok5:
 	dec ah              ; CB-CC -> CA-CB
 @@ok4:
 	sub ah,0C8h-14h		; C8-CC -> 14-17
 	jmp @@ok1
+ endif
 @@ok3:
     sub ah,4            ; 8E-8F -> 8A-8B
 @@ok2:
@@ -121,22 +120,22 @@ if ?INTEGRATED
     align 4
 
 xms_table label dword  
-    dd xms_get_version          ;00
-    dd xms_request_hma          ;01
-    dd xms_release_hma          ;02
-    dd xms_global_enable_a20    ;03
-    dd xms_global_disable_a20   ;04
-    dd xms_local_enable_a20     ;05
-    dd xms_local_disable_a20    ;06
-    dd xms_query_a20            ;07
-    dd xms_query_free_mem       ;08
-    dd xms_alloc_emb            ;09
-    dd xms_free_emb             ;0A
-    dd xms_move_emb             ;0B
-    dd xms_lock_emb             ;0C
-    dd xms_unlock_emb           ;0D
-    dd xms_get_handle_info      ;0E
-    dd xms_realloc_emb          ;0F
+    dd xms_get_version          ;00 - AX, BX, DX
+    dd xms_request_hma          ;01 - AX, BL=0/E
+    dd xms_release_hma          ;02 - AX, BL=0/E
+    dd xms_global_enable_a20    ;03 - AX, BL=0/E?
+    dd xms_global_disable_a20   ;04 - AX, BL=0/E?
+    dd xms_local_enable_a20     ;05 - AX, BL=0/E?
+    dd xms_local_disable_a20    ;06 - AX, BL=0/E?
+    dd xms_query_a20            ;07 - AX, BL=0/E
+    dd xms_query_free_mem       ;08 - AX, DX, BL=0/E
+    dd xms_alloc_emb            ;09 - AX, DX, BL=0/E (MS Himem, RBIL: BL=E)
+    dd xms_free_emb             ;0A - AX, BL=0/E (MS Himem, RBIL: BL=E)
+    dd xms_move_emb             ;0B - AX, BL=E
+    dd xms_lock_emb             ;0C - AX, DX, BX
+    dd xms_unlock_emb           ;0D - AX, BL=0/E (MS Himem, RBIL: BL=E)
+    dd xms_get_handle_info      ;0E - AX, DX, BX
+    dd xms_realloc_emb          ;0F - AX, BL=0/E (MS Himem, RBIL: BL=E)
 
     dd xms_ext_query_free_mem   ; 88 10
     dd xms_ext_alloc_emb        ; 89 11
@@ -152,7 +151,7 @@ else
   if ?A20XMS
     cmp ah,10h
     jae umb_handler
-    call XMS_HandleA20
+    call XMS_HandleA20 ; modifies EAX, CX, BL
     mov word ptr [ebp].Client_Reg_Struc.Client_EAX, ax
     and ax,ax
     jnz @@a20exit_noerror
@@ -168,18 +167,18 @@ xms_handler endp
 
 if ?INTEGRATED
 
-xms_get_version proc
-if ?XMS35
+xms_get_version proc  ;ah=0
+ if ?XMS35
     mov ax,xms_version
-else
+ else
     mov ax,INTERFACE_VER
-endif
+ endif
     mov bx,DRIVER_VER
     mov dx,1                    ; HMA is always available
     ret
 xms_get_version endp
 
-xms_request_hma proc
+xms_request_hma proc  ;ah=1
     xor ax,ax
     cmp [hma_used],al           ; is HMA already used?
     mov bl,XMS_HMA_IN_USE
@@ -194,7 +193,7 @@ xms_request_hma proc
     ret
 xms_request_hma endp
 
-xms_release_hma proc
+xms_release_hma proc  ;ah=2
     xor ax,ax
     cmp [hma_used],al           ; is HMA used?
     mov bl,XMS_HMA_NOT_USED
@@ -206,7 +205,7 @@ xms_release_hma proc
     ret
 xms_release_hma endp
 
-xms_query_a20 proc
+xms_query_a20 proc  ;ah=7
     movzx ax,[bA20Stat]
     mov bl,0
     ret
@@ -276,8 +275,8 @@ xms_alloc_handle proc
     ret
 xms_alloc_handle endp
 
-
 ;--- AH=09H: alloc an EMB, size DX kB
+;--- out: AX=0/1, BL=0 or error code, DX=handle or 0
 
 xms_alloc_emb proc
     @dprintf ?EMBDBG, <"xms_alloc_emb",10>
@@ -288,25 +287,25 @@ xms_alloc_emb proc
 ;-- 32-bit entry for function AH=89h: alloc EMB, size EDX kB
 
 xms_ext_alloc_emb::
-if ?XMS35
+ if ?XMS35
 xms_sext_alloc_emb::;<--- entry, ah=15h
-endif
+ endif
     push edx
     @dprintf ?EMBDBG, <"xms_ext_alloc_emb",10>
 
 @@xms_alloc2:
     push ecx
-if 0	;v5.80 check for size 0 after scan
+ if 0	;v5.80 check for size 0 after scan
     and edx,edx              ; a request for 0 kB needs no free mem
     jz @@nullhandle
-endif
+ endif
     movzx ecx,[XMS_Handle_Table.xht_numhandles]
     mov edi,[XMS_Handle_Table.xht_pArray] 
 @@nextitem:
     cmp [edi].XMS_HANDLE.xh_flags,XMSF_FREE
     jnz @@skipitem
 ;--- filter blocks 
-if ?XMS35
+ if ?XMS35
 	cmp ah,15h	;15h is xms_sext_alloc_emb #
 	jnz @F
 	test word ptr [edi].XMS_HANDLE.xh_baseK+2,0FFC0h
@@ -316,16 +315,16 @@ if ?XMS35
 	test word ptr [edi].XMS_HANDLE.xh_baseK+2,0FFC0h
 	jnz @@skipitem
 sext_mem:
-endif
+ endif
     cmp edx,[edi].XMS_HANDLE.xh_sizeK   ; check if it's large enough
     jbe @@found_block
 @@skipitem:
     add edi,size XMS_HANDLE   ; skip to next handle
     loop @@nextitem
-if 1	;v5.80 check for size 0 after scan
+ if 1	;v5.80 check for size 0 after scan
     and edx,edx              ; a request for 0 kB needs no free mem
     jz @@nullhandle
-endif
+ endif
     mov bl,XMS_ALL_MEM_ALLOCATED
 @@alloc_failed:
     pop ecx
@@ -369,7 +368,7 @@ endif
     ret
 xms_alloc_emb endp
 
-if ?XMS35
+ if ?XMS35
 ;******************************************************************************
 ; query free super-extended memory
 ; In:   AH=C8h
@@ -387,8 +386,8 @@ xms_sext_query_free_mem proc
 
 	push ecx
 	push ebx
-    movzx ecx,[XMS_Handle_Table.xht_numhandles]
-    mov ebx,[XMS_Handle_Table.xht_pArray]
+	movzx ecx,[XMS_Handle_Table.xht_numhandles]
+	mov ebx,[XMS_Handle_Table.xht_pArray]
 nextitem:
 	test [ebx].XMS_HANDLE.xh_flags,XMSF_FREE	; check if flagged free or in use
 	je @F
@@ -416,10 +415,13 @@ nextitem:
 	ret 			; success
 
 xms_sext_query_free_mem endp
-endif
+ endif
 
 ;--- AH=88h: get free mem info
-;--- out: eax=max free block, edx=total free, ecx=highest phys addr
+;--- out: eax=max free block
+;---      edx=total free
+;---      ecx=highest phys addr
+;---      bl=00 (success) or error code
 
 xms_ext_query_free_mem proc
 
@@ -435,10 +437,12 @@ xms_ext_query_free_mem proc
     test [ebx].XMS_HANDLE.xh_flags,XMSF_USED or XMSF_FREE   ; check if flagged free or in use
     je  @@skipitem
 
+ if ?XMS35
 ;--- filter blocks beyond 4 GB
 ;--- 00000000-003fffffh
 	test word ptr [ebx].XMS_HANDLE.xh_baseK+2, 0ffc0h
 	jnz @@skipitem
+ endif
 
     mov esi, [ebx].XMS_HANDLE.xh_sizeK
     cmp  [ebx].XMS_HANDLE.xh_flags,XMSF_FREE
@@ -469,6 +473,9 @@ xms_ext_query_free_mem proc
 xms_ext_query_free_mem endp    
 
 ;--- AH=08h: get free mem info
+;--- out: AX=largest free block in kBytes
+;---      DX=total amount of free XMS in kBytes
+;---      BL=00 (success) or error code
 
 xms_query_free_mem proc
            
@@ -524,7 +531,7 @@ xms_free_emb proc
     mov edx,[esi].XMS_HANDLE.xh_sizeK
     mov edi, eax                    ; base in edi
     add eax, edx                    ; end-address in EAX
-ife ?MERGE0HDL
+ ife ?MERGE0HDL
     mov cl, XMSF_FREE
     and edx, edx
     jnz @F
@@ -532,7 +539,7 @@ ife ?MERGE0HDL
 @@:
     mov [esi].XMS_HANDLE.xh_flags,cl;mark this block as free (or inpool if size is 0)
     jz @@done
-endif
+ endif
 
 ;--- now scan the handle array for successor/predecessor
 
@@ -567,14 +574,14 @@ endif
 @@skipitem:
     add ebx,sizeof XMS_HANDLE
     loop @@nextitem
-if ?MERGE0HDL
+ if ?MERGE0HDL
     mov cl, XMSF_FREE
     cmp [esi].XMS_HANDLE.xh_sizeK,0
     jnz @F
     mov cl,XMSF_INPOOL
 @@:
     mov [esi].XMS_HANDLE.xh_flags,cl
-endif
+ endif
 @@done:
     pop edx
     pop ecx
@@ -610,7 +617,7 @@ xms_lock_emb proc
     ret
 xms_lock_emb endp
 
-if ?XMS35
+ if ?XMS35
 ;******************************************************************************
 ; locks a (super-extended) MB
 ; In:   AH=0cch
@@ -638,7 +645,7 @@ xms_sext_lock_emb proc
 	inc eax
 	ret
 xms_sext_lock_emb endp
-endif
+ endif
 
 ;--- AH=0D, unlock EMB in DX
 
@@ -710,13 +717,13 @@ xms_get_handle_info proc
 
     cmp edx,010000h
     jb @@handle_size_ok
-if ?HINF_MSCOMP
+ if ?HINF_MSCOMP
     dec ax
     mov bl,XMS_INVALID_HANDLE
     jmp @@get_handle_info_err
-else
+ else
     mov dx,0ffffh               ; dx = min(edx,0xffff);
-endif
+ endif
 @@handle_size_ok:
     mov [esp],dx
 @@get_handle_info_err:
@@ -741,7 +748,7 @@ xms_ext_realloc_emb proc public
     jne @@ext_xms_locked
 
     mov edx, ebx
-if 1;v5.80
+ if 1;v5.80
 ;--- find the successor.
 	movzx ecx,[XMS_Handle_Table.xht_numhandles]
 	mov edi,[XMS_Handle_Table.xht_pArray]
@@ -767,7 +774,7 @@ nextitem:
 skipitem:
 	add edi,sizeof XMS_HANDLE
 	loop nextitem
-endif
+ endif
     cmp ebx,[esi].XMS_HANDLE.xh_sizeK
     jbe @@ext_shrink_it
 
@@ -796,15 +803,15 @@ MAXCHUNK equ 4096 * 1024 - 1
 
     movzx esi,word ptr [esp] ; get old handle
     xor edi,edi
-if ?XMS35
+ if ?XMS35
     push edi            ; bits 32-39 of src/dst.offset (pushed as dword for alignment reasons)
-endif
+ endif
     push edi            ; dst.offset
     push dx             ; dst.handle
     push edi            ; src.offset
     push si             ; src.handle
     add esi,[dwRes]
-if ?XMS35
+ if ?XMS35
     mov ecx,[esi].XMS_HANDLE.xh_sizeK
 nextchk:
     mov edi, ecx
@@ -812,17 +819,17 @@ nextchk:
     jb @F
     mov edi, MAXCHUNK   ;load edi with 4G-1K
 @@:
-else
+ else
     mov edi,[esi].XMS_HANDLE.xh_sizeK
-endif
+ endif
     shl edi, 10         ; K to byte
     push edi            ; length
     mov esi, esp
-if ?XMS35
+ if ?XMS35
     mov ah, 16h         ; always use superext move
-endif
+ endif
     call xms_move_emb_ex
-if ?XMS35
+ if ?XMS35
     mov esi, esp
     pop edi                                 ; get size of current chunk in edi
     add [esi].XMS_MOVEX.src_offset, edi     ; adjust src and dest offsets
@@ -833,9 +840,9 @@ if ?XMS35
     sub ecx, edi
     jnz nextchk
     add esp, sizeof XMS_MOVEX-2
-else
+ else
     add esp, sizeof XMS_MOVE
-endif
+ endif
     movzx esi,word ptr [esp]
     add esi,[dwRes]
 
@@ -889,18 +896,18 @@ endif
     add edx,[esi].XMS_HANDLE.xh_baseK; calculate base of new "free" block
     mov [ebx].XMS_HANDLE.xh_baseK,edx
     mov [ebx].XMS_HANDLE.xh_sizeK,edi
-if 1;v5.80
+ if 1;v5.80
 ;--- if this branch is active, there's surely NO free successor
 ;--- so we don't need to merge.
 	mov [ebx].XMS_HANDLE.xh_flags,XMSF_FREE
 	pop ebx
-else
+ else
     mov word ptr [ebx].XMS_HANDLE.xh_flags,XMSF_USED
     mov edx,ebx                      ; and FREE it again -
     sub edx,[dwRes]                  ;!!! 2.2.2020: line added for v5.79
     pop ebx
     call xms_free_emb                ; to merge it with free block list
-endif
+ endif
 @@ext_dont_need_handle:
 @@ext_grow_success:
     pop edx
@@ -954,26 +961,26 @@ xms_get_move_addr proc
 @@is_emb:               ; it's a handle:offset pair
     call xms_check_handle   ;check if SI holds a "used" handle
 
-if ?XMS35
+ if ?XMS35
     push ebx
     xor ebx,ebx
-endif
+ endif
     mov eax,ecx         ; contains length
     add eax,edx         ; assert length + offset < size    
-if ?XMS35
+ if ?XMS35
     adc ebx,ebx
-else
+ else
     jc @@wrong_size
-endif
+ endif
     add eax,1024-1      ; round up to kB
-if ?XMS35
+ if ?XMS35
     adc ebx,0
     shrd eax,ebx,10     ; convert to kB units
     pop ebx
-else
+ else
     jc @@wrong_size
     shr eax,10          ; convert to kB units
-endif
+ endif
     cmp eax,[esi].XMS_HANDLE.xh_sizeK    ; compare with max offset
     ja @@wrong_size
 
@@ -982,9 +989,9 @@ endif
     shl eax,10          ; convert from kb to linear
     shr esi,22
     add eax,edx         ; add offset into block
-if ?XMS35
+ if ?XMS35
     adc esi,ebx
-endif
+ endif
     ret
 
 @@wrong_size:
@@ -1005,9 +1012,9 @@ xms_move_emb proc
     movzx esi,si
     add esi,edi
 xms_move_emb_ex::           ; <--- entry for internal use (realloc)
-if ?XMS35
+ if ?XMS35
     mov byte ptr [ebp].Client_Reg_Struc.Client_Error+3,ah  ;abuse Error field to store AH
-endif
+ endif
     xor ax,ax               ; default to error
     push ecx
     push edx
@@ -1021,13 +1028,13 @@ endif
     test cl,1                       ; is it even?
     jnz @@move_invalid_length
 
-if ?XMS35
+ if ?XMS35
     xor ebx, ebx
     cmp byte ptr [ebp].Client_Reg_Struc.Client_Error+3, 16h
     jnz @F
     mov bl,[esi].XMS_MOVEX.dest_hi
 @@:
-endif
+ endif
     push esi
     mov edx,[esi].XMS_MOVE.dest_offset
     mov si,[esi].XMS_MOVE.dest_handle
@@ -1036,25 +1043,25 @@ endif
     pop esi
     jc @@copy_dest_is_wrong
     mov edi,eax                     ; store in destination index
-if ?XMS35
+ if ?XMS35
     cmp byte ptr [ebp].Client_Reg_Struc.Client_Error+3, 16h
     jnz @F
     mov bl,[esi].XMS_MOVEX.src_hi
 @@:
     push edx
-endif
+ endif
     mov edx,[esi].XMS_MOVE.src_offset
     mov si,[esi].XMS_MOVE.src_handle
     call xms_get_move_addr          ; get move address
-if ?XMS35
+ if ?XMS35
     pop edx
-endif
+ endif
     jc @@copy_source_is_wrong
     xchg eax,esi
-if ?XMS35
+ if ?XMS35
     mov bh,al
     mov bl,dl
-endif
+ endif
 
 ;**************************************************
 ; setup finished with
@@ -1063,9 +1070,9 @@ endif
 ;   ECX = number of words to move
 ;**************************************************
  if ?XMS35
-    @dprintf ?EMBDBG,<"xms_move_emb: siz(byt)=%X src(40bit)=%X%08X dst(40bit)=%X%08X",10>, ecx, bh, esi, bl, edi
+    @dprintf ?EMBDBG, <"xms_move_emb: siz(byt)=%X src(40bit)=%X%08X dst(40bit)=%X%08X",10>, ecx, bh, esi, bl, edi
  else
-    @dprintf ?EMBDBG,<"xms_move_emb: siz(byt)=%X src(32bit)=%X dst(32bit)=%X",10>, ecx, esi, edi
+    @dprintf ?EMBDBG, <"xms_move_emb: siz(byt)=%X src(32bit)=%X dst(32bit)=%X",10>, ecx, esi, edi
  endif
 
     or ecx,ecx                 ; nothing to do ??
@@ -1076,44 +1083,44 @@ endif
 ; or  >= start of source block + block length (BH.ESI+ECX)
 
 ; 1. check if BL.EDI <= BH.ESI
-if ?XMS35
+ if ?XMS35
     cmp bl,bh
     jb @@move_ok_to_start
     ja @F
-endif
+ endif
     cmp edi,esi
     jbe @@move_ok_to_start
-if ?XMS35
+ if ?XMS35
 @@:
 ; calculate source + block length: DL.EAX = BH.ESI + ECX
     mov dl,bh
-endif
+ endif
     mov eax, esi
     add eax, ecx
-if ?XMS35
+ if ?XMS35
     adc dl,0
 ; 2. check if BL.EDI >= DL.EAX
     cmp bl,dl
     ja @@move_ok_to_start
     jb @@move_invalid_overlap
-endif
+ endif
     cmp edi,eax
     jb @@move_invalid_overlap
 
 @@move_ok_to_start:
 
-if ?XMS35
+ if ?XMS35
 	and bx,bx
 	jnz @F
-endif
+ endif
     call MoveMemoryPhys
-if ?XMS35
+ if ?XMS35
     jmp @@xms_exit_copy
 @@:
     movzx ax,bh
     movzx dx,bl
     call MoveMemoryPhysEx ;copy ecx bytes from [ax:esi] to [dx:edi]
-endif
+ endif
 @@xms_exit_copy:
     pop ebx
     pop eax
@@ -1159,28 +1166,29 @@ endif
 xms_move_emb endp
 
     align 4
-xms_global_enable_a20:
-xms_global_disable_a20:
-xms_local_enable_a20:
-xms_local_disable_a20:
-    call XMS_HandleA20
+xms_global_enable_a20: ;ah=3
+xms_global_disable_a20:;ah=4
+xms_local_enable_a20:  ;ah=5
+xms_local_disable_a20: ;ah=6
+    call XMS_HandleA20 ; modifies EAX, CX, BL
     mov word ptr [ebp].Client_Reg_Struc.Client_EAX, ax
     mov eax, [ebp].Client_Reg_Struc.Client_EAX
     mov ecx, [ebp].Client_Reg_Struc.Client_ECX
     ret
 
-endif
+endif ;?INTEGRATED
 
 
 if ?A20XMS
 
     align 4
 
-; handles XMS A20 functions
-; 3 = global enable
-; 4 = global disable
-; 5 = local enable
-; 6 = local disable
+;--- handles XMS A20 functions, AH=
+;--- 3 = global enable
+;--- 4 = global disable
+;--- 5 = local enable
+;--- 6 = local disable
+;--- modifies eax, cx, bl
 
 XMS_HandleA20 proc
 
@@ -1221,7 +1229,7 @@ endif
     call A20_Set
 @@notchanged:
     mov ax,1
-    mov bl,0
+    mov bl,0        ;BL=0 on success???
     mov [wA20],cx
     jmp @@a20_exit
 @@localerr2:
@@ -1233,7 +1241,7 @@ endif
 @@localerr:
 if 1
     xor eax,eax
-    mov bl,82h
+    mov bl,XMS_A20_FAILURE
 else
     mov ax,1
 endif
@@ -1241,7 +1249,7 @@ endif
 @@stillenabled:    
     mov [wA20],cx
     xor eax,eax
-    mov bl,94h
+    mov bl,XMS_A20_STILL_ENABLED
 
 @@a20_exit:
     ret
@@ -1273,8 +1281,8 @@ A20_Set proc public
     add ah,10h      ;10000x, 10100x, 10200x, ...
     jnz @@spec_loop
     pop edi
-if 0  ;usually "16 * INVLPG" is slower than 1 * "mov cr3, eax"
- if ?INVLPG
+ if 0  ;usually "16 * INVLPG" is slower than 1 * "mov cr3, eax"
+  if ?INVLPG
     cmp [bNoInvlPg],0
     jnz @@noinvlpg
     mov eax, 100000h
@@ -1284,8 +1292,8 @@ if 0  ;usually "16 * INVLPG" is slower than 1 * "mov cr3, eax"
     jnz @@nextpte
     ret
 @@noinvlpg:
+  endif
  endif
-endif
 ; flush TLB to update page maps
     mov eax,CR3
     mov CR3,eax
@@ -1307,17 +1315,17 @@ if ?A20PORTS
 P60BITOFS   equ size TSSSEG+32+60h/8
 
 A20_Handle60 proc public
-if ?DYNTRAPP60
+ if ?DYNTRAPP60
     mov ebx, [dwTSS]
     and dword ptr [ebx+P60BITOFS],not 1
-endif
+ endif
     test cl,OUT_INSTR   ;is it IN or OUT?
     jz @@input
-ife ?DYNTRAPP60
+ ife ?DYNTRAPP60
     cmp [bLast64],0D1h  ;last value written to 64 was "write output port"?
     jnz Simulate_IO
     mov [bLast64],0
-endif
+ endif
     push eax
     @dprintf ?A20DBG, <"A20_Handle60: write to port 60h kbc output port, al=%X",10>, al
     shr al,1
@@ -1328,10 +1336,10 @@ endif
     out dx, al
     ret
 @@input:
-ife ?DYNTRAPP60
+ ife ?DYNTRAPP60
     cmp [bLast64],0D0h  ;last value written to 64 was "read output port"?
     jnz Simulate_IO
-endif
+ endif
 A20_Inp92::
     in al,dx
     and al, not 2
@@ -1346,22 +1354,22 @@ A20_Handle60 endp
 A20_Handle64 proc public
     test cl, OUT_INSTR
     jz Simulate_IO
-if ?DYNTRAPP60
+ if ?DYNTRAPP60
     mov ah,al
     and ah,0FEh
     cmp ah,0D0h
     jnz Simulate_IO
     mov ebx, dwTSS
     or dword ptr [ebx+P60BITOFS],1
-else
+ else
     mov [bLast64],al    ;save last value written to port 64h
-endif
-if ?A20DBG
+ endif
+ if ?A20DBG
 ;   cmp al,0D1h
 ;   jnz @@nokbcout
     @dprintf ?A20DBG, <"A20_Handle64: write to port 64h, al=%X",10>, al
 @@nokbcout:
-endif
+ endif
     out dx, al
     ret
     align 4
@@ -1377,10 +1385,10 @@ A20_Handle92 proc public
     call A20_Set
     pop eax
     or al, 2       ;dont allow disable
-if 1
+ if 1
 ;--- refuse reset via bit 0 = 1
     and al,not 1
-endif
+ endif
     out dx, al
     ret
     align 4

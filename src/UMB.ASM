@@ -3,9 +3,8 @@
 ;--- Public Domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -14,7 +13,7 @@
 
 ;--- publics/externals
 
-    include external.inc
+    include extern32.inc
 
 ;--- for 100% MS compatibility, the UMB handler would have to
 ;--- implement a linked list of special MCBs:
@@ -26,8 +25,6 @@ size_ dw ?   ;size in paragraps
       db 3 dup (?)
 name_ db 8 dup (?) ;name (='UMB',0,0,0,0,0)
 UMBMCB ends
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 .text$01 SEGMENT
 
@@ -147,6 +144,7 @@ UMB_exit proc
 UMB_exit endp
 
 ;--- UMBFree
+;--- DX=segment of UMB to release.
 ;--- todo: merge free blocks
 
 ;UMB_free proc
@@ -155,7 +153,7 @@ UMB_free:
 
     call UMB_findblock  ;clears eax
     jc  UMB_exit
-    and BYTE PTR [esi].UMBBLK.wSize+1,7fh   ; flag UMB not allocated
+    and BYTE PTR [esi].UMBBLK.wSize+1,not UMB_ALLOCATED  ; mark UMB as free
     inc eax         ; flag success
     jmp UMB_exit
 
@@ -175,14 +173,14 @@ UMB_realloc proc
     call UMB_findblock  ;clears eax
     jc UMB_exit
     mov cx, [esi].UMBBLK.wSize
-    and ch, 7Fh
+    and ch, not UMB_ALLOCATED
     cmp bx, cx
     ja @@umbreal_error
     inc eax         ; flag success
     jmp UMB_exit
 @@umbreal_error:    ; block is too small
-    mov dx,cx
-    mov bl,0B0h
+    mov dx, cx
+    mov bl, 0B0h
     jmp UMB_exit
 
 UMB_realloc endp

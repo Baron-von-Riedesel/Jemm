@@ -56,12 +56,9 @@ GDT_SIZE        equ 200h    ; size of GDT
 ?TOS            EQU ?SYSLINEAR + 3000h + 1000h  ;top of ring 0 stack
 ?TSSLEN         EQU 68h+32+2000h+8  ; size of TSS "segment"
 
-;--- other constants
+?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI
 
-@XBDA           EQU 40Eh            ; segment of XBDA
-@MEM_SIZE       EQU 413h            ; base memory size in KB
-@KB_FLAG        EQU 417H            ; Status SHIFT/CTRL/ALT etcetera.
-@RESET_FLAG     EQU 472H            ; Flag for Warmboot (=1234h)
+;--- other constants
 
 if ?DMAPT or ?VDS
 ?DMABUFFMAX     EQU 128             ; max DMA-Buffer size in kB
@@ -69,16 +66,30 @@ endif
 
 ?FASTENTRIES    equ 32-1
 
+;--- selector definitions
+;--- FLAT_CODE_SEL must be first descriptor in GDT
+
+FLAT_CODE_SEL   equ 1 * sizeof DESCRIPTOR
+FLAT_DATA_SEL   equ 2 * sizeof DESCRIPTOR
+V86_TSS_SEL     equ 3 * sizeof DESCRIPTOR
+REAL_CODE_SEL   equ 4 * sizeof DESCRIPTOR
+REAL_DATA_SEL   equ 5 * sizeof DESCRIPTOR ;must follow REAL_CODE_SEL
+if ?CLEARHIGHESP
+V86_STACK_SEL   equ 6 * sizeof DESCRIPTOR
+endif
+
 	include x86.inc
+
+;--- BIOS constants
+
+@KB_FLAG        EQU 417H            ; Status SHIFT/CTRL/ALT etcetera.
+@RESET_FLAG     EQU 472H            ; Flag for Warmboot (=1234h)
 
 ;--- EMS constants
 
-;-- 32M max EMS memory (in 16K EMS page units), always even
-;-- this constant is also defined in Jemm386c.c
-
-EMS_MAX_HANDLES         EQU 255 ; std=255, the EMS handle is a byte value
-EMS_MAX_PAGES_ALLOWED   EQU 800h; 2048*16 = 32 MB
-EMS_MAXSTATE            EQU 64  ; std=64, number of EMS save state items
+EMS_MAX_HANDLES       EQU 255 ; std=255, the EMS handle is a byte value
+;EMS_MAX_PAGES_ALLOWED EQU 2048; std=2048, 2048 * 16kB = 32768 kB (32 MB)
+EMS_MAXSTATE          EQU 64  ; std=64, number of EMS save state items
 
 ;--- EMS handle descriptor
 
@@ -103,21 +114,6 @@ EMSSTAT ends
 
 PBF_DONTEXPAND  EQU 1   ; don't try to expand this block
 PBF_DONTFREE    EQU 2   ; don't try to free this block
-
-;--- selector definitions
-;--- FLAT_CODE_SEL must be first descriptor in GDT
-
-FLAT_CODE_SEL   equ 1 * sizeof DESCRIPTOR
-FLAT_DATA_SEL   equ 2 * sizeof DESCRIPTOR
-V86_TSS_SEL     equ 3 * sizeof DESCRIPTOR
-REAL_CODE_SEL   equ 4 * sizeof DESCRIPTOR
-REAL_DATA_SEL   equ 5 * sizeof DESCRIPTOR
-if ?CLEARHIGHESP
-V86_STACK_SEL   equ 6 * sizeof DESCRIPTOR
-endif
-if ?KD
-GDT_SEL         equ 48h
-endif
 
 ;--- equates from JLM.INC
 ;--- OUT_INSTR, WORD_IO and DWORD_IO are used as offset in tables
@@ -233,37 +229,6 @@ SYSTEM_EXIT equ 5
 DEVICE_REBOOT_NOTIFY equ 17h
 
 ;--- macros
-
-@mov_eax_cr4 macro
-    db 0fh, 20h, 0E0h
-endm
-@mov_ecx_cr4 macro
-    db 0fh, 20h, 0E1h
-endm
-
-@mov_cr4_eax macro
-    db 0fh, 22h, 0E0h
-endm
-@mov_cr4_ecx macro
-    db 0fh, 22h, 0E1h
-endm
-
-@cpuid  macro
-;   cpuid
-    db 0Fh,0A2h
-endm
-
-@wrmsr  macro
-    db 0Fh,030h
-endm
-
-@rdtsc  macro
-    db 0Fh,031h
-endm
-
-@rdmsr  macro
-    db 0Fh,032h
-endm
 
 ;--- macro to get a pointer to PTEs
 ;--- reg: register to set

@@ -3,9 +3,8 @@
 ;--- public domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -14,7 +13,7 @@
 
 ;--- publics/externals
 
-    include external.inc
+    include extern32.inc
 
 ;--- DOS device request
 
@@ -28,10 +27,6 @@ rhMedia     db  ?           ; +13
 rhBuffer    dd  ?           ; +14 transfer buffer (SSSS:OOOO)
 rhCount     dw  ?           ; +18 buffer size
 request_hdr ends
-
-;--- macros
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 .text$01 SEGMENT
 
@@ -60,7 +55,7 @@ EMMXXXX0_Interrupt proc public
     mov ecx, [dwReqPtr]
 if ?EMMXXXX0
     mov al, [ecx].request_hdr.rhCmd
-    @dprintf ?EMXDBG,<"EMMXXXX0 request %X",10>,al
+    @dprintf ?EMXDBG, <"EMMXXXX0 request %X",10>,al
     cmp al, 3           ;IOCTL input?
     jz @@ioctl_read
     cmp al, 8           ;write?
@@ -195,7 +190,9 @@ if ?VME
     mov al,1
     test byte ptr [dwFeatures],2
     jz @@novme
-    @mov_eax_cr4
+    .586p
+    mov eax, CR4
+    .386
     and al,1
     xor al,1
 @@novme:
@@ -205,7 +202,9 @@ if ?PGE
     mov al,1
     test byte ptr [dwFeatures+1],20h
     jz @@nopge
-    @mov_eax_cr4
+    .586p
+    mov eax, CR4
+    .386
     shr al,7
     xor al,1
 @@nopge:
@@ -329,11 +328,13 @@ if ?PGE
     ADD EDI,4
     loop @@FILL_PAGETAB0
  endif
-    @mov_ecx_cr4
-    shl al,7
-    and cl,not 80h
-    or cl,al
-    @mov_cr4_ecx
+    .586p
+    mov ecx, CR4
+    shl al, 7
+    and cl, not 80h
+    or cl, al
+    mov CR4, ecx
+    .386
 @@nopge:
 endif
     clc

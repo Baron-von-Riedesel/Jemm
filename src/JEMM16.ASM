@@ -5,6 +5,7 @@
 ;--- _RTEXT must be first segment; it has to be defined *before* .model.
 _RTEXT segment para public 'CODE'
 _RTEXT ends
+DGROUP group _RTEXT
 
 	.286
 ifdef __JWASM__
@@ -13,9 +14,6 @@ else
 	.model small	;Masm bug: .model tiny rejects using SEG operator
 DGROUP group _TEXT
 endif
-	option proc:private
-
-DGROUP group _RTEXT
 
 	include jemm.inc
 	include jemm16.inc
@@ -56,9 +54,9 @@ endm
 
 CStr macro text:VARARG
 local sym
-CONST segment
+	.const
 sym db text,0
-CONST ends
+	.code
 	exitm <offset sym>
 endm
 
@@ -91,9 +89,9 @@ if ?HOOK13
 	INTMOD <13h,offset NEW13, offset OLDINT13>
 	INTMOD <40h,offset NEW40, offset OLDINT40>
 endif
-	INTMOD <67h,offset NEW67, -1>
-	INTMOD <06h,offset NEW06, -1>
-	INTMOD <19h,offset NEW19, -1>
+	INTMOD <67h,offset BP67,  -1>
+	INTMOD <06h,offset BP06,  -1>
+	INTMOD <19h,offset BP19,  -1>
 	db -1
 
 	.data?	;ensure _BSS is defined
@@ -105,7 +103,7 @@ STACK ends
 
 DGROUP group STACK	;here stack has to be added to dgroup manually
 
-	.386P	;privileged instructions are used
+	.386
 
 _RTEXT SEGMENT
 
@@ -131,20 +129,16 @@ device_name label byte
 ;--- the order must match the one of bptable in Jemm32.asm !
 
 bptable label byte
-NEW06:					; entry invalid opcode exception (int 06)
-	@DefineBP BP06
-NEW19:
-	@DefineBP BP19
-NEW67:					; int 67h entry real-mode
-	@DefineBP BP67
+	@DefineBP BP06		; int 06h: entry invalid opcode exception
+	@DefineBP BP19		; int 19h
+	@DefineBP BP67		; int 67h: entry real-mode
 if ?VDS
-NEW4B:					; int 4Bh entry v86-mode (VDS)
-	@DefineBP BPVDS
+	@DefineBP BPVDS		; int 4Bh: entry v86-mode (VDS)
 endif
 	@DefineBP BPBACK	; BP to return to v86 monitor from a v86 far proc
 	@DefineBP BPI1587
 if ?HOOK13
-	@DefineBP BP1340	; copy out of DMA buffer
+	@DefineBP BP1340	; int 13h/40h: copy out of DMA buffer
 endif
 	@DefineBP BPXMS 	; handle XMS A20+UMB
 	@DefineBP BPSTRAT	; EMMXXXX0 device strategy call
@@ -175,12 +169,14 @@ NEW13 PROC FAR
 	pushf
 	db 09Ah
 OLDINT13 dd 0
-NEW13 ENDP
+NEW13 ENDP	;fall thru
 
 int1340common:
 	jc iret_with_new_CY
 	test cs:[bRFlags],RFL_COPYBUFFER
 	jnz BP1340			; breakpoint int 13/40h: copy out of DMA buffer
+endif
+if ?HOOK13 or ?INTEGRATED
 iret_with_new_CY:
 	push bp
 	mov bp,sp
@@ -216,7 +212,7 @@ NEW15 PROC FAR
 	JZ BPI1587
 if ?INTEGRATED
 	CMP AH,88H		; ext memory size
-	JZ getextmem
+	JZ i1588
  if ?XMS35
 	CMP AX,0E820h	; memmap
 	JZ memmap
@@ -231,32 +227,24 @@ endif
 	db 0EAh
 OLDINT15 dd 0
 if ?INTEGRATED
-getextmem:
+i1588:
 	xor ax,ax			; no memory available
-exit_iret:
-  ife ?HOOK13
-	push bp
-	mov bp,sp
-	and byte ptr [bp+2].IRETWS._Fl,not 1  ;clear CF
-	pop bp
-	iret
-  else
 	jmp iret_with_new_CY
-  endif
  if ?XMS35
 memmap:
 	pushf
 	call cs:[OLDINT15]
 	jc iret_with_new_CY
 	cmp eax,SMAP
-	jnz exit_iret
+	clc
+	jnz iret_with_new_CY
 	cmp es:[di].E820MAP.basehigh,0
-	jz exit_iret
+	jz iret_with_new_CY
 	cmp es:[di].E820MAP.type_,1		;"available" memory?
 	clc
-	jnz exit_iret
+	jnz iret_with_new_CY
 	mov byte ptr es:[di].E820MAP.type_,2		;change to "reserved"
-	jmp exit_iret
+	jmp iret_with_new_CY
  endif
 endif
 NEW15 ENDP
@@ -347,7 +335,7 @@ machine_type label byte
 NEW2F endp
 endif
 
-if ?RMDBG
+if ?DBGOUT
 
 	include dprntf16.inc
 
@@ -393,7 +381,7 @@ CheckIntHooks proc stdcall public uses es si di wResSeg:WORD
 	shl eax, 16
 	push 0
 	pop es
-	mov si,offset intvecs
+	mov si, offset intvecs
 @@nextvect:
 	lodsb
 	cmp al,-1
@@ -410,7 +398,7 @@ CheckIntHooks proc stdcall public uses es si di wResSeg:WORD
 if ?VDS
 	test byte ptr es:[47Bh],20h
 	jz @F
-	mov ax,offset NEW4B
+	mov ax,offset BPVDS
 	cmp eax,es:[4Bh*4]
 	stc
 	jnz @@nouninst
@@ -567,11 +555,13 @@ endif
 	db 0EAh				;jmp FAR16 opcode
 	dw offset @F, seg @F ; Masm: SEG operator rejected if .model TINY is used
 @@:
+	.386p
 	LIDT FWORD ptr [bp-6]; reset IDT to 0:3ffh (v5.86: now done AFTER mode switch)
 if 1
 	xor eax,eax	;v5.86: clear TLB
 	mov cr3,eax
 endif
+	.386
 	mov sp,bp
 	pop bp
 	mov ax,cs	;v5.86: assume model TINY
@@ -830,7 +820,7 @@ start proc
 	mov sp, offset stacktop - 128
 	call TestCPU
 	jc @@exit
-	@dprintf ?INITRMDBG, <"Jemm386 enter",10>
+	@dprintf ?INITRMDBG, <NAMEMOD," enter",10>
 
 	mov di,sp
 	mov si,0080h
@@ -875,7 +865,7 @@ if ?LOAD
 endif
 
 @@exit:
-	@dprintf ?INITRMDBG, <"Jemm386 exit",10>
+	@dprintf ?INITRMDBG, <NAMEMOD, " exit",10>
 	mov ah,04ch 		; that was all
 	int 21h
 start endp
@@ -906,7 +896,7 @@ if ?INTEGRATED
 ;--- the xms handle table must be located in the resident conventional memory
 ;--- part of jemmex
 
-	mov cx, xms_num_handles		;is at least 8
+	mov cx, xms.num_handles		;is at least 8
 	mov [xms_handle_table.xht_numhandles], cx
 	mov ax,size XMS_HANDLE
 	mul cx
@@ -917,7 +907,7 @@ endif
 
 ;--- store interrupt vectors in resident memory
 
-	mov si,offset intvecs
+	mov si, offset intvecs
 @@nextint:
 	mov al,[si].INTMOD.bInt
 	cmp al,-1
@@ -1026,6 +1016,7 @@ endif
 	push eax
 	push GDT_SIZE-1
 	CLI
+	.386p
 	LGDT FWORD PTR [bp-6]
 	add sp, 2+4
 
@@ -1040,6 +1031,7 @@ FLAT_DATA_SEL equ 2*8
 
 	XOR AX,AX
 	LLDT AX 				; initialise LDT (it is not used)
+	.386
 	mov FS,AX
 	mov GS,AX
 	MOV AL,FLAT_DATA_SEL	; Addressing everything
@@ -1070,7 +1062,7 @@ backinv86:
 if ?INTEGRATED
 	mov es,bx
 	mov word ptr es:[xms_handle_table.xht_pArray+2],bx
-	mov word ptr [XMSdriverAddress+2],bx	;v5.80 adjust XMS address
+	mov word ptr [xms.Driver+2],bx	;v5.80 adjust XMS address
 endif
 if ?VDS
 	push 0
@@ -1086,7 +1078,7 @@ endif
 	sti
 
 	@dprintf ?INITRMDBG, <"InitJemm: ints enabled, hooking int 15h, 2Fh, ...",10>
-	mov si,offset intvecs
+	mov si, offset intvecs
 @@nextint2:
 	mov al,[si].INTMOD.bInt
 	cmp al,-1
@@ -1150,7 +1142,7 @@ if ?INTEGRATED
 	call GetRes	;get Jemm resident segment address
 	mov es,ax
 	mov di, offset xms_handle_array
-	mov cx, xms_num_handles
+	mov cx, xms.num_handles
 	mov ax, sizeof XMS_HANDLE
 	mul cx
 	add ax,di
@@ -1248,10 +1240,10 @@ move_xbda proc
 	shl si,6		;convert kb to para
 	mov dx,si
 	mov ah,XMS_ALLOCUMB	;alloc UMB
-	call [XMSdriverAddress]
+	call [xms.Driver]
 	cmp ax,1
 	jnz nomovexbda
-	@dprintf ?INITRMDBG,<"move_xbda: alloc umb ok, seg=%X",10>, bx
+	@dprintf ?INITRMDBG, <"move_xbda: alloc umb ok, seg=%X",10>, bx
 ;--- copy content of XBDA to new location
 	mov es,bx
 	pushf
@@ -1292,7 +1284,7 @@ nxtitem:
 
 	cmp bVerbose,0
 	jz @F
-	invoke printf,CStr("XBDA moved to first UMB",10)
+	invoke printf, CStr("XBDA moved to first UMB",10)
 @@:
 nomovexbda:
 	ret
@@ -1300,14 +1292,14 @@ move_xbda endp
 endif
 
 LinkChain proc
-	mov ah,52h
+	mov ah,52h   ;get DOS LoL in ES:BX
 	int 21h
 	push ds
 	push 0
 	pop ds
 	mov ax,ds:[67h*4+2]
 	mov ds,ax
-	add bx,22h
+	add bx,22h   ;LoL+22h: NUL device (DOS 3.1+)
 	shl eax,16
 	xchg eax,es:[bx]
 	mov ds:[0],eax
@@ -1327,11 +1319,11 @@ endif
 	@dprintf ?INITRMDBG, <"InstallXMSHandler: getting XMS UMB status",10>
 	mov dx, -1
 	mov ah, XMS_ALLOCUMB
-	call [XMSdriverAddress]
+	call [xms.Driver]
 	and ax, ax
 	jnz @@umbalreadythere
 	@dprintf ?INITRMDBG, <"InstallXMSHandler: hooking into XMS driver chain",10>
-	les bx,[XMSdriverAddress]
+	les bx,[xms.Driver]
 @@nexttest:
 	mov al,es:[bx]
 	cmp al,0EBh
@@ -1396,8 +1388,8 @@ XMSinit proc c public uses es
 	jne @@not_detected
 	mov ax, 4310h
 	int 2fh
-	mov word ptr [XMSdriverAddress+0], bx
-	mov word ptr [XMSdriverAddress+2], es
+	mov word ptr [xms.Driver+0], bx
+	mov word ptr [xms.Driver+2], es
 
 	mov ax, 4309h		;  XMS get xms handle table
 	int 2fh
@@ -1410,8 +1402,8 @@ XMSinit proc c public uses es
 	ret
 @@not_detected:
 if ?INTEGRATED
-	mov word ptr [XMSdriverAddress+0], offset XMShandler
-	mov word ptr [XMSdriverAddress+2], cs
+	mov word ptr [xms.Driver+0], offset XMShandler
+	mov word ptr [xms.Driver+2], cs
 	mov word ptr jemmini.XMSHandleTable+0, offset xms_handle_table
 	mov word ptr jemmini.XMSHandleTable+2, cs
 endif
@@ -1435,34 +1427,34 @@ I15SetHandle proc c public uses ds bx
 if ?XMS35
 	cmp edx, 400000h    ;beyond 4GB?
 	jc @F
-	sub xms_smax, ecx	;/MAXSEXT option set?
+	sub xms.smax, ecx	;/MAXSEXT option set?
 	jnc smax_ok
-	add ecx, xms_smax	;limit to maximum
-	mov xms_smax,0
+	add ecx, xms.smax	;limit to maximum
+	mov xms.smax,0
 	jecxz exit
 smax_ok:
-	mov xms_smem_used, 1
+	mov xms.smem_used, 1
 	jmp beyond4g
 @@:
 endif
-	sub xms_max, ecx	;MAXEXT option set?
+	sub xms.max, ecx	;MAXEXT option set?
 	jnc @F
-	add ecx, xms_max	;limit to maximum
-	mov xms_max,0
+	add ecx, xms.max	;limit to maximum
+	mov xms.max,0
 	jecxz exit
 @@:
-;--- adjust xms_mem_free and xms_mem_largest fields, if needed
-	add xms_mem_free, ecx
-	cmp ecx, xms_mem_largest
+;--- adjust xms.mem_free and xms.mem_largest fields, if needed
+	add xms.mem_free, ecx
+	cmp ecx, xms.mem_largest
 	jb @F
-	mov xms_mem_largest, ecx
+	mov xms.mem_largest, ecx
 @@:
 	mov eax, edx
 	add eax, ecx
 	shl eax, 10
-	cmp eax, xms_mem_highest
+	cmp eax, xms.mem_highest
 	jb @F
-	mov xms_mem_highest, eax
+	mov xms.mem_highest, eax
 @@:
 beyond4g:
 	push cs

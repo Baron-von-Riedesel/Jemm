@@ -291,19 +291,19 @@ DEBUG_FAULT_TYPE_LAST		equ	00010000b
 
 Win386_Query_Int      equ 22h	; interrupt for Win386 protected mode
 
-Win386_Alive	      equ 0	; function 0, query Win386 installation
-Win386_Q_Ack	      equ 0F386h	;	good response from func 43h, of
-Win386_Query	      equ 1	; function 1, query Win386 state
-Win386_PhysToLinr     equ 2	; function 2, have Win386 convert a
-Win386_AddrValid      equ 3	; function 3, have Win386 check the
-Win386_MapVM	      equ 4	; function 4, make sure that the VM's
-Win386_UnmapVM	      equ 5	; function 5, map out the VM's low
-Win386_GetDLAddr      equ 6	; function 6, return offset of dyna-link
-Win386_GetVXDName     equ 7 ; function 7, determines whether an address
-Win386_GetPDE         equ 8 ; function 8, get pde for a context
-Win386_GetFrame       equ 9 ; function 9, get phys addr for not pres ptes
-Win386_GetLDTAddress  equ 10    ; function 10,
-Win386_GetThreadID    equ 11    ; function 11, AX = Current Thread ID
-Win386_GetTSHandler   equ 12	; function 12, return offset of transfer-space
-Win386_GetArplHandler equ 13	; function 12, return offset of ARPL fault
+Win386_Alive	      equ 0	; query Win386 installation; AX=Win386_Q_Ack if installed 
+;Win386_Q_Ack	      equ 0F386h	; good response from various debug funcs
+Win386_Query	      equ 1	; query; DS:ESI->SaveRegs struct
+Win386_PhysToLinr     equ 2	; converts phys addr in ESI (size CX) to linear in ESI (ax=1 if ok, else 0)
+Win386_AddrValid      equ 3	; get validity of a linear address ( ESI, size CX )
+Win386_MapVM	      equ 4	; make sure VM's low memory is mapped in
+Win386_UnmapVM	      equ 5	; map out the VM's low memory
+Win386_GetDLAddr      equ 6	; return offset of dyna-link service; hiword(ebx)=device, loword(ebx)=service
+Win386_GetVXDName     equ 7	; get vxd owner of a memory address in EDX, DS:ESI=buffer
+Win386_GetPDE         equ 8 ; get pde for a context
+Win386_GetFrame       equ 9 ; get phys addr for not pres ptes
+Win386_GetLDTAddress  equ 10; BX = thread
+Win386_GetThreadID    equ 11; AX = Current Thread ID
+Win386_GetTSHandler   equ 12; return offset of transfer-space
+Win386_GetArplHandler equ 13; return offset of ARPL fault handler in EAX, EBX=real mode seg:ofs
 Max_Win386_Services   equ 13

@@ -10,15 +10,18 @@
 #
 # since v5.87, JWasm must be v2.21+ (with fixed "negative offset"-bug)
 #
-# assembling with Masm may trigger jwlink warning "target displacement
-#      xxxx ignored for segment fixup"; can be safely ignored!
+# notes:
+#  - OW Wmake must be used with the -ms option!
 #
-# note: OW Wmake must be used with the -ms option!
+#  - WLink < v1.8 shouldn't be used as COFF linker. It contains a bug 
+#    which might cause unexpected results in Jemm.
 #
-# note: WLink < v1.8 shouldn't be used as COFF linker. It contains a bug 
-#       which might cause unexpected results in Jemm.
+#  - j/wlink warning 1014 ("stack segment not found") is disabled;
+#    warning would be emitted when linking the 32-bit part of Jemm.
 #
-# note: linker warning "stack segment not found" can be safely ignored.
+# -  j/wlink warning 1174 ("target displacement xxxx ignored for segment
+#    fixup") is disabled; it happens if Jemm16.asm is assembled with Masm
+#    and should be regarded as a Masm bug!
 #
 # Jemm consists of 2 parts. which are created separately: the 32-bit
 # part is the true Jemm application ( the "v86-monitor" program ) -
@@ -127,14 +130,14 @@ LINK32=link.exe /FileAlign:0x200 $(COFFOPT) $(COFFMODS:.\=) /OUT:jemm32.bin
 !endif
 
 !if $(JWLINK)
-LINK16=jwlink.exe format dos file jemm16.obj,init16.obj name $(*B).EXE option map=$(*B).MAP, quiet
+LINK16=jwlink.exe format dos file jemm16.obj,init16.obj name $(*B).EXE disable 1174 option map=$(*B).MAP, quiet
 !elseif $(WLINK)
 LINK16=wlink.exe format dos file jemm16.obj,init16.obj name $@.EXE option map=$@.MAP, quiet
-#else
+!else
 LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 !endif
 
-32BITDEPS=src\jemm32.inc src\jemm.inc src\external.inc src\debug32.inc Makefile
+32BITDEPS=src\jemm32.inc src\jemm.inc src\extern32.inc src\debug32.inc Makefile
 
 {src\}.asm{$(OUTD1)}.obj:
 	@$(ASM) -c -nologo -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<

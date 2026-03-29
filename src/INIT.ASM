@@ -3,9 +3,8 @@
 ;--- Public Domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -31,9 +30,7 @@ endif
 
 ;--- publics/externals
 
-    include external.inc
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
+    include extern32.inc
 
 .text$01 segment
 externdef pSmallHeap:dword
@@ -166,7 +163,9 @@ Is486 proc
     jz @@nocpuid
     xor eax,eax
     inc eax                     ; get register 1
-    @cpuid
+    .586
+    cpuid
+    .386
     mov ah,1
 @@nocpuid:
 @@no_486:
@@ -262,8 +261,8 @@ SetIDTEntry endp
 ;--- shared memory (110000 - 11xxxx):
 ;---  0-3.0 kB    wasted space because of rounding to page border
 ;---    0.125 kB  monitor help stack for VCPI
-;---  ~14.0 kB    resident monitor data+code (V86_ENDRES - ?BASE)
 ;---    0.5 kB    GDT  [GDT_PTR] (size 200h)
+;---  ~14.0 kB    resident monitor data+code (V86_ENDRES - ?BASE)
 ;---    2.0 kB    IDT  [IDT_PTR]
 ;---   ~1.7 kB    interrupt table (size E0h*7)
 ;---  0-3.0 kB    wasted space because of rounding to page border
@@ -509,7 +508,7 @@ endif
     MOV CR0,EAX
 
 ;--- dprintf uses direct addressing, cannot work yet
-;    @dprintf ?INITDBG,<"Paging has been enabled",10>
+;    @dprintf ?INITDBG, <"Paging has been enabled",10>
 
 ;--- paging enabled, now move monitor code+data in extended memory
 
@@ -565,7 +564,9 @@ endif
 
 ;--- load final values for GDTR + IDTR
 
+    .386p
     LGDT FWORD PTR [GDT_PTR]
+    .386
     @dprintf ?INITDBG, <"GDTR set, edi=%X",10>, edi
 
 ;-- create INT_TABLE + set IDT
@@ -619,7 +620,9 @@ endif
     loop @@nextidtentry
 ;   @dprintf ?INITDBG, <10>
 
-    LIDT FWORD PTR [IDT_PTR]
+    .386p
+    LIDT [IDT_PTR]
+    .386
     @dprintf ?INITDBG, <"IDTR, IDT + int table initialized, IDT=%X edi=%X",10>, dword ptr [IDT_PTR+2], edi
 
 if ?I41SUPP
@@ -983,8 +986,10 @@ endif
 
 ;-- finally load TR
 
+    .386p
     mov ax, V86_TSS_SEL
     ltr ax
+    .386
 
 ;--- here CR3, GDTR, IDTR, TR and LDTR all have their final values
 
@@ -1230,9 +1235,11 @@ if ?PGE
     jz @F
     cmp [esi].JEMMINIT.NoPGE,0
     jnz @F
-    @mov_ecx_cr4
+    .586p
+    mov ecx, CR4
     or cl,CR4_PGE
-    @mov_cr4_ecx
+    mov CR4, ecx
+    .386
 @@:
 endif
 
@@ -1275,10 +1282,10 @@ endif
     mov eax, ds:[ecx+06h*4]
     mov [OldInt06],eax
 if 0;?SAFEKBD    
-    mov eax, ds:[ecx+15h*4]
-    mov [OldInt15],eax
-    mov eax, ds:[ecx+16h*4]
-    mov [OldInt16],eax
+;    mov eax, ds:[ecx+15h*4]
+;    mov [OldInt15],eax
+;    mov eax, ds:[ecx+16h*4]
+;    mov [OldInt16],eax
 endif
     mov eax, ds:[ecx+19h*4]
     mov [OldInt19],eax
@@ -1427,7 +1434,9 @@ endif
 
     @dprintf ?INITDBG, <"activating V86 mode, esp=%X [esp]=%X %X %X",10>, ebp, dword ptr [ebp+0], dword ptr [ebp+4], dword ptr [ebp+8]
 
+    .386p
     CLTS       ; clear TS (Task Switch) flag
+    .386
     IRETD      ; switch to v86 mode
 
 InitMonitor ENDP

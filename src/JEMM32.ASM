@@ -24,9 +24,8 @@
 
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -34,6 +33,8 @@
     include debug32.inc
 
 ;--- equates
+
+?STKSIZE    EQU 200H    ; Size monitor stack for non-reentrant execution
 
 ;--- assembly time constants
 
@@ -58,7 +59,7 @@ MAXBLOCKSIZE equ 40000h ; size for mem moves (XMS, int 15h ah=87h); std=256 kB
 
 ;--- publics/externals
 
-    include external.inc
+    include extern32.inc
 
 ;--- macros
 
@@ -70,8 +71,6 @@ MAXBLOCKSIZE equ 40000h ; size for mem moves (XMS, int 15h ah=87h); std=256 kB
     POPAD
     endm
 
-;    assume SS:FLAT,DS:FLAT,ES:FLAT
-
 .text$01 SEGMENT
 
 ;--- start: the binary's entry must be at offset 0!
@@ -80,7 +79,7 @@ MAXBLOCKSIZE equ 40000h ; size for mem moves (XMS, int 15h ah=87h); std=256 kB
 
 _start:
     jmp InitMonitor
-    dw lowword offset V86GDT   ;at offset 5, so 16-bit code can locate the GDT
+    dw lowword offset V86GDT ; must be at .text:5, so 16-bit code can locate the GDT
 size_startsig equ $ - _start
 
 ;--- this is a 128 byte helper stack used for VCPI switches to
@@ -88,12 +87,12 @@ size_startsig equ $ - _start
 
     db ?HLPSTKSIZE - size_startsig dup (55h)
 
-;--- IDT - Interrupt Descriptor Table
-;--- as default, the IDT is no longer in the shared region
-
 ;--- global monitor data
 
 V86CR3  DD 0                ; CR3 for monitor address context
+
+;--- IDT - Interrupt Descriptor Table
+;--- as default, the IDT is no longer in the shared region
 
 IDT_PTR LABEL FWORD         ; size+base IDT
     DW 7FFH
@@ -112,7 +111,7 @@ wSlavePICBase   dw 0070h    ; put it here for alignment
 
 dwFeatures      dd 0        ; features from CPUID 
 dwStackCurr     dd ?TOS - ?STKSIZE
-dwStackR0       dd 0        ; current R0 stack to compare
+dwStackR0       dd 0        ; current R0 stack to compare if monitor reentered by IRQ
 if ?DYNTRAPP60
 dwTSS           dd 0
 endif
@@ -133,8 +132,8 @@ dwHeapSize      label dword ; used during Init only
 OldInt19        dd 0
 OldInt67        dd 0
 if 0;?SAFEKBD
-OldInt15        dd 0        ; v5.85: original INT 15h vector
-OldInt16        dd 0        ; store to have a safe keyboard input
+;OldInt15        dd 0        ; v5.85: original INT 15h vector
+;OldInt16        dd 0        ; store to have a safe keyboard input
 endif
 ;pPg0PartEnd     dd 0
 
@@ -198,7 +197,7 @@ endif
 .text$01 ends
 
 if ?SHAREDGDT
-.text$01x segment para flat public 'CODE'
+.text$01g segment para flat public 'CODE'
 else
 .text$03x segment para flat public 'CODE'
 endif
@@ -224,16 +223,16 @@ endif
 	org V86GDT+GDT_SIZE
 
 if ?SHAREDGDT
-.text$01x ends
+.text$01g ends
 else
 .text$03x ends
 endif
 
 if ?SHAREDIDT
     public V86IDT
-.text$01x segment para flat public 'CODE'
+.text$01g segment para flat public 'CODE'
 V86IDT  GATE 100h dup (<0,0,0,0>)
-.text$01x ends
+.text$01g ends
 endif
 
 .text$03 segment
@@ -356,7 +355,9 @@ endif
 if ?INVLPG
     cmp [bNoInvlPg],0
     jnz @@noinvlpg
+    .486p
     invlpg ds:[0FF000h]
+    .386
     ret
 @@noinvlpg:
 endif
@@ -471,7 +472,7 @@ if ?AUXIO
 	include auxio.inc
 endif
 
-.text$01w segment dword flat public 'CODE'
+.text$01y segment dword flat public 'CODE'
 
 ;--- stack frame for exceptions
 
@@ -532,7 +533,7 @@ szCRLF db CR, LF, 0
 
     align 4
 
-.text$01w ends
+.text$01y ends
 
 ;--- the monitor entry
 ;--- it should not be at the very beginning of this segment
@@ -649,7 +650,7 @@ endif
 	mov es, eax
 	mov eax, ecx
 	mov ecx, [edx+4*ecx]
-	mov esp,[dwStackCurr]   ;v5.87: don't run on top of stack, it's reserved for client state
+	mov esp, [dwStackCurr]  ;v5.87: don't run on top of stack, it's reserved for client state
 	call [dwHookProc]
 	mov esp,ebp
 	jnc int_handled
@@ -921,6 +922,7 @@ handle_exception_ebp::          ; <--- entry exc in v86
     push ebx                     ; ebp-20 == SS
     push ecx                     ; ebp-24 == ESP
 
+    .386p
     mov eax, cr0
     push eax                     ; ebp-28
     mov eax, cr2
@@ -932,7 +934,9 @@ if 1 ;v5.80: display cr4 instead of cr2 if no page fault
 	cmp byte ptr [ebp].Client_Reg_Struc.Client_Int, 0Eh
 	jz @F
 	mov exc_cr2 + 3, '4'
-	@mov_eax_cr4
+	.586p
+	mov eax, cr4
+	.386
 @@:
 endif
     push eax                     ; ebp-32
@@ -1847,7 +1851,9 @@ if ?INVLPG
     push ebx
 @@nextPTE2:
     mov [edx], eax
+    .486p
     invlpg ds:[ebx]
+    .386
     add edx,4
     add eax, 1000h
     add ebx, 1000h
@@ -1894,10 +1900,10 @@ MapPhysPagesPSE proc uses ecx
 	sub eax,?PAGEDIR
 	shl eax,20
 	add esi,eax
-	.586p
+	.486p
 	invlpg ds:[esi]
 	invlpg ds:[esi+400000h]
-	.386p
+	.386
 	lea ebx,[ebx-2*4]	; move backward 2*4MB
 donesrc:
 	mov ecx, edi
@@ -1922,13 +1928,13 @@ donesrc:
 	sub eax,?PAGEDIR
 	shl eax,20
 	add edi,eax
-	.586p
+	.486p
 	invlpg ds:[edi]
 	invlpg ds:[edi+400000h]
-	.386p
+	.386
 	lea ebx,[ebx-2*4]	; move forward 2*4MB
 donedst:
-    @dprintf ?I15DBG or ?MAPDBG,<"MapPhysPagesPSE, esi=%X, edi=%X",10>, esi, edi
+	@dprintf ?I15DBG or ?MAPDBG, <"MapPhysPagesPSE, esi=%X, edi=%X",10>, esi, edi
 	ret
 	align 4
 MapPhysPagesPSE endp
@@ -1940,13 +1946,13 @@ MapPhysPagesPSE endp
 ;--- x is !=0 if both src and dst are sext mem or if jemm has been reentered while the move is running.
 
 MoveMemoryPhysEx proc public
-    @dprintf ?I15DBG or ?MAPDBG, <"MoveMemoryPhysEx, ax::esi=%X%08X, dx::edi=%X%08X, ecx=%X",10>,ax,esi,dx,edi,ecx
+	@dprintf ?I15DBG or ?MAPDBG, <"MoveMemoryPhysEx, ax::esi=%X%08X, dx::edi=%X%08X, ecx=%X",10>,ax,esi,dx,edi,ecx
 	.586p
 	mov ebx,cr4
 	bts ebx,4
 	jc move_loop	;set PSE only if it isn't set yet
 	mov cr4,ebx
-	.386p
+	.386
 move_loop:
 	push ecx
 	cmp ecx, 400000h
@@ -2247,11 +2253,13 @@ if ?VME
 SetVME proc public
     test byte ptr [dwFeatures], 2        ;VME supported?
     jz @@novme
-    @mov_ecx_cr4
-    and al,1
-    and cl,not 1
+    .586p
+    mov ecx, CR4
+    and al, 1
+    and cl, not 1
     or cl,al
-    @mov_cr4_ecx
+    mov CR4, ecx
+    .386
 @@novme:
     ret
     align 4
@@ -2400,29 +2408,32 @@ endif
 ;--- set base of REAL_CODE_SEL and REAL_DATA_SEL
 ;--- to the current v86 CS/SS
 
-    mov ebx,offset V86GDT
+    cld
+    mov edi,offset V86GDT + REAL_CODE_SEL + 2
     movzx eax, word ptr [ebp].Client_Reg_Struc.Client_CS
     shl eax, 4
-    mov word ptr [ebx + REAL_CODE_SEL+2], ax
+    stosw         ;set base(0-15)
     shr eax, 16
-    mov byte ptr [ebx + REAL_CODE_SEL+4], al
+    stosb         ;set base(16-23)
+    add edi, sizeof DESCRIPTOR - 3
     movzx eax, word ptr [ebp].Client_Reg_Struc.Client_SS
     shl eax, 4
-    mov word ptr [ebx + REAL_DATA_SEL+2], ax
+    stosw         ;set base(0-15)
     shr eax, 16
-    mov byte ptr [ebx + REAL_DATA_SEL+4], al
+    stosb         ;set base(16-23)
 
 ;--- restore v86 interrupt vectors
 
+    xor ebx, ebx
     mov eax, [OldInt06]
-    mov ds:[06h*4],eax
+    mov [ebx+06h*4],eax
     mov eax, [OldInt19]
-    mov ds:[19h*4],eax
+    mov [ebx+19h*4],eax
 if ?VDS
     call VDS_Exit
 endif
     mov eax, [OldInt67]
-    mov ds:[67h*4],eax
+    mov [ebx+67h*4],eax
 
     mov edx, [ebp].Client_Reg_Struc.Client_EIP
     mov ecx, [ebp].Client_Reg_Struc.Client_ESP
@@ -2511,7 +2522,7 @@ restorevecs proc
     mov edx, [dwRSeg]
     shl edx, 16
     mov dl, [bBpTab]    ;use the first BP for returning to the monitor
-    @dprintf ?RBTDBG,<"vector 19h saved by DOS=%X, temp vector=%X",10>, eax, edx
+    @dprintf ?RBTDBG, <"vector 19h saved by DOS=%X, temp vector=%X",10>, eax, edx
     mov [OldInt19],eax  ;save the vector stored by DOS
     mov [esi-4],edx
 
@@ -2553,7 +2564,7 @@ restorevecs endp
 
 fastboot proc
 
-    @dprintf ?RBTDBG,<"fastboot reached",10>
+    @dprintf ?RBTDBG, <"fastboot reached",10>
 
 if 0  ;kbd enable has been done in int 15h handler already
     mov al,0Bh
@@ -2644,10 +2655,10 @@ if ?RBTDBG
     xor ebx,ebx
 nextitem:
     lodsd
-    @dprintf ?RBTDBG,<"%X: %X        ">, bl, eax
+    @dprintf ?RBTDBG, <"%X: %X        ">, bl, eax
     test cl,1
     jz @F
-    @dprintf ?RBTDBG,<10>
+    @dprintf ?RBTDBG, <10>
 @@:
     inc ebx
     loop nextitem
@@ -2663,7 +2674,7 @@ endif
 
 _Reboot proc
 
-    @dprintf ?RBTDBG,<"Reboot enter",10>
+    @dprintf ?RBTDBG, <"Reboot enter",10>
 if ?INT19RBT
     mov eax,19h
     call Exec_Int   ;may not return
@@ -2714,7 +2725,7 @@ ife ?USETRIPLEFAULT
     jz @F
     .586p                   ; CR4 exists since Pentium ( not exactly true )
     mov cr4, ecx            ; reset CR4
-    .486p
+    .386
 @@:
    else
     mov al, 0
@@ -2738,7 +2749,9 @@ ife ?USETRIPLEFAULT
     xor edx, edx
     push edx
     push word ptr 3FFh
+    .386p
     LIDT FWORD ptr [esp]     ; reset the IDT to real-mode
+    .386
 
     MOV AX,REAL_DATA_SEL    ; before returning to real-mode set the
     MOV DS,EAX              ; segment register caches
@@ -2829,7 +2842,7 @@ vmm_service_table label VMM_SERV_TABLE
     dd VCPI_Call_Table
     dd IO_Trap_Table
     dd V86_Monitor
-    dd offset dwStackCurr
+    dd offset dwStackCurr ;obsolete
     dd MoveMemory
     dd offset pV86Hooks	;v5.85
     dd offset V86_Fault	;v5.86

@@ -4,9 +4,8 @@
 ;--- Public Domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -31,7 +30,7 @@ endif
 
 externdef EMS_CheckMax:near
 
-    include external.inc
+    include extern32.inc
 
 ;--- private structures
 
@@ -65,10 +64,6 @@ POOLBLOCK_MEMSIZE           equ POOLBLOCK_ALLOCATION_SPACE*8*4
 POOLBLOCK_TOTAL_SPACE   EQU POOLBLOCK_SYSTEM_SPACE+POOLBLOCK_ALLOCATION_SPACE
 
 LPPOOL_SYSTEM_INFO typedef ptr POOL_SYSTEM_INFO
-
-;--- start
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 .text$01 SEGMENT
 
@@ -125,7 +120,7 @@ Pool_GetFree4KPages PROC public
     mov eax,edx
 @@uselower:                     ; eax = min(eax, edx)
 
-    @dprintf ?POOLDBG,<"Pool_GetFree4KPages: %X, dwUsedMem4K=%X, dwMaxMem4K=%X",10>, eax, dwUsedMem4K, dwMaxMem4K
+    @dprintf ?POOLDBG, <"Pool_GetFree4KPages: %X, dwUsedMem4K=%X, dwMaxMem4K=%X",10>, eax, dwUsedMem4K, dwMaxMem4K
     ret
     align 4
 
@@ -410,11 +405,11 @@ endif
     mov ecx,[esi].POOL_SYSTEM_INFO.psi_addressK
     shl ecx,10      ; convert from K to bytes
     add eax,ecx
-    @dprintf ?POOLDBG,<"Pool_Allocate4kPage ok, page=%X, block=%X",10>, eax, esi
+    @dprintf ?POOLDBG, <"Pool_Allocate4kPage ok, page=%X, block=%X",10>, eax, esi
     ret
 
 @@blockbad:
-    @dprintf ?POOLDBG,<"Pool_Allocate4kPage: found inconsistent block %X",10>, esi
+    @dprintf ?POOLDBG, <"Pool_Allocate4kPage: found inconsistent block %X",10>, esi
     @CheckBlockIntegrity; nothing free, although block indicated there was
     jmp @@nextblock     ; continue search
     align 4

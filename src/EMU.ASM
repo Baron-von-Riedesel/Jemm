@@ -4,22 +4,19 @@
 
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
     include debug32.inc
 
-EMUCLTS equ 0	; 1=emulate CLTS ( resets TS bit in CR0 )
+?EMUCLTS equ 0	; 1=emulate CLTS ( resets TS bit in CR0 )
 
 ;--- publics/externals
 
-    include external.inc
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
+    include extern32.inc
 
 .text$01 SEGMENT
 
@@ -38,14 +35,15 @@ EmuInstr DB 90h,90h  ; run self-modifying code here
     endm
 
 ;--- emulate some privileged 0Fh opcodes (not HLT)
-;--- ebp -> client struct
-;--- ESI -> linear address of CS:EIP
-;--- AL==0Fh
-;--- this is not called, but jumped to
+;--- EBP -> client struct
+;--- ESP = dwStackCurr
+;--- ESI -> linear address of v86 CS:IP
+;--- AL = 0Fh
+;--- this is not called, but jumped to by V86_Exception.
 
 ExtendedOp proc public
     mov al,[esi+1]
-if EMUCLTS
+if ?EMUCLTS
     cmp al,6
     je @@clts
 endif
@@ -73,23 +71,31 @@ endif
     call RunEmuInstr
     add esp, CRS_SIZEX  ; skip error code & int#
     iretd
-if EMUCLTS
+if ?EMUCLTS
 @@clts:
-    clts                ; 0f 06 is clts opcode
+    .386p
+    clts
+    .386
     jmp @@invdshare
 endif
 @@invd:
-    invd                ; 0f 08 is invd opcode
+    .486p
+    invd
+    .386
     jmp @@invdshare
 @@wbinvd:
-    wbinvd              ; 0f 09 is wbinvd opcode
+    .486p
+    wbinvd
+    .386
 @@invdshare:
     @v86popregX
     jmp @@twoeat
 
 @@wrmsr:
     @v86popregX
-    @wrmsr
+    .586p
+    wrmsr
+    .386
     jmp @@twoeat
 
 ; early pentiums and such will throw an exception on rdtsc instruction in V86
@@ -97,12 +103,16 @@ endif
 
 @@rdtsc:
     @v86popregX
-    @rdtsc
+    .586
+    rdtsc
+    .386
     jmp @@twoeat
 
 @@rdmsr:
     @v86popregX
-    @rdmsr              ; rdmsr opcode
+    .586p
+    rdmsr
+    .386
 
 @@twoeat:
     add esp, CRS_SIZEX          ; skip error code & int#

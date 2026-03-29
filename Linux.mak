@@ -38,7 +38,7 @@ ifndef DEBUG
 DEBUG=0
 endif
 
-# to create kernel debugger aware versions, run "nmake kd=1"
+# to create kernel debugger aware versions, run "make KD=1"
 ifndef KD
 KD=0
 endif
@@ -77,7 +77,7 @@ AOPT16=-c -nologo -omf
 
 LOPT32=format raw bin name $@ disable 1014 op q, offs=0x110000, start=_start
 
-32BITDEPS=src/JEMM.INC src/JEMM32.INC src/DEBUG32.INC src/EXTERNAL.INC
+32BITDEPS=src/JEMM.INC src/JEMM32.INC src/DEBUG32.INC src/EXTERN32.INC
 16BITDEPS=src/JEMM.INC src/JEMM16.INC src/DEBUG16.INC
 
 $(OUTD1)/%.obj: src/%.ASM

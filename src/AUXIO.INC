@@ -8,9 +8,9 @@ _XONXOFF_   equ 1
 XON         equ 11h
 XOFF        equ 13h
 
-.text$01w segment dword flat public 'CODE'
+.text$01 segment dword flat public 'CODE'
 wCsrPos dw 0,0
-.text$01w ends
+.text$01 ends
 
 ;--- display a char in AL
 

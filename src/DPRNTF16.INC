@@ -45,7 +45,7 @@ ltoa PROC stdcall uses edx edi number:dword, outb:word, base:word
 
 ltoa ENDP
 
-;--- dprintf is to preserve flags; needs a special prologue:
+;--- dprintf is to preserve registers & flags; needs a special prologue:
 
 @dprologue macro procname,flag,parmbyte,localbyte,reglist,userparms
 	push bp
@@ -55,8 +55,6 @@ ltoa ENDP
 endm
 
 OPTION PROLOGUE: @dprologue
-
-;--- be aware that hiword(eax) may be trashed by dprintf()!
 
 dprintf proc c public fmt:ptr, args:vararg
 
@@ -178,7 +176,7 @@ handle_x:
 @@:
 printnum:
 	lea si, szTmp
-	push eax       ;v5.86: added
+	push eax       ;v5.86: added (to preserve hiword(eax))
 	invoke ltoa, dx::ax, si, bx
 	mov si, ax
 	pop eax        ;v5.86: added

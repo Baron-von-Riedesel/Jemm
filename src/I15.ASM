@@ -3,9 +3,8 @@
 ;--- Public Domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -20,11 +19,7 @@
 
 ;--- publics/externals
 
-    include external.inc
-
-;--- start
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
+    include extern32.inc
 
 ;--- expected GDT structure pointed to by ES:SI for int 15h, ah=87
 

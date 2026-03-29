@@ -7,8 +7,9 @@
 
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486P
+    .386
     .model FLAT
+    option dotname
 
     include jemm.inc        ;common declarations
     include jemm32.inc      ;declarations for Jemm32
@@ -19,19 +20,16 @@
 
 DEVICE_NAME equ 000Ah   ; offset device name in RSEG
 
-;--- assembly time constants
+;--- config
 
 ?MAXPHYSPG  equ 56      ; std=56, max physical pages (don't set below 4!)
 ?YIELDOPEN  equ 0       ; std=0, 1=yield on handle open
 ?LIM32      equ 0       ; std=0, 1=support LIM EMS 3.2 only
 ?SUPP5B     equ 1       ; std=1, 1=support int 67h, ax=5Bxxh
 
-;--- EMS specific constants
+;--- public/externals
 
-    option proc:private
-    option dotname
-
-    include external.inc
+    include extern32.inc
 
 if ?CODEIN2PAGE
     @seg .text$02,<PAGE>
@@ -39,8 +37,6 @@ else
     @seg .text$02,<PARA>
 endif
 .text$02 ENDS
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
 
 @emmpushreg macro
     SUB ESP, CRS_SIZEX
@@ -1520,10 +1516,10 @@ GetFreeEMSPages PROC
 
 GetFreeEMSPages ENDP
 
-; allocate an EMS page
-; upon entry edi -> EMSPD for new page to allocate
-; return carry if fail
-; destroys EAX
+; allocate an EMS page;
+; IN: edi -> EMSPD for new page to allocate;
+; OUT: C if fail;
+; modifies EAX
 
 AllocateEMSPage PROC
 
@@ -1563,13 +1559,13 @@ AllocateEMSPages proc
     mov ebx,ecx
     MOV EDI,[EMSPageAllocationStart]    ; mark the pages as used
     MOV ECX,[EMSPagesMax]
-@@SEARCH_PAGES:
+nextitem:
     or eax,-1
     REPNZ SCASD
-    jnz @@nofind            ; out of free pages?
+    jnz nofreepg             ; out of free pages?
     sub edi,4
     call AllocateEMSPage     ; allocate the page
-    jc @@nofind
+    jc allocerr
     mov eax,edi
     sub eax,[EMSPageAllocationStart]
     shr eax,2
@@ -1580,10 +1576,11 @@ if ?YIELDOPEN
     call Yield
 endif
     dec ebx
-    JNZ @@SEARCH_PAGES
+    JNZ nextitem
     pop ebx
     ret
-@@nofind:
+allocerr:
+nofreepg:
     pop ebx
     stc
     ret
@@ -1811,7 +1808,7 @@ EMS_Init2 proc public
     call SetEMSStateTable
     call SetEMSNameTable
 
-    @dprintf ?INITDBG,<"EMS handle table=%X, state table=%X, name table=%X",10>, EMSHandleTable, EMSStateTable, EMSNameTable
+    @dprintf ?INITDBG, <"EMS handle table=%X, state table=%X, name table=%X",10>, EMSHandleTable, EMSStateTable, EMSNameTable
 
 ;--- allocate and init EMS page descriptor array (EMSPD)
 ;--- size of EMSPD is 4 bytes, it

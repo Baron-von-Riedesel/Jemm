@@ -3,9 +3,8 @@
 ;--- Public Domain
 ;--- to be assembled with JWasm or Masm v6.1+
 
-    .486
+    .386
     .model FLAT
-    option proc:private
     option dotname
 
     include jemm.inc        ;common declarations
@@ -16,9 +15,7 @@
 
 ;--- publics/externals
 
-    include external.inc
-
-;   assume SS:FLAT,DS:FLAT,ES:FLAT
+    include extern32.inc
 
 .text$01 SEGMENT
 
@@ -85,7 +82,7 @@ vds_handler proc public
     cmp ah,81h
     jnz @@isnotvds
     movzx ebx,al
-    @dprintf ?VDSDBG gt 2,<"VDS entry, al=%X",10>, ebx
+    @dprintf ?VDSDBG gt 2, <"VDS entry, al=%X",10>, ebx
     sub ebx,2
     jc @@vds_reserved
     cmp ebx,VDS_MAX
@@ -113,7 +110,7 @@ endif
 @@isnotvds:
     mov ecx, [OldInt4B]
     jecxz @@novdsoldcall
-    @dprintf ?VDSDBG gt 0,<"unhandled Int 4Bh, jmp to cs:ip=%X",10>, eax
+    @dprintf ?VDSDBG gt 0, <"unhandled Int 4Bh, jmp to cs:ip=%X",10>, eax
     mov word ptr [ebp].Client_Reg_Struc.Client_EIP, CX
     shr ecx, 16
     mov [ebp].Client_Reg_Struc.Client_CS, ECX
@@ -181,7 +178,7 @@ vds_reqbuff proc
 	jnz @@fail
     mov [edi].DDS.wID, 0
     mov ecx, [edi].DDS.dwSize
-    @dprintf ?VDSDBG gt 1,<"VDS request buff, flgs=%X siz=%X",10>, dx, ecx
+    @dprintf ?VDSDBG gt 1, <"VDS request buff, flgs=%X siz=%X",10>, dx, ecx
     and ecx, ecx
     jz @@ok
     mov al, VDSERR_BUFFTOOSMALL  ; buffer too small for region
@@ -212,7 +209,7 @@ vds_reqbuff proc
 
 ;--- a free region large enough found
 
-    @dprintf ?VDSDBG gt 1,<"VDS free region found at %X",10>, ax
+    @dprintf ?VDSDBG gt 1, <"VDS free region found at %X",10>, ax
 
     mov ebx, eax
     mov [edi].DDS.wID, ax
@@ -224,13 +221,13 @@ vds_reqbuff proc
     shl eax, 10     ;convert to byte
     add eax, [DMABuffStartPhys]
     mov [edi].DDS.dwPhys, eax
-    @dprintf ?VDSDBG gt 1,<"VDS req buff, phys=%X",10>, eax
+    @dprintf ?VDSDBG gt 1, <"VDS req buff, phys=%X",10>, eax
     test dl,VDSF_COPY       ; copy into buffer?
     jz @@ok
     xor ecx, ecx
     jmp vds_copyinbuffEx
 @@fail6:    
-    @dprintf ?VDSDBG gt 0,<"VDS req buff aborted, eax=%X, ebx=%X",10>, eax, ebx
+    @dprintf ?VDSDBG gt 0, <"VDS req buff aborted, eax=%X, ebx=%X",10>, eax, ebx
     mov al, VDSERR_BUFFINUSE; error "buffer currently in use"
 @@fail:
     stc
@@ -249,7 +246,7 @@ vds_reqbuff endp
 
 vds_unlock proc
 
-    @dprintf ?VDSDBG gt 2,<"VDS unlock flgs=%X addr=%X:%X siz=%X id=%X phys=%X",10>, dx, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize, [edi].DDS.wID, [edi].DDS.dwPhys
+    @dprintf ?VDSDBG gt 2, <"VDS unlock flgs=%X addr=%X:%X siz=%X id=%X phys=%X",10>, dx, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize, [edi].DDS.wID, [edi].DDS.dwPhys
 
 vds_unlock endp ;fall through
 
@@ -265,8 +262,8 @@ vds_relbuff proc
 	jnz fail10
 
     movzx ebx, [edi].DDS.wID
-    @dprintf ?VDSDBG gt 2,<"VDS release buff, flgs=%X DDS=[siz=%X ID=%X addr=%X",10>, dx, [edi].DDS.dwSize, bx, [edi].DDS.dwPhys
-    @dprintf ?VDSDBG gt 2,<"DMA buffer bits:%08X-%08X-%08X-%08X-X",10>,DMABuffFree+0,DMABuffFree+4,DMABuffFree+8,DMABuffFree+12, byte ptr DMABuffFree+16
+    @dprintf ?VDSDBG gt 2, <"VDS release buff, flgs=%X DDS=[siz=%X ID=%X addr=%X",10>, dx, [edi].DDS.dwSize, bx, [edi].DDS.dwPhys
+    @dprintf ?VDSDBG gt 2, <"DMA buffer bits:%08X-%08X-%08X-%08X-X",10>,DMABuffFree+0,DMABuffFree+4,DMABuffFree+8,DMABuffFree+12, byte ptr DMABuffFree+16
     and ebx, ebx
     jz @@ok
 
@@ -320,7 +317,7 @@ vds_relbuff endp
 testbuffer proc
 
     movzx ebx, [edi].DDS.wID
-    @dprintf ?VDSDBG gt 2,<"VDS testbuff id=%X",10>,bx
+    @dprintf ?VDSDBG gt 2, <"VDS testbuff id=%X",10>,bx
     mov al, VDSERR_INVAL_BUFFID ;"invalid buffer ID"
     and ebx, ebx
     jz  @@fail
@@ -361,16 +358,16 @@ testbuffer proc
     add ebx, [DMABuffStart]
     add ebx, eax
 @@ok:
-    @dprintf ?VDSDBG gt 2,<"VDS testbuff ok, buff start (linear)=%X",10>, ebx
+    @dprintf ?VDSDBG gt 2, <"VDS testbuff ok, buff start (linear)=%X",10>, ebx
     clc
     ret
 @@fail2:
-    @dprintf ?VDSDBG gt 0,<"VDS testbuff @@fail2, ebx=%X ecx=%X",10>, ebx, ecx
+    @dprintf ?VDSDBG gt 0, <"VDS testbuff @@fail2, ebx=%X ecx=%X",10>, ebx, ecx
     pop ebx
 @@fail3:
     mov al,VDSERR_BNDVIOLATION  ;"copy out of buffer range" - buffer boundary violation
 @@fail:
-    @dprintf ?VDSDBG gt 0,<"VDS testbuff failed, al=%X",10>, al
+    @dprintf ?VDSDBG gt 0, <"VDS testbuff failed, al=%X",10>, al
     stc
     ret
     align 4
@@ -402,7 +399,7 @@ vds_copyinbuffEx proc
     movzx eax, [edi].DDS.wSeg
     shl eax, 4
     add eax, [edi].DDS.dwOfs
-    @dprintf ?VDSDBG gt 1,<"VDS copyinbuff src=%X dst=%X siz=%X",10>, eax, ebx, ecx
+    @dprintf ?VDSDBG gt 1, <"VDS copyinbuff src=%X dst=%X siz=%X",10>, eax, ebx, ecx
     pushad
     mov esi, eax
     mov edi, ebx
@@ -663,7 +660,7 @@ endif
     jnc @@lockok
 @@nobuffering:    
 
-    @dprintf ?VDSDBG gt 0,<"VDS lock failed, ret size=%X rc=%X addr=%X:%X siz=%X flags=%X">, edx, al, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize, si
+    @dprintf ?VDSDBG gt 0, <"VDS lock failed, ret size=%X rc=%X addr=%X:%X siz=%X flags=%X">, edx, al, [edi].DDS.wSeg, [edi].DDS.dwOfs, [edi].DDS.dwSize, si
 
 @@lenfail:
     mov [edi].DDS.dwSize,edx    ; update maximum contiguous length
