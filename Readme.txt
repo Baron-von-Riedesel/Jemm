@@ -82,6 +82,8 @@
    actively supported, which increases the emulation speed.
  - the FASTBOOT option shortens reboot time.
  - the SPLIT option can gain additional DOS high memory.
+ - all "lengthy" memory copy operations ( EMS, VDS, Int 15h, JemmEx: XMS )
+   are done with interrupts enabled.
  - Exceptions in protected-mode are detected and displayed.
  - a (rudimentary) API is supplied which allows to extend Jemm. [ JLoad
    uses this API to add support for 32bit protected-mode extensions (JLMs). ]
@@ -253,6 +255,7 @@
  - WRMSR
  - RDMSR
  - RDTSC
+ - HLT
 
  Those instructions may generate an exception 0x0D if they occur in V86-mode
  ( for RDTSC, this depends on a bit in register CR4 ). Jemm's exception handler
@@ -409,6 +412,9 @@
    Jemm386 only. Well, this shouldn't happen. Jemm386 needs the physical
    address of the memory block where it is to reside. The XMM most likely has
    to be replaced.
+
+ - "Warning: unknown A20 method"
+   JemmEx only. Option A20METHOD was given with an invalid method.
 
  - "Warning: option 'xxx=' rejected, invalid syntax"
    The option is ignored.

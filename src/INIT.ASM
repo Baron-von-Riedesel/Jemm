@@ -693,7 +693,7 @@ endif
     mov [dwMaxPhysMem],eax
     mov eax, [esi].JEMMINIT.MaxMem16k
     shl eax, 2
-    mov [dwMaxMem4K],eax
+    mov [pmem.dwMaxMem4K],eax
     mov al, [esi].JEMMINIT.NoPool
     mov [bNoPool],al
 
@@ -763,7 +763,7 @@ if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
     inc ecx
     xor edx, edx
 @@:
-    bts [DMABuffFree], edx
+    bts [vdsstat.DMABuffFree], edx
     inc edx
     loop @B
 
@@ -779,7 +779,7 @@ if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
     xor eax, eax
 @@:
  endif
-    mov [DMABuffSize], eax
+    mov [vdsstat.DMABuffSize], eax
     and eax, eax
     jz @@buffernull
 
@@ -803,16 +803,16 @@ if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
 
     pushad
     mov eax, ecx
-    mov ecx, [DMABuffSize]  ; will be page aligned
+    mov ecx, [vdsstat.DMABuffSize]  ; will be page aligned
     shr ecx, 12
     call MapPhysPagesEx
-    mov [DMABuffStart], eax
+    mov [vdsstat.DMABuffStart], eax
     add edx,4
     mov [PageMapHeap], edx
 
  if ?INITDBG
     mov edi, eax
-    mov ecx, [DMABuffSize]
+    mov ecx, [vdsstat.DMABuffSize]
     shr ecx, 2
     mov eax, "BAMD"
     rep stosd
@@ -821,9 +821,9 @@ if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
     popad
 
 @@buffernull:
-    MOV [DMABuffStartPhys], ecx
+    MOV [vdsstat.DMABuffStartPhys], ecx
 
-    @dprintf ?INITDBG, <"DMA buffer linear=%X physical=%X size=%X phys rest=%X",10>, [DMABuffStart], [DMABuffStartPhys], [DMABuffSize], eax
+    @dprintf ?INITDBG, <"DMA buffer linear=%X physical=%X size=%X phys rest=%X",10>, [DMABuffStart], [vdsstat.DMABuffStartPhys], [vdsstat.DMABuffSize], eax
 
 endif
 
@@ -927,8 +927,8 @@ endif
 @@nospacebelow:
     sub ecx, eax        ;space above DMA buffer needed?
     jbe @@nospaceabove
-    mov eax, [DMABuffStartPhys]
-    add eax, [DMABuffSize]
+    mov eax, [vdsstat.DMABuffStartPhys]
+    add eax, [vdsstat.DMABuffSize]
     @dprintf ?INITDBG, <"heap region above DMA buffer %X, size=%X, pPTE=%X",10>, eax, ecx, edx
     call MapPhysPages
 @@nospaceabove:
@@ -1119,11 +1119,11 @@ endif
 ;--- since the EMS/VCPI memory managment needs a contiguous block
 ;--- of physical memory as input.
 
-    mov ecx, [DMABuffStartPhys]
+    mov ecx, [vdsstat.DMABuffStartPhys]
     cmp eax, ecx
     jnc @@abovedma
     @dprintf ?INITDBG, <"must waste space, phys end of monitor=%X is below DMA buff=%X",10>, eax, ecx
-    add ecx, [DMABuffSize]      ;get physical end of the DMA buff
+    add ecx, [vdsstat.DMABuffSize]      ;get physical end of the DMA buff
     mov eax, ecx
     xor edi, edi
 @@abovedma:
@@ -1140,7 +1140,7 @@ endif
     @dprintf ?INITDBG, <"ERROR: out of memory condition on init, MonitorEnd=%X EDI=%X",10>,[esi].JEMMINIT.MonitorEnd, edi
 
     mov [EMSPagesMax], 0
-    mov [dwMaxMem4K], 0
+    mov [pmem.dwMaxMem4K], 0
     jmp @@initdone
 
 @@nomemproblem:
@@ -1251,7 +1251,7 @@ endif
     shr eax,12                  ; convert bytes to 4k pages
     call Pool_Init2
 
-    @dprintf ?INITDBG, <"EMS/VCPI memory handling initialised, MaxMem4K=%X",10,"end of preallocated EMS, physical=%X",10>, [dwMaxMem4K], edi
+    @dprintf ?INITDBG, <"EMS/VCPI memory handling initialised, MaxMem4K=%X",10,"end of preallocated EMS, physical=%X",10>, [pmem.dwMaxMem4K], edi
 
 if ?INTEGRATED
 
@@ -1279,15 +1279,9 @@ endif
     add edx, 4
     loop @B
 
-    mov eax, ds:[ecx+06h*4]
+    mov eax, [ecx+06h*4]
     mov [OldInt06],eax
-if 0;?SAFEKBD    
-;    mov eax, ds:[ecx+15h*4]
-;    mov [OldInt15],eax
-;    mov eax, ds:[ecx+16h*4]
-;    mov [OldInt16],eax
-endif
-    mov eax, ds:[ecx+19h*4]
+    mov eax, [ecx+19h*4]
     mov [OldInt19],eax
     mov eax, ds:[67h*4]
     mov [OldInt67],eax

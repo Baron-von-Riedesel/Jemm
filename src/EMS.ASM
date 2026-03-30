@@ -1779,7 +1779,7 @@ endif
 @@:
     @dprintf ?INITDBG, <"EMS_Init1: phys EMS pages=%X",10>, edx
     shl edx,2
-    add [dwMaxMem4K],edx
+    add [pmem.dwMaxMem4K],edx
 endif   ;?LIM32
 
     movzx eax,[bEmsPhysPages]

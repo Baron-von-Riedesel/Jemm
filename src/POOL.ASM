@@ -67,13 +67,12 @@ LPPOOL_SYSTEM_INFO typedef ptr POOL_SYSTEM_INFO
 
 .text$01 SEGMENT
 
+pmem PAGEMEM <0,0,0>
+
 PoolAllocationTable DD 0    ; start of pool table
 PoolAllocationEnd   DD 0    ; current end of pool table
 PoolAllocationMax   DD 0    ; end of pool table (usually 80 entries)
 
-dwMaxMem4K          DD 0    ; max 4k pages allowed
-dwTotalMem4K        DD 0    ; total 4k pool pages
-dwUsedMem4K         DD 0    ; used 4k pool pages
 LastBlockAllocated  DD 0    ; last pool block used for alloc
 LastBlockFreed      DD 0    ; last pool block used for free
 XMSPoolBlockCount   DD 0    ; count of XMS handles allocated for pool blocks (not counting initial UMB block)
@@ -110,17 +109,17 @@ Pool_GetPhysAddr endp
 Pool_GetFree4KPages PROC public
 
     call Pool_GetFreeXMSPages   ; get free 4k XMS pages in EDX
-    mov eax,[dwTotalMem4K]
-    sub eax,[dwUsedMem4K]       ; eax = free 4k pages in Pool
+    mov eax,[pmem.dwTotalMem4K]
+    sub eax,[pmem.dwUsedMem4K]  ; eax = free 4k pages in Pool
     add edx,eax                 ; edx = true free 4k pages
-    mov eax,[dwMaxMem4K]
-    sub eax,[dwUsedMem4K]       ; eax = max free 4k pages allowed
+    mov eax,[pmem.dwMaxMem4K]
+    sub eax,[pmem.dwUsedMem4K]  ; eax = max free 4k pages allowed
     cmp eax,edx
     jb @@uselower
     mov eax,edx
 @@uselower:                     ; eax = min(eax, edx)
 
-    @dprintf ?POOLDBG, <"Pool_GetFree4KPages: %X, dwUsedMem4K=%X, dwMaxMem4K=%X",10>, eax, dwUsedMem4K, dwMaxMem4K
+    @dprintf ?POOLDBG, <"Pool_GetFree4KPages: %X, dwUsedMem4K=%X, dwMaxMem4K=%X",10>, eax, pmem.dwUsedMem4K, pmem.dwMaxMem4K
     ret
     align 4
 
@@ -133,7 +132,7 @@ Pool_GetFree4KPages ENDP
 ; the current pool descriptors.
 ; it is
 ;     total of free 16k pages in current pool
-;   + Min(free XMS pages, dwMaxMem4k - dwTotalMem)/4
+;   + Min(free XMS pages, pmem.dwMaxMem4k - pmem.dwTotalMem)/4
 
 Pool_GetFree16KPages PROC public
     push esi
@@ -152,12 +151,12 @@ Pool_GetFree16KPages PROC public
     cmp esi, [PoolAllocationEnd]
     jb  @@findblkloop
 
-;--- get MIN(free XMS pages, dwMaxMem4k - dwTotalMem)/4 into ESI
+;--- get MIN(free XMS pages, pmem.dwMaxMem4k - dwTotalMem)/4 into ESI
 
     call Pool_GetFreeXMSPages   ;return free 4k XMS pages in EDX
 
-    mov esi, [dwMaxMem4K]
-    sub esi, [dwTotalMem4K]
+    mov esi, [pmem.dwMaxMem4K]
+    sub esi, [pmem.dwTotalMem4K]
     jnc @@valueok
     xor esi, esi
 @@valueok:
@@ -169,7 +168,7 @@ Pool_GetFree16KPages PROC public
 
     add eax, esi
 
-    @dprintf ?POOLDBG, <"Pool_GetFree16KPages=%X max4k=%X total4k=%X XMS-4k=%X",10>, eax, [dwMaxMem4K], [dwTotalMem4K], edx
+    @dprintf ?POOLDBG, <"Pool_GetFree16KPages=%X max4k=%X total4k=%X XMS-4k=%X",10>, eax, [pmem.dwMaxMem4K], [pmem.dwTotalMem4K], edx
     pop edx
     pop ecx
     pop esi
@@ -259,7 +258,7 @@ endif
     add [esi].POOL_SYSTEM_INFO.psi_16kmax,2     ; adjust allocation tracking bytes
     add [esi].POOL_SYSTEM_INFO.psi_16kfree,2
     add [esi].POOL_SYSTEM_INFO.psi_4kfree,2*4
-    add [dwTotalMem4K],2*4
+    add [pmem.dwTotalMem4K],2*4
     
 ;--- zero tracking allocation byte (not really needed)
 
@@ -395,7 +394,7 @@ endif
     dec [esi].POOL_SYSTEM_INFO.psi_4kfree
     mov [LastBlockAllocated],esi    ; update "last block allocated from"
 
-    inc [dwUsedMem4K]
+    inc [pmem.dwUsedMem4K]
 
     sub edi,esi
     sub edi,POOLBLOCK_SYSTEM_SPACE  ; get "byte offset" into EDI
@@ -506,7 +505,7 @@ Pool_Allocate16KPage PROC public
 
 @@valid2:
 
-    add [dwUsedMem4K],4             ; update pool page counter
+    add [pmem.dwUsedMem4K],4        ; update pool page counter
 
     mov [LastBlockAllocated],esi    ; update last block allocated from
     mov eax,esi
@@ -622,7 +621,7 @@ Pool_Free4KPage PROC public
     inc [esi].POOL_SYSTEM_INFO.psi_4kfree
     mov [LastBlockFreed],esi
     
-    dec [dwUsedMem4K]
+    dec [pmem.dwUsedMem4K]
 
 ; check if this frees up a 16K chunk
 
@@ -676,7 +675,7 @@ Pool_Free16KPage PROC public
     inc [esi].POOL_SYSTEM_INFO.psi_16kfree
     add [esi].POOL_SYSTEM_INFO.psi_4kfree,4
 
-    sub [dwUsedMem4K],4     ; update pool page counter 
+    sub [pmem.dwUsedMem4K],4; update pool page counter 
 
     mov [LastBlockFreed],esi
     call Pool_TryFreeToXMS  ; free empty pool allocation block to XMS if appropriate
@@ -783,7 +782,7 @@ Pool_PrepareBlock PROC
     shl eax,2           ; 8-bit value potentially going to 16-bit
     mov [edx].POOL_SYSTEM_INFO.psi_4kfree,ax
 
-    add [dwTotalMem4K],eax
+    add [pmem.dwTotalMem4K],eax
 
 ; return true memory assigned - (block size + start adjustment)
 
@@ -904,7 +903,7 @@ Pool_TryFreeToXMS PROC
     movzx edx, [edi].POOL_SYSTEM_INFO.psi_16kmax 
     shl edx, 2
     mov [edi].POOL_SYSTEM_INFO.psi_addressK, eax
-    sub [dwTotalMem4K], edx
+    sub [pmem.dwTotalMem4K], edx
     mov dword ptr [edi].POOL_SYSTEM_INFO.psi_4kfree, eax    ;this also clears the 16kb counters
 
 @@freenext:
@@ -1006,8 +1005,8 @@ Pool_AllocateEMBForPool PROC
     jne @@allocfail
 
     mov ebp, POOLBLOCK_MEMSIZE  ;1536 kB
-    mov eax, [dwMaxMem4K]
-    sub eax, [dwTotalMem4K] 
+    mov eax, [pmem.dwMaxMem4K]
+    sub eax, [pmem.dwTotalMem4K] 
     jbe @@allocfail     ;if max memory already allocated
     shl eax, 2          ;convert to 1K units
     cmp ebp, eax
@@ -1110,8 +1109,8 @@ endif
 
 ; if esi (=XMSBlockSize) >= max free, then reduce XMSBlockSize
 
-    mov eax,[dwMaxMem4K]
-    sub eax,[dwTotalMem4K]
+    mov eax,[pmem.dwMaxMem4K]
+    sub eax,[pmem.dwTotalMem4K]
     shl eax,2               ; convert to 1K blocks
 
 @@checksize:
@@ -1346,7 +1345,7 @@ endif
 ; initialize memory pool block descriptors
 ; each descriptor describes a memory block <= 1.5M (48*8 * 4K)
 ; and is 16 + 48 = 64 bytes in size.
-; required are: ((dwMaxMem4K / 1.5M) + x) * 64 bytes bytes for these items
+; required are: ((pmem.dwMaxMem4K / 1.5M) + x) * 64 bytes bytes for these items
 ; x is max number of XMS handles
 ; in: ESI -> JEMMINIT
 ; in: EDI -> free memory
@@ -1360,9 +1359,9 @@ Pool_Init1 proc public
     mov [PoolAllocationTable],edi
     mov [PoolAllocationEnd],edi
 
-    mov eax,[dwMaxMem4K]    ;= 30720 x 4k = 120 MB
+    mov eax,[pmem.dwMaxMem4K]    ;= 30720 x 4k = 120 MB
     cdq
-    mov ecx,POOLBLOCK_MEMSIZE/4     ; since dwMaxMem4k is in 4k units
+    mov ecx,POOLBLOCK_MEMSIZE/4     ; since pmem.dwMaxMem4k is in 4k units
     div ecx             ; default: 30720/384 = 80
     add eax,2           ; round up, not down (and 1 extra for NoPool)
     cmp [bNoPool],0
@@ -1406,19 +1405,19 @@ Pool_Init2 proc public
     cmp [bNoPool], 0
     je @@setblocks
 
-    @dprintf ?INITDBG, <"pool sharing is off, 4k pages remaining=%X dwMaxMem4k=%X",10>, eax, dwMaxMem4K
+    @dprintf ?INITDBG, <"pool sharing is off, 4k pages remaining=%X pmem.dwMaxMem4k=%X",10>, eax, pmem.dwMaxMem4K
 
 ;-- pool sharing is off, rest of block is used for EMS/VCPI
 ;-- make sure current values of MaxMem4K and EMSPagesMax
 ;-- are not too high
 
-    mov ecx,[dwMaxMem4K] 
-    sub ecx,[dwTotalMem4K]
+    mov ecx,[pmem.dwMaxMem4K] 
+    sub ecx,[pmem.dwTotalMem4K]
     cmp eax, ecx
     jnc @@isnodecrease      ;jump if more pages are available
     sub ecx, eax
-    sub [dwMaxMem4K],ecx
-    mov ecx, eax            ;dwMaxMem4K has to be adjusted
+    sub [pmem.dwMaxMem4K],ecx
+    mov ecx, eax            ;pmem.dwMaxMem4K has to be adjusted
 @@isnodecrease:
     push ecx
     call EMS_CheckMax

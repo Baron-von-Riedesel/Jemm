@@ -153,9 +153,9 @@ VCPI_GetMax PROC
 if ?EMX
     test bV86Flags, V86F_EMX;the EMX DOS extender fails if too much memory
     jz @@noemx              ;is available!
-    mov edx,[dwMaxMem4K]    ;mem in 4K pages
+    mov edx,[pmem.dwMaxMem4K]
     shl edx, 12             ;convert to bytes
-    add edx, [DMABuffStartPhys]
+    add edx, [vdsstat.DMABuffStartPhys]
 @@noemx:
 endif
     dec edx
@@ -191,8 +191,8 @@ VCPI_GetFreePages ENDP
 
 VCPI_Allocate4K PROC public
 
-    mov eax,[dwMaxMem4K]
-    sub eax,[dwUsedMem4K]
+    mov eax,[pmem.dwMaxMem4K]
+    sub eax,[pmem.dwUsedMem4K]
     jbe @@fail
     call Pool_Allocate4KPage    ; see if any pool block has 4K free
     jc @@fail

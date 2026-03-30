@@ -81,13 +81,13 @@ endif
 	.const
 
 intvecs label INTMOD
-	INTMOD <15h,offset NEW15, offset OLDINT15>
+	INTMOD <15h,offset NEW15, offset OldInt15>
 if ?INTEGRATED
-	INTMOD <2Fh,offset NEW2F, offset OLDINT2F>
+	INTMOD <2Fh,offset NEW2F, offset OldInt2F>
 endif
 if ?HOOK13
-	INTMOD <13h,offset NEW13, offset OLDINT13>
-	INTMOD <40h,offset NEW40, offset OLDINT40>
+	INTMOD <13h,offset NEW13, offset OldInt13>
+	INTMOD <40h,offset NEW40, offset OldInt40>
 endif
 	INTMOD <67h,offset BP67,  -1>
 	INTMOD <06h,offset BP06,  -1>
@@ -142,9 +142,9 @@ if ?HOOK13
 endif
 	@DefineBP BPXMS 	; handle XMS A20+UMB
 	@DefineBP BPSTRAT	; EMMXXXX0 device strategy call
-	@DefineBP BPDRV 	; EMMXXXX0 device interrupt call
+	@DefineBP BPINTR	; EMMXXXX0 device interrupt call
 if ?UNLOAD
-	@DefineBP BPRESET	; unload
+	@DefineBP BPUNL		; unload
 endif
 
 if ?HOOK13
@@ -158,7 +158,7 @@ NEW40 PROC FAR
 	mov cs:[bRFlags],RFL_DMAOP	; tell the monitor that a new DMA op has started
 	pushf
 	db 09Ah
-OLDINT40 dd 0
+OldInt40 dd 0
 	jmp int1340common
 NEW40 ENDP
 
@@ -168,7 +168,7 @@ NEW13 PROC FAR
 	mov cs:[bRFlags],RFL_DMAOP	; tell the monitor that a new DMA op has started
 	pushf
 	db 09Ah
-OLDINT13 dd 0
+OldInt13 dd 0
 NEW13 ENDP	;fall thru
 
 int1340common:
@@ -225,7 +225,7 @@ xms_smax_noe820 db ?
  endif
 endif
 	db 0EAh
-OLDINT15 dd 0
+OldInt15 dd 0
 if ?INTEGRATED
 i1588:
 	xor ax,ax			; no memory available
@@ -233,7 +233,7 @@ i1588:
  if ?XMS35
 memmap:
 	pushf
-	call cs:[OLDINT15]
+	call cs:[OldInt15]
 	jc iret_with_new_CY
 	cmp eax,SMAP
 	clc
@@ -271,17 +271,17 @@ else
 ;-- are trapped. That's because if certain conditions are true
 ;-- the XMS host will never access the ports and leave A20 unchanged.
 
-if ?A20XMS
+ if ?A20XMS
 	cmp ah,3
-	jb	@@noa20
+	jb @@noa20
 	cmp ah,6
 	jbe BPXMS
 @@noa20:
-endif
+ endif
 
 XMSUMB::
 	cmp ah,10h			; 10h=alloc, 11h=free, 12=realloc
-	jb	@@xms_prev
+	jb @@xms_prev
 	cmp ah,12h
 	jbe BPXMS
 @@xms_prev:
@@ -300,7 +300,7 @@ NEW2F proc
 @@jmp_old2f:
 	popf
 	db 0EAh
-OLDINT2F dd 0
+OldInt2F dd 0
 is43:
 	cmp al,00h			; is it "Installation Check"?
 	je @@get_driver_installed
@@ -540,7 +540,7 @@ endif
 	pushd 0
 	push 3FFh
 	push es
-	push offset BPRESET
+	push offset BPUNL
 	call dword ptr [bp-(4+6)]
 
 ;--- Jemm386 has exited, but we are still in protected mode!
@@ -557,10 +557,10 @@ endif
 @@:
 	.386p
 	LIDT FWORD ptr [bp-6]; reset IDT to 0:3ffh (v5.86: now done AFTER mode switch)
-if 1
+ if 1
 	xor eax,eax	;v5.86: clear TLB
 	mov cr3,eax
-endif
+ endif
 	.386
 	mov sp,bp
 	pop bp
@@ -927,7 +927,7 @@ endif
 ;-- set new interrupt routine offset in the driver header, so any further
 ;-- access to device EMMXXXX0 is handled by the monitor
 
-	mov [pIntOfs],offset BPDRV
+	mov [pIntOfs],offset BPINTR
 	mov [pStratOfs],offset BPSTRAT
 
 if ?KD

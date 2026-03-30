@@ -484,11 +484,11 @@ endif
 
     @dprintf ?DMADBG, <"block not contiguous or crosses 64k border, DMA buffer needed!",10>
 
-    MOV ESI,[DMABuffStartPhys]      ; get DMA Buffer physical address
+    MOV ESI,[vdsstat.DMABuffStartPhys] ; get DMA Buffer physical address
 ;    BTS [DmaGblFlags], DMAG_NeedBuffer	; flag is set, but nowhere queried, so actually it's not really used
-    cmp ecx, [DMABuffSize]
+    cmp ecx, [vdsstat.DMABuffSize]
     jbe @F
-    mov ecx, [DMABuffSize]          ; error: DMA buffer overflow    
+    mov ecx, [vdsstat.DMABuffSize]     ; error: DMA buffer overflow    
 @@:
     call @@SetX                     ; use ESI to set DMA registers page & offset
     MOV AL,[DmaChn+EDI*sizeof DMAREQ].bMode  ; copy data into buffer required?
@@ -500,7 +500,7 @@ endif
 
     push edi
     MOV ESI,EBX
-    MOV EDI,[DMABuffStart]
+    MOV EDI,[vdsstat.DMABuffStart]
     CLD
     call MoveMemory
     pop edi
@@ -678,7 +678,7 @@ if ?HOOK13
     and [ebp].Client_Reg_Struc.Client_EFlags, not 1 ;CF=0
 endif
 
-    MOV ESI,[DMABuffStart]
+    MOV ESI,[vdsstat.DMABuffStart]
     MOV EDI,[DmaTargetAdr]
     mov ECX,[DmaTargetLen]
 

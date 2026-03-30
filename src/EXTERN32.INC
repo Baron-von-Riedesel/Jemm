@@ -26,8 +26,8 @@ externdef dwTSS:dword
 endif
 externdef dwMaxPhysMem:dword
 externdef PageMapHeap:dword
-externdef dwMaxMem4K:dword
-externdef dwUsedMem4K:dword
+externdef pmem:PAGEMEM
+externdef vdsstat:DMABUFF
 externdef dwRes:dword
 externdef dwRSeg:dword
 if ?HOOK13
@@ -38,17 +38,12 @@ endif
 externdef bpstart:dword
 externdef wMasterPICBase:word
 externdef wSlavePICBase:word
-externdef DMABuffStartPhys:dword
 externdef bNoInvlPg:byte
 externdef bV86Flags:byte
 externdef DmaChn:DMAREQ
 externdef bBpTab:byte
 externdef bNoPool:byte
 externdef OldInt06:dword
-if 0;?SAFEKBD
-;externdef OldInt15:dword
-;externdef OldInt16:dword
-endif
 externdef OldInt19:dword
 externdef OldInt67:dword
 
@@ -79,11 +74,6 @@ endif
 if ?KD
 externdef bKD:byte
 endif
-
-externdef DMABuffSize:dword
-externdef DMABuffStart:dword
-externdef DMABuffFree:dword
-
 .text$01 ENDS
 
 @seg .text$03,<DWORD>

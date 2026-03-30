@@ -168,19 +168,19 @@ endif
     mov [ebx].EMX06.e06_NoVCPI, al
     cmp edx,24                  ;to get VCPI memory info, we need 24 byte
     jb @@novcpimem
-    mov eax, [dwMaxMem4K]       ;VCPI 4 kB pages
+    mov eax, [pmem.dwMaxMem4K]  ;VCPI 4 kB pages
     mov [ebx].EMX06.e06_VCPITotal, eax
-    mov eax, [dwUsedMem4K]
+    mov eax, [pmem.dwUsedMem4K]
     mov [ebx].EMX06.e06_VCPIUsed, eax
 @@novcpimem:
 if 1;?DMAPT
-    mov eax, [DMABuffStartPhys]
+    mov eax, [vdsstat.DMABuffStartPhys]
 else
     xor eax, eax
 endif
     mov [ebx].EMX06.e06_DMABuff, eax
 if 1;?DMAPT
-    mov eax, [DMABuffSize]
+    mov eax, [vdsstat.DMABuffSize]
     shr eax, 10
 else
     xor eax, eax

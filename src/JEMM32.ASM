@@ -34,7 +34,7 @@
 
 ;--- equates
 
-?STKSIZE    EQU 200H    ; Size monitor stack for non-reentrant execution
+?STKSIZE    EQU 200H    ; reserved stack space for v86 entry into monitor.
 
 ;--- assembly time constants
 
@@ -131,10 +131,6 @@ OldInt06        dd 0
 dwHeapSize      label dword ; used during Init only
 OldInt19        dd 0
 OldInt67        dd 0
-if 0;?SAFEKBD
-;OldInt15        dd 0        ; v5.85: original INT 15h vector
-;OldInt16        dd 0        ; store to have a safe keyboard input
-endif
 ;pPg0PartEnd     dd 0
 
     public  pSmallHeap
@@ -2433,7 +2429,7 @@ if ?VDS
     call VDS_Exit
 endif
     mov eax, [OldInt67]
-    mov [ebx+67h*4],eax
+    mov ds:[67h*4],eax
 
     mov edx, [ebp].Client_Reg_Struc.Client_EIP
     mov ecx, [ebp].Client_Reg_Struc.Client_ESP

@@ -27,11 +27,8 @@ if ?DMAPT or ?VDS
 
     align 4
 
-DMABuffStart    DD  0           ; start of DMA-Buffer (linear address)
-DMABuffSize     DD  0           ; max size of the DMA-Buffer in bytes
-DMABuffStartPhys DD 0           ; start of DMA-Buffer (physical address)
-DMABuffFree     DD ?DMABUFFMAX/32 dup (0)   ; bits for DMA buffer handling
-                db 0    ; space for 2 additional bits is needed!
+vdsstat DMABUFF <0,0,0,?DMABUFFMAX/32 dup (0),0>
+
     align 4
 endif
 
@@ -149,7 +146,7 @@ vds_version proc
     mov word ptr [ebp].Client_Reg_Struc.Client_EAX, 100h; major/minor spec version
     mov word ptr [ebp].Client_Reg_Struc.Client_EBX, 1   ; product number
     mov word ptr [ebp].Client_Reg_Struc.Client_ECX, 1   ; product revision
-    mov eax, [DMABuffSize]
+    mov eax, [vdsstat.DMABuffSize]
     mov word ptr [ebp].Client_Reg_Struc.Client_EDI,ax
     shr eax, 16
     mov word ptr [ebp].Client_Reg_Struc.Client_ESI,ax
@@ -184,12 +181,12 @@ vds_reqbuff proc
     mov al, VDSERR_BUFFTOOSMALL  ; buffer too small for region
     add ecx, 400h-1 ; align to kB
     and cx, 0FC00h
-    cmp ecx, [DMABuffSize]
+    cmp ecx, [vdsstat.DMABuffSize]
     ja @@fail
 
 ;--- scan for a free region in buffer
 
-    mov eax, [DMABuffSize]
+    mov eax, [vdsstat.DMABuffSize]
     shr eax, 10         ; transform in KB
     inc eax             ; the bit vector is 1-based!
     shr ecx, 10
@@ -199,7 +196,7 @@ vds_reqbuff proc
 @@nextbit:
     dec eax
     js @@fail6
-    bt [DMABuffFree], eax
+    bt [vdsstat.DMABuffFree], eax
     jnc @@rescan
     dec ebx
     jnz @@nextbit
@@ -214,12 +211,12 @@ vds_reqbuff proc
     mov ebx, eax
     mov [edi].DDS.wID, ax
 @@marknextbit:
-    btr [DMABuffFree], ebx
+    btr [vdsstat.DMABuffFree], ebx
     inc ebx
     loop @@marknextbit
     dec eax
     shl eax, 10     ;convert to byte
-    add eax, [DMABuffStartPhys]
+    add eax, [vdsstat.DMABuffStartPhys]
     mov [edi].DDS.dwPhys, eax
     @dprintf ?VDSDBG gt 1, <"VDS req buff, phys=%X",10>, eax
     test dl,VDSF_COPY       ; copy into buffer?
@@ -263,7 +260,7 @@ vds_relbuff proc
 
     movzx ebx, [edi].DDS.wID
     @dprintf ?VDSDBG gt 2, <"VDS release buff, flgs=%X DDS=[siz=%X ID=%X addr=%X",10>, dx, [edi].DDS.dwSize, bx, [edi].DDS.dwPhys
-    @dprintf ?VDSDBG gt 2, <"DMA buffer bits:%08X-%08X-%08X-%08X-X",10>,DMABuffFree+0,DMABuffFree+4,DMABuffFree+8,DMABuffFree+12, byte ptr DMABuffFree+16
+    @dprintf ?VDSDBG gt 2, <"DMA buffer bits:%08X-%08X-%08X-%08X-%X",10>,vdsstat.DMABuffFree+0,vdsstat.DMABuffFree+4,vdsstat.DMABuffFree+8,vdsstat.DMABuffFree+12, byte ptr vdsstat.DMABuffFree+16
     and ebx, ebx
     jz @@ok
 
@@ -277,10 +274,10 @@ vds_relbuff proc
 
     movzx ebx, bx
     dec ebx
-    bt [DMABuffFree], ebx
+    bt [vdsstat.DMABuffFree], ebx
     jnc @@error
     inc ebx
-    bt [DMABuffFree], ebx
+    bt [vdsstat.DMABuffFree], ebx
     jc @@error
 
     test dl, VDSF_COPY
@@ -292,7 +289,7 @@ vds_relbuff proc
     jc @@error
 
 @@nextbit:
-    bts [DMABuffFree], ebx
+    bts [vdsstat.DMABuffFree], ebx
     inc ebx
     jnc @@nextbit
 @@ok:
@@ -324,10 +321,10 @@ testbuffer proc
     cmp bx, ?DMABUFFMAX
     ja  @@fail
     dec ebx
-    bt [DMABuffFree], ebx   ;bit at -1 *must* be set
+    bt [vdsstat.DMABuffFree], ebx   ;bit at -1 *must* be set
     jnc @@fail
     inc ebx
-    bt [DMABuffFree], ebx   ;bit at 0 bit *must* be clear
+    bt [vdsstat.DMABuffFree], ebx   ;bit at 0 bit *must* be clear
     jc @@fail
     mov eax, ecx            ;eax == offset in DMA buffer
 
@@ -346,7 +343,7 @@ testbuffer proc
 
     push ebx
 @@nextbit:
-    bt [DMABuffFree], ebx
+    bt [vdsstat.DMABuffFree], ebx
     jc @@fail2
     inc ebx
     dec ecx
@@ -355,7 +352,7 @@ testbuffer proc
 
     dec ebx
     shl ebx, 10
-    add ebx, [DMABuffStart]
+    add ebx, [vdsstat.DMABuffStart]
     add ebx, eax
 @@ok:
     @dprintf ?VDSDBG gt 2, <"VDS testbuff ok, buff start (linear)=%X",10>, ebx

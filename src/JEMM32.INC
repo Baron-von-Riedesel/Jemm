@@ -196,6 +196,20 @@ bEnd    db ?
 dwProc  dd ?
 IOTRAPENTRY ends
 
+PAGEMEM struct
+dwMaxMem4K          DD ?    ; max 4k pages allowed
+dwTotalMem4K        DD ?    ; total 4k pool pages
+dwUsedMem4K         DD ?    ; used 4k pool pages
+PAGEMEM ends
+
+DMABUFF struct
+DMABuffStart    DD  ?           ; start of DMA-Buffer (linear address)
+DMABuffSize     DD  ?           ; max size of the DMA-Buffer in bytes
+DMABuffStartPhys DD ?           ; start of DMA-Buffer (physical address)
+DMABuffFree     DD ?DMABUFFMAX/32 dup (?)   ; bits for DMA buffer handling
+                DB ?    ; space for 2 additional bits is needed!
+DMABUFF ends
+
 ;--- Jemm Service Table
 ;--- this structure is filled and returned by 
 ;--- IoCtl call 8. Used by JLoad.

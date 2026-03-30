@@ -7,9 +7,9 @@
 
 CStr macro text:VARARG
 local sym
-	.const
+CONST segment
 sym db text,0
-	.code
+CONST ends
 	exitm <offset sym>
 endm
 
@@ -82,9 +82,6 @@ ExcludeTest	DB FALSE;X=TEST
 IncludeTest	DB FALSE;I=TEST
 if ?SPLIT
 SplitTest	DB 0
-endif
-if ?NOVMWARE
-NoVMWare	DB 0
 endif
 MinRequest	DB FALSE;MIN= has been found
 
@@ -253,21 +250,6 @@ endif
 SystemMemory DB 100H DUP (?)
 
 	.code
-
-handle_char proc
-
-	mov dl,al
-	cmp al,10
-	jnz @F
-	mov dl,13
-	call @F
-	mov dl,10
-@@:
-	mov ah,2
-	int 21h
-	ret
-
-handle_char endp
 
 ;--- ltoa(long n, char * s, int base);
 ;--- convert long to string
@@ -461,6 +443,18 @@ handle_u:
 		call handle_char
 		dec cx
 	.endw
+	retn
+
+handle_char:
+	mov dl,al
+	cmp al,10
+	jnz @F
+	mov dl,13
+	call @F
+	mov dl,10
+@@:
+	mov ah,2
+	int 21h
 	retn
 
 printf ENDP
@@ -1268,40 +1262,39 @@ _ret:
 	ret
 I15GetMemoryStatus endp
 
-;--- get A20 method
+;--- get A20 method from cmdline;
+;--- out: NC ok, AL=method. C if method unknown.
 
 GetA20Method PROC stdcall uses si di cmdline:ptr BYTE
 
-	mov si,[cmdline]
-	mov di,offset a20_methods
-	xor bx,bx
+	mov di, offset a20_methods
+	mov ah, 0
 	cld
-@@nextitem:
-	mov cl,[di]
-	mov ch,0
-	jcxz @@done
+nextitem:
+	movzx cx, byte ptr [di]
+	stc
+	jcxz @@failed
 	inc di
-	pusha
-@@nextchar:
+	mov si, cmdline
+@@:
 	lodsb
-	or al,20h
+	or al, 20h
 	scasb
-	loopz @@nextchar
-	popa
+	loopz @B
 	jz @@found
-	add di,cx
-	inc bx
-	jmp @@nextitem
+	add di, cx
+	inc ah
+	jmp nextitem
+
 @@found:
-	mov di,si
-	add si,cx
-@@nextchar2:
+	mov di, cmdline	; remove method from cmdline
+@@:
 	lodsb
 	stosb
-	and al,al
-	jnz @@nextchar2
-@@done:
-	mov ax,bx
+	and al, al
+	jnz @B
+	mov al, ah
+@@failed:
 	ret
 
 GetA20Method ENDP
@@ -1407,6 +1400,9 @@ disable_enable_a20_dummy proc
 	ret
 disable_enable_a20_dummy endp
 
+;--- get current status of A20;
+;--- out: Z = A20 disabled;
+
 get_a20_status proc uses ds es cx si di
 	mov cx,-1
 	mov es,cx
@@ -1419,28 +1415,29 @@ get_a20_status proc uses ds es cx si di
 	ret
 get_a20_status endp
 
-; upon entry bx->disable/enable routine for a20 method being tested
-; return carry set if failed, reset if success
-;
+;--- test A20 state;
+;--- in: SI=offset a20proc for disable/enable A20;
+;--- out: C set if failed, NC if success.
+
 test_A20_proc proc
 	call get_a20_status
 	setnz dl
-	jz @F			; A20 disabled on entry
-	mov ah,0
+	jz @F			; jmp if A20 disabled
+	mov ah, DISABLE_A20
 	call si 		; try to disable A20
 	call get_a20_status
-	jnz @@fail		; A20 not disabled
+	jnz @@fail		; jmp if A20 not disabled
 @@:
 
 ; try to enable A20 (always disabled at this point)
 
-	mov ah,2
+	mov ah, ENABLE_A20
 	call si
 	call get_a20_status
-	jz @@fail		; A20 not enabled
+	jz @@fail		; jmp if A20 not enabled
 	or dl,dl
 	jne @@ok		; A20 was enabled on entry, done
-	mov ah,0
+	mov ah, DISABLE_A20
 	call si
 	call get_a20_status
 	jnz @@fail		; A20 not disabled
@@ -1535,8 +1532,8 @@ detect_KBC proc
 
 detect_KBC endp
 
-;--- get the A20 proc to use
-;--- in: AH = 0 -> ignore A20 current state
+;--- get the A20 method to use if not set by cmdline option;
+;--- out: NC ok, AL=method#; C failure.
 
 InitA20 proc c uses si
 
@@ -1549,7 +1546,7 @@ InitA20 proc c uses si
 
 ;--- not on, try other methods
 
-	call detect_fast; see if port 92h (2403h BIOS call) handler supported	
+	call detect_fast; see if port 92h (2403h BIOS call) handler supported
 	mov al, A20_FAST
 	jnc done
 	call detect_PS2 ; see if port 92h (PS/2 signature) handler supported
@@ -1986,16 +1983,17 @@ endif
 	mov ax,4402h	;read ioctl
 	int 21h
 	jc @@nouninst
+
 	@dprintf ?UNLRMDBG, <"TryUnload, got UMBs from Jemm",10>
+	mov si,dx
 	xor dx,dx
 	mov cx,UMB_MAX_BLOCKS
-	mov si,sp
 @@:
 	lodsw			;segment
 	lodsw			;size + flag
 	or dx,ax
 	loop @B
-	mov sp,si
+;	mov sp,si
 	test dh,80h 	;any umb allocated?
 	jnz @@nouninst
 	@dprintf ?UNLRMDBG, <"TryUnload, no allocated UMBs",10>
@@ -2560,14 +2558,96 @@ mainex PROC c public uses di si mode:word, cmdline:ptr BYTE
 local rangestart:word
 local rangestop:word
 local found:word
+local wChkVMWare:word
 local memtype:byte
 local bOptionSet:byte
 local bHelp:byte
 
+	.data
+	even
+cmdopts1 label word
+	dw CStr("NOVCPI"), offset setnovcpi
+	dw CStr("VCPI"),   offset setvcpi
+if ?INTEGRATED
+;--- /* must come before A20 option - it's a noop for Jemm32, since handled by 16-bit code */
+	dw CStr("A20METHOD:"), offset geta20method
+endif
+if ?A20PORTS or ?A20XMS
+	dw CStr("NOA20"),  offset setnoa20
+	dw CStr("A20"),    offset seta20
+endif
+if ?VME
+	dw CStr("NOVME"),  offset setnovme
+	dw CStr("VME"),    offset setvme
+endif
+if ?PGE
+	dw CStr("NOPGE"),  offset setnopge
+	dw CStr("PGE"),    offset setpge
+endif
+endcmdopts1 label word
+
+cmdopts2 label word
+if ?V86EXC0D
+	dw CStr("V86EXC0D"), offset setv86exc0d
+endif
+if ?INTEGRATED
+	dw CStr("HMAMIN="), offset sethmamin
+	dw CStr("MAXEXT="), offset setmaxext
+ if ?XMS35
+	dw CStr("MAXSEXT="), offset setmaxsext
+ endif
+	dw CStr("NOE801"),  offset setnoe801
+	dw CStr("NOE820"),  offset setnoe820
+	dw CStr("XMSHANDLES="), offset setxmshandles
+	dw CStr("X2MAX="),  offset setx2max
+endif
+	dw CStr("VERBOSE"), offset setverbose
+	dw CStr("/V"),     offset setverbose
+	dw CStr("NODYN"),  offset setnodyn
+	dw CStr("NOINVLPG"), offset setnoinvlpg
+	dw CStr("MIN="),   offset setmin
+	dw CStr("MAX="),   offset setmax
+	dw CStr("NOEMS"),  offset setnoems
+	dw CStr("NOVDS"),  offset setnovds
+	dw CStr("VDS"),    offset setvds
+	dw CStr("FRAME=NONE"), offset setnoframe
+	dw CStr("/P"),     offset setframe
+	dw CStr("FRAME="), offset setframe
+	dw CStr("X=TEST"), offset setxeqtest
+	dw CStr("I=TEST"), offset setieqtest
+if ?SB
+	dw CStr("SB"),     offset setsb
+endif
+if ?EMX
+	dw CStr("EMX"),    offset setemx
+endif
+if ?SPLIT
+	dw CStr("SPLIT"),  offset setsplit
+endif
+if ?NOVMWARE
+	dw CStr("NOVMW"),  offset setnovmw
+endif
+if ?MOVEXBDA
+	dw CStr("MOVEXBDA"), offset setmovexbda
+endif
+	dw CStr("NOCHECK"), offset setnocheck
+	dw CStr("ALTBOOT"), offset setaltboot
+	dw CStr("NOHI"),    offset setnohi
+;--- NOMOVEXBDA is a no-op, but helps MS EMM386 switch compatibility
+	dw CStr("NOMOVEXBDA"), offset _ret
+	dw CStr("NORAM"),   offset setnoram
+	dw CStr("RAM"),     offset setram
+	dw CStr("D="),      offset setdma
+	dw CStr("B="),      offset setborder
+endcmdopts2 label word
+
+	.code
+
 	@dprintf ?INITRMDBG, <"mainex enter",10>
 	cld
-	xor di,di		;bOptionSet
 	mov bHelp, FALSE
+	mov bOptionSet, 0
+	mov wChkVMWare, offset checkvmware
 
 	mov si,cmdline
 	.if mode != EXECMODE_EXE
@@ -2595,15 +2675,15 @@ if ?LOAD
 		.else
 			mov al,0ffh
 			mov jemmini.NoVCPI,al
-if ?A20PORTS or ?A20XMS
+ if ?A20PORTS or ?A20XMS
 			mov jemmini.NoA20,al
-endif
-if ?VME
+ endif
+ if ?VME
 			mov jemmini.NoVME,al
-endif
-if ?PGE
+ endif
+ if ?PGE
 			mov jemmini.NoPGE,al
-endif
+ endif
 		.endif
 endif
 		invoke FindCommand, CStr("/?")
@@ -2621,294 +2701,20 @@ endif
 		.endif
 	.endif
 
-	invoke FindCommand, CStr("NOVCPI")
-	.if ax
-		mov jemmini.NoVCPI,TRUE
-		inc di
-	.endif
-	invoke FindCommand, CStr("VCPI")
-	.if ax
-		mov jemmini.NoVCPI,FALSE
-		inc di
-	.endif
-if ?INTEGRATED
-;--- /* must come before A20 option */
-	invoke FindCommand, CStr("A20METHOD:")
-	.if ax
-		invoke GetA20Method, ax
-		mov jemmini.A20Method,al
-	.endif
-endif
-if ?A20PORTS or ?A20XMS
-	invoke FindCommand, CStr("NOA20")
-	.if ax
-		mov jemmini.NoA20,TRUE
-		inc di
-	.endif
-	invoke FindCommand, CStr("A20")
-	.if ax
-		mov jemmini.NoA20,FALSE
-		inc di
-	.endif
-endif
-if ?VME
-;	mov jemmini.NoVME,1
-	invoke FindCommand, CStr("NOVME")
-	.if ax
-		mov jemmini.NoVME,TRUE
-		inc di
-	.endif
-	invoke FindCommand, CStr("VME")
-	.if ax
-		mov jemmini.NoVME,FALSE
-		inc di
-	.endif
-endif
-if ?PGE
-	invoke FindCommand, CStr("NOPGE")
-	.if ax
-		mov jemmini.NoPGE,TRUE
-		inc di
-	.endif
-
-	invoke FindCommand, CStr("PGE")
-	.if ax
-		mov jemmini.NoPGE,FALSE
-		inc di
-	.endif
-endif
-
-	and di,di
-	setnz bOptionSet
-
-if ?V86EXC0D
-	invoke FindCommand, CStr("V86EXC0D")
-	.if ax
-		or jemmini.V86Flags,V86F_V86EXC0D
-	.endif
-endif
-
-if ?INTEGRATED
-	invoke FindCommand, CStr("HMAMIN=")
-	.if ax
-		invoke GetValue, ax, 10, FALSE
-		.if ax > 63
-			mov ax,63
-		.endif
-		mov jemmini.HmaMin, ax
-	.endif
-	invoke FindCommand, CStr("MAXEXT=")
-	.if ax
-		invoke GetValue, ax, 10, TRUE
-		mov xms.max, eax
-	.endif
- if ?XMS35
-    call hascpuid
-	jc @F
-	xor eax,eax
-	inc eax
-	.586
-	cpuid
-	.386
-	bt edx,CPUID1_PSE36
-	jnc @F
-	mov byte ptr xms.maxhigh,0; allow memory up to 000000ff.ffffffffh   
+	mov di, offset cmdopts1
+nextitem1:
+	invoke FindCommand, [di+0]
+	and ax, ax
+	jz @F
+	mov bOptionSet, 1
+	call word ptr [di+2]
 @@:
-	invoke FindCommand, CStr("MAXSEXT=")
-	.if ax
-		invoke GetValue, ax, 10, TRUE
-		mov xms.smax, eax
-	.endif
- endif
-	invoke FindCommand, CStr("NOE801")
-	.if ax
-		mov bNoE801, TRUE
-	.endif
- ;ife ?XMS35
-	invoke FindCommand, CStr("NOE820")
-	.if ax
-		mov bNoE820, TRUE
-	.endif
- ;endif
-	invoke FindCommand, CStr("XMSHANDLES=")
-	.if ax
-		invoke GetValue, ax, 10, FALSE
-		.if ax < ?XMS_STATICHDLS
-			mov ax, ?XMS_STATICHDLS
-		.elseif ( ax > ?XMS_MAXHDLS )
-			mov ax, ?XMS_MAXHDLS
-		.endif
-		mov xms.num_handles,ax
-	.endif
-	invoke FindCommand, CStr("X2MAX=")
-	.if ax
-		invoke GetValue, ax, 10, TRUE
-		mov jemmini.X2Max, ax
-	.endif
-endif
+	add di, 2+2
+	cmp di, offset endcmdopts1
+	jnz nextitem1
 
 	cmp bLoad, FALSE
 	je $I395
-
-	invoke FindCommand, CStr("VERBOSE")
-	.if !ax
-		invoke FindCommand, CStr("/V")
-	.endif
-	.if ax
-		mov bVerbose, TRUE
-	.endif
-
-	invoke FindCommand, CStr("NODYN")
-	.if ax
-		mov jemmini.NoPool, TRUE
-	.endif
-	invoke FindCommand, CStr("NOINVLPG")
-	.if ax
-		mov jemmini.NoInvlPg, TRUE
-	.endif
-
-	invoke FindCommand, CStr("MIN=")
-	.if ax
-		invoke GetValue, ax, 10, TRUE
-		shr eax, 4
-		mov jemmini.MinMem16k,eax
-		.if bVerbose
-			shl eax, 4
-			invoke printf, CStr("Wanted preallocated EMS/VCPI memory: %lu kB", LF), eax
-		.endif
-		mov MinRequest, TRUE
-	.endif
-
-	invoke FindCommand, CStr("MAX=")
-	.if ax
-		invoke GetValue, ax, 10, TRUE
-		shr eax,4
-		mov jemmini.MaxMem16k+0,eax
-	.endif
-	invoke FindCommand, CStr("NOEMS")
-	.if ax
-		invoke cprintf, CStr("NOEMS: EMS disabled (mostly :-)", LF)
-		mov jemmini.NoEMS, TRUE
-	.endif
-
-	invoke FindCommand, CStr("NOVDS")
-	.if ax
-		mov jemmini.NoVDS, TRUE
-	.endif
-	invoke FindCommand, CStr("VDS")
-	.if ax
-		mov jemmini.NoVDS, FALSE
-	.endif
-
-	invoke FindCommand, CStr("FRAME=NONE")
-	.if ax
-		mov jemmini.NoFrame, TRUE
-	.else
-		invoke FindCommand, CStr("FRAME=")
-		.if !ax
-			invoke FindCommand, CStr("/P")
-		.endif
-		.if ax
-			invoke GetValue, ax, 16, FALSE
-			.if al
-				invoke printf, CStr("Rejected page frame=%x", LF), ax
-			.else
-				mov bFrameWanted, ah
-				.if bVerbose
-					invoke printf, CStr("Wanted page frame=%X", LF), ax
-				.endif
-			.endif
-		.endif
-	.endif
-
-	invoke FindCommand, CStr("X=TEST")
-	.if ax
-		mov ExcludeTest,TRUE
-	.endif
-	invoke FindCommand, CStr("I=TEST")
-	.if ax
-		mov IncludeTest,TRUE
-	.endif
-if ?SB
-	invoke FindCommand, CStr("SB")
-	.if ax
-		or jemmini.V86Flags, V86F_SB
-	.endif
-endif
-if ?EMX
-	invoke FindCommand, CStr("EMX")
-	.if ax
-		or jemmini.V86Flags, V86F_EMX
-	.endif
-endif
-if ?SPLIT
-	invoke FindCommand, CStr("SPLIT")
-	.if ax
-		mov SplitTest, TRUE
-	.endif
-endif
-if ?NOVMWARE
-	invoke FindCommand, CStr("NOVMW")
-	.if ax
-		mov NoVMWare, TRUE
-	.endif
-endif
-if ?MOVEXBDA
-	invoke FindCommand, CStr("MOVEXBDA")
-	.if ax
-		or jemmini.V86Flags, V86F_MOVEXBDA
-	.endif
-endif
-	invoke FindCommand, CStr("NOCHECK")
-	.if ax
-		or jemmini.V86Flags, V86F_NOCHECK
-	.endif
-
-	invoke FindCommand, CStr("ALTBOOT")
-	.if ax
-		or jemmini.V86Flags, V86F_ALTBOOT
-	.endif
-	invoke FindCommand, CStr("NOHI")
-	.if ax
-		mov jemmini.NoHigh, TRUE
-	.endif
-
-;--- NOMOVEXBDA is a no-op, but helps MS EMM386 switch compatibility
-	invoke FindCommand, CStr("NOMOVEXBDA")
-
-	invoke FindCommand, CStr("NORAM")
-	.if ax
-		mov jemmini.NoRAM, TRUE
-	.endif
-
-	invoke FindCommand, CStr("RAM")
-	.if ax
-		mov jemmini.NoRAM, FALSE
-	.endif
-
-	invoke FindCommand, CStr("D=")
-	.if ax
-		invoke GetValue,ax, 10, FALSE
-		mov di,ax
-		.if ax <= 128
-			lea ax,[di+3]
-			and al,0FCh
-			mov jemmini.DMABufferSize,ax
-		.else
-			mov jemmini.DMABufferSize,128
-			invoke printf, CStr("%s: wanted DMA buffer size too large, set to 128 kB", LF), addr szWarning
-		.endif
-	.endif
-
-	invoke FindCommand, CStr("B=")
-	.if ax
-		invoke GetValue, ax, 16, FALSE
-		.if ax < 1000h
-			invoke printf, CStr("%s: EMS banking start too low, set to 0x1000", LF), addr szWarning
-			mov ax, 1000h
-		.endif
-		mov jemmini.Border,ax
-	.endif
 
 ;--- initialize conventional memory map
 ;--- 0000-9FFF: R(am)
@@ -2936,21 +2742,35 @@ else
 	mov cl,16	;F000-FFFF
 	rep stosb
 endif
-	invoke I15CheckRsvdRegion
 
-if ?NOVMWARE
-	cmp NoVMWare, 0
-	jnz @F
-endif
-	invoke VMwareDetect
-	.if ax
-		mov dword ptr SystemMemory+0E8h, 'VVVV'
-		mov dword ptr SystemMemory+0ECh, 'XXXX'
-		invoke cprintf, CStr("VMware detected", LF)
-	.endif
-if ?NOVMWARE
+if ?INTEGRATED
+ if ?XMS35
+	call hascpuid
+	jc @F
+	xor eax,eax
+	inc eax
+	.586
+	cpuid
+	.386
+	bt edx,CPUID1_PSE36
+	jnc @F
+	mov byte ptr xms.maxhigh,0; allow memory up to 000000ff.ffffffffh   
 @@:
+ endif
 endif
+
+	mov di, offset cmdopts2
+nextitem2:
+	invoke FindCommand, [di+0]
+	and ax, ax
+	jz @F
+	call word ptr [di+2]
+@@:
+	add di, 2+2
+	cmp di, offset endcmdopts2
+	jnz nextitem2
+
+	invoke I15CheckRsvdRegion
 
 ;--- get the "range" options: I|S|X=bbbb-eeee
 	.while 1
@@ -3061,15 +2881,15 @@ endif
 
 if ?INTEGRATED
 	invoke InitA20
-	.if (CARRY?)
-		invoke printf, CStr("%s: No supported A20 method detected",LF), offset szError
+	.if CARRY?
+		invoke printf, CStr("%s: No supported A20 method detected", LF), offset szError
 		jmp exit1
 	.endif
 	mov jemmini.A20Method,al
 	.if bVerbose
 		movzx bx, al
 		add bx, bx
-		invoke printf, CStr("'%s' A20 method selected",LF), A20strings[bx]
+		invoke printf, CStr("'%s' A20 method selected", LF), A20strings[bx]
 	.endif
 	movzx bx,jemmini.A20Method
 	add bx,bx
@@ -3198,7 +3018,7 @@ endif
 			movzx ecx,dx
 			shl eax,4
 			shl ecx,4
-			invoke printf, CStr("Total/available EMS memory: %d/%d pages (= %lu/%lu kB)",LF), dx, bx, ecx, eax
+			invoke printf, CStr("Total/available EMS memory: %d/%d pages (= %lu/%lu kB)", LF), dx, bx, ecx, eax
 		.endif
 	.endif
 	invoke printf, CStr( NAMEMOD," loaded",LF )
@@ -3212,6 +3032,214 @@ $EX338:
 exit1:
 	mov ax,1
 	jmp $EX338
+
+setnovcpi:
+	mov jemmini.NoVCPI,TRUE
+	retn
+setvcpi:
+	mov jemmini.NoVCPI,FALSE
+	retn
+if ?INTEGRATED
+geta20method:
+	invoke GetA20Method, ax
+	jc @F
+	mov jemmini.A20Method, al
+	retn
+@@:
+	invoke printf, CStr("%s: unknown A20 method", LF), offset szWarning
+	retn
+endif
+if ?A20PORTS or ?A20XMS
+setnoa20:
+	mov jemmini.NoA20,TRUE
+	retn
+seta20:
+	mov jemmini.NoA20,FALSE
+	retn
+endif
+if ?VME
+setnovme:
+	mov jemmini.NoVME,TRUE
+	retn
+setvme:
+	mov jemmini.NoVME,FALSE
+	retn
+endif
+if ?PGE
+setnopge:
+	mov jemmini.NoPGE,TRUE
+	retn
+setpge:
+	mov jemmini.NoPGE,FALSE
+	retn
+endif
+
+if ?V86EXC0D
+setv86exc0d:
+	or jemmini.V86Flags,V86F_V86EXC0D
+	retn
+endif
+if ?INTEGRATED
+sethmamin:
+	invoke GetValue, ax, 10, FALSE
+	.if ax > 63
+		mov ax,63
+	.endif
+	mov jemmini.HmaMin, ax
+	retn
+setmaxext:
+	invoke GetValue, ax, 10, TRUE
+	mov xms.max, eax
+	retn
+ if ?XMS35
+setmaxsext:
+	invoke GetValue, ax, 10, TRUE
+	mov xms.smax, eax
+	retn
+ endif
+setnoe801:
+	mov bNoE801, TRUE
+	retn
+setnoe820:
+	mov bNoE820, TRUE
+	retn
+setxmshandles:
+	invoke GetValue, ax, 10, FALSE
+	.if ax < ?XMS_STATICHDLS
+		mov ax, ?XMS_STATICHDLS
+	.elseif ( ax > ?XMS_MAXHDLS )
+		mov ax, ?XMS_MAXHDLS
+	.endif
+	mov xms.num_handles,ax
+	retn
+setx2max:
+	invoke GetValue, ax, 10, TRUE
+	mov jemmini.X2Max, ax
+	retn
+endif
+setnoinvlpg:
+	mov jemmini.NoInvlPg, TRUE
+	retn
+setnodyn:
+	mov jemmini.NoPool, TRUE
+	retn
+setverbose:
+	mov bVerbose, TRUE
+	retn
+setmin:
+	invoke GetValue, ax, 10, TRUE
+	shr eax, 4
+	mov jemmini.MinMem16k,eax
+	.if bVerbose
+		shl eax, 4
+		invoke printf, CStr("Wanted preallocated EMS/VCPI memory: %lu kB", LF), eax
+	.endif
+	mov MinRequest, TRUE
+	retn
+setnoems:
+	invoke cprintf, CStr("NOEMS: EMS disabled (mostly :-)", LF)
+	mov jemmini.NoEMS, TRUE
+_ret:
+	retn
+setmax:
+	invoke GetValue, ax, 10, TRUE
+	shr eax,4
+	mov jemmini.MaxMem16k+0,eax
+	retn
+setvds:
+	mov jemmini.NoVDS, FALSE
+	retn
+setnovds:
+	mov jemmini.NoVDS, TRUE
+	retn
+setnoframe:
+	mov jemmini.NoFrame, TRUE
+	retn
+setframe:
+	invoke GetValue, ax, 16, FALSE
+	.if al
+		invoke printf, CStr("Rejected page frame=%x", LF), ax
+	.else
+		mov bFrameWanted, ah
+		.if bVerbose
+			invoke printf, CStr("Wanted page frame=%X", LF), ax
+		.endif
+	.endif
+	retn
+setxeqtest:
+	mov ExcludeTest, TRUE
+	retn
+setieqtest:
+	mov IncludeTest, TRUE
+	retn
+if ?SB
+setsb:
+	or jemmini.V86Flags, V86F_SB
+	retn
+endif
+if ?EMX
+setemx:
+	or jemmini.V86Flags, V86F_EMX
+	retn
+endif
+if ?SPLIT
+setsplit:
+	mov SplitTest, TRUE
+	retn
+endif
+if ?NOVMWARE
+setnovmw:
+	mov wChkVMWare, offset _ret
+	retn
+endif
+if ?MOVEXBDA
+setmovexbda:
+	or jemmini.V86Flags, V86F_MOVEXBDA
+	retn
+endif
+setnocheck:
+	or jemmini.V86Flags, V86F_NOCHECK
+	retn
+setaltboot:
+	or jemmini.V86Flags, V86F_ALTBOOT
+	retn
+setnohi:
+	mov jemmini.NoHigh, TRUE
+	retn
+setnoram:
+	mov jemmini.NoRAM, TRUE
+	retn
+setram:
+	mov jemmini.NoRAM, FALSE
+	retn
+setdma:
+	invoke GetValue,ax, 10, FALSE
+	mov bx,ax
+	.if ax <= 128
+		lea ax,[bx+3]
+		and al,0FCh
+		mov jemmini.DMABufferSize,ax
+	.else
+		mov jemmini.DMABufferSize,128
+		invoke printf, CStr("%s: wanted DMA buffer size too large, set to 128 kB", LF), addr szWarning
+	.endif
+	retn
+setborder:
+	invoke GetValue, ax, 16, FALSE
+	.if ax < 1000h
+		invoke printf, CStr("%s: EMS banking start too low, set to 0x1000", LF), addr szWarning
+		mov ax, 1000h
+	.endif
+	mov jemmini.Border,ax
+	retn
+checkvmware:
+	invoke VMwareDetect
+	.if ax
+		mov dword ptr SystemMemory+0E8h, 'VVVV'
+		mov dword ptr SystemMemory+0ECh, 'XXXX'
+		invoke cprintf, CStr("VMware detected", LF)
+	.endif
+	retn
 
 mainex ENDP
 

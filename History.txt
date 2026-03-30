@@ -13,6 +13,7 @@
  - JemmEx fix: if option XMSHANDLES was > 59 and Jemm wasn't allowed to move
    its resident part into the upper memory region, it crashed.
  - Linux.mak: GNU makefile added to create Jemm binaries on Linux.
+ - fixed JemmEx: unknown A20METHOD value caused a crash.
 
  25.01.2026: v5.86
  - service table: added control proc member to allow Jemm to call out on
