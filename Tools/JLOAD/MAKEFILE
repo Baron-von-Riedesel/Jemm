@@ -19,8 +19,8 @@ DEBUG = 0
 
 !if $(DEBUG)
 OUTDIR = DEBUG
-AOPTD=-D_DEBUG -D?PEDBG=1 -D?RMDBG=1 -D?INITDBG=1 -D?JLMDBG=1
-#AOPTD=-D_DEBUG -D?V86HOOKDBG=1
+#AOPTD=-D_DEBUG -D?PEDBG=1 -D?RMDBG=1 -D?INITDBG=1 -D?JLMDBG=1
+AOPTD=-D_DEBUG -D?INITDBG=1
 !else
 OUTDIR = RELEASE
 AOPTD=
@@ -37,16 +37,16 @@ MASM=0
 !endif
 
 !if $(MASM)
-ASM   = ml.exe -c -nologo -Fo$* -Fl$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
-ASM32 = ml.exe -c -nologo -coff -Fl$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
+ASM   = ml.exe -c -nologo -Fo$* -Fl$* -Sg $(AOPTD) -I..\..\Include -DOUTD=$(OUTDIR)
+ASM32 = ml.exe -c -nologo -coff -Fl$* -Sg $(AOPTD) -I..\..\Include -DOUTD=$(OUTDIR)
 !else
-ASM   = jwasm.exe -c -nologo -Fl$* -Fo$* -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
-ASM32 = jwasm.exe -c -nologo -Fl$* -coff -Sg $(AOPTD) -I..\..\Include -I..\..\src -DOUTD=$(OUTDIR)
+ASM   = jwasm.exe -c -nologo -Fl$* -Fo$* -Sg $(AOPTD) -I..\..\Include -DOUTD=$(OUTDIR)
+ASM32 = jwasm.exe -c -nologo -Fl$* -coff -Sg $(AOPTD) -I..\..\Include -DOUTD=$(OUTDIR)
 !endif
 
 LINK32=
-INC32=jload.inc jload32.inc debug.inc ..\..\src\Jemm32.inc                    ..\..\Include\jlm.inc
-INC16=jload.inc             debug.inc ..\..\src\Jemm32.inc ..\..\src\Jemm.inc ..\..\Include\jlm.inc
+INC32=jload.inc jload32.inc debug.inc ..\..\Include\jsystem.inc ..\..\Include\jlm.inc
+INC16=jload.inc             debug.inc ..\..\Include\jsystem.inc ..\..\Include\jlm.inc
 
 ALL: $(OUTDIR) $(OUTDIR)\$(NAME).EXE
 
@@ -55,38 +55,38 @@ $(OUTDIR):
 
 $(OUTDIR)\$(NAME).EXE: $(OUTDIR)\$(NAME).obj MAKEFILE
 #	@link16.exe /MAP:FULL/NOE/NON/ONERROR:NOEXE $*.OBJ, $*.EXE, $*.MAP, $(LIBS);
-	@jwlink.exe format dos file $*.OBJ name $*.EXE op q,m=$*.MAP
+	@jwlink.exe format dos file $*.obj name $*.EXE op q,m=$*
 
 !if $(MASM)
 
-$(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).inc $(INC16)
+$(OUTDIR)\$(NAME).obj: $(NAME).asm $(OUTDIR)\$(NAME32).inc $(INC16)
 	@$(ASM) $(NAME).asm
 
 $(OUTDIR)\$(NAME32).INC: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
-	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start=_start
+	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin disable 1014 op q,map=$*,offset=0xF8400000,start=_start
 	@bin2inc.exe -q $*.bin $*.inc
 
 !else
 
-$(OUTDIR)\$(NAME).OBJ: $(NAME).asm $(OUTDIR)\$(NAME32).bin $(INC16)
+$(OUTDIR)\$(NAME).obj: $(NAME).asm $(OUTDIR)\$(NAME32).bin $(INC16)
 	@$(ASM) $(NAME).asm
 
 $(OUTDIR)\$(NAME32).bin: $(OUTDIR)\$(NAME32).obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj
-	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin op q,map=$*,offset=0xF8400000,start=_start
+	@jwlink.exe format raw bin f { $*.obj $(OUTDIR)\$(VXD1).obj $(OUTDIR)\$(VXD4).obj } name $*.bin disable 1014 op q,map=$*,offset=0xF8400000,start=_start
 
 !endif
 
 $(OUTDIR)\$(NAME32).obj: $(NAME32).asm $(INC32) MAKEFILE
-	@$(ASM32) -Fl$(OUTDIR)\$(NAME32).LST -Fo$(OUTDIR)\$(NAME32).OBJ $(NAME32).asm
+	@$(ASM32) -Fl$(OUTDIR)\$(NAME32) -Fo$(OUTDIR)\$(NAME32) $(NAME32).asm
 
 $(OUTDIR)\$(VXD1).obj: $(VXD1).asm $(INC32) MAKEFILE
-	@$(ASM32) -Fl$(OUTDIR)\$(VXD1).LST -Fo$(OUTDIR)\$(VXD1).OBJ $(VXD1).asm
+	@$(ASM32) -Fl$(OUTDIR)\$(VXD1) -Fo$(OUTDIR)\$(VXD1) $(VXD1).asm
 
 $(OUTDIR)\$(VXD4).obj: $(VXD4).asm $(INC32) MAKEFILE
-	@$(ASM32) -Fl$(OUTDIR)\$(VXD4).LST -Fo$(OUTDIR)\$(VXD4).OBJ $(VXD4).asm
+	@$(ASM32) -Fl$(OUTDIR)\$(VXD4) -Fo$(OUTDIR)\$(VXD4) $(VXD4).asm
 
 clean:
-	@del $(OUTDIR)\*.exe
+	@del $(OUTDIR)\*.EXE
 	@if exist $(OUTDIR)\*.inc del $(OUTDIR)\*.inc
 	@del $(OUTDIR)\*.bin
 	@del $(OUTDIR)\*.obj

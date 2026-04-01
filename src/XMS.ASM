@@ -1275,7 +1275,7 @@ A20_Set proc public
     and eax,1
     shl eax,20     ;000000h or 100000h
     or eax, PTF_PRESENT or PTF_RW or PTF_USER
-    @GETPTEPTR edi, ?PAGETAB0+256*4, 1  ;EDI?= ptr PTE for 0100000h
+    mov edi, @GetPTEAddr(?PAGETAB0+256*4)  ;EDI = ptr PTE for 0100000h
 @@spec_loop:
     stosd
     add ah,10h      ;10000x, 10100x, 10200x, ...

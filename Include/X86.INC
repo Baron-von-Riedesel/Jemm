@@ -1,4 +1,6 @@
 
+;--- generic X86 definitions
+
 ;--- page table flags
 
 PTF_PRESENT equ 001h

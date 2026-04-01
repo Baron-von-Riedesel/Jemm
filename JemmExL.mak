@@ -51,6 +51,8 @@ AOPTD=-D_DEBUG $(DBGOPT) -Sg
 AOPTD=
 !endif
 
+AOPT=-c -nologo -IInclude $(AOPTD)
+
 # list of 32bit modules
 COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\vdma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
@@ -86,7 +88,7 @@ LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 32BITDEPS=src\jemm32.inc src\jemm.inc src\extern32.inc src\debug32.inc JemmExL.mak
 
 {src\}.asm{$(OUTD3)}.obj:
-	@$(ASM) -c -nologo -coff -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl$(OUTD3)\ -Fo$(OUTD3)\ $<
+	@$(ASM) -coff -D?INTEGRATED=1 -D?XMS35=0 $(AOPT) -Fl$(OUTD3)\ -Fo$(OUTD3)\ $<
 
 ALL: $(BUILD) $(OUTD3) $(OUTD3)\$(NAME3).EXE
 
@@ -98,11 +100,11 @@ $(OUTD3)\$(NAME3).EXE: $(OUTD3)\jemm16.obj $(OUTD3)\init16.obj
 	@$(LINK16)
 	@cd ..\..
 
-$(OUTD3)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc JemmExL.mak
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Sg -Fl$(OUTD3)\ -Fo$(OUTD3)\ src\init16.asm
+$(OUTD3)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Include\jsystem.inc JemmExL.mak
+	@$(ASM) -D?INTEGRATED=1 -D?XMS35=0 $(AOPT) -Sg -Fl$(OUTD3)\ -Fo$(OUTD3)\ src\init16.asm
 
 $(OUTD3)\jemm16.obj: src\jemm16.asm $(OUTD3)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug16.inc JemmExL.mak
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?XMS35=0 $(AOPTD) -Fl$(OUTD3)\ -Fo$(OUTD3)\ -I$(OUTD3) src\jemm16.asm
+	@$(ASM) -D?INTEGRATED=1 -D?XMS35=0 $(AOPT) -Fl$(OUTD3)\ -Fo$(OUTD3)\ -I$(OUTD3) src\jemm16.asm
 
 $(OUTD3)\jemm32.bin: $(COFFDEP3)
 	@cd $(OUTD3)

@@ -116,8 +116,8 @@ if ?DYNTRAPP60
 dwTSS           dd 0
 endif
 dwMaxPhysMem    dd 0        ; XMS highest address (r/o)
-bpstart         dd 0        ; linear address start of bp table
-PageMapHeap     dd ?SYSLINEAR+?PAGETABSYS+6*4
+bpstart         dd 0        ; linear address start of static bp array in Jemm16.RSEG
+PageMapHeap     dd ?SYSBASE+?PAGETABSYS+6*4
 
 ;--- address space heap for 4MB pages.
 ;--- v5.95: the heap starts at SYSBASE - 8MB ; it's usually max 4 PTEs ( 16MB ), but is
@@ -233,10 +233,11 @@ endif
 
 .text$03 segment
 
-;--- v86 breakpoint table
-;--- order must match the one defined in Jemm16.asm
+;--- v86 breakpoint table;
+;--- order must match the one defined in Jemm16.asm!
 
-bptable label BPTABLE
+bptable BPTABLE <>
+    org bptable
     dd Int06_V86Entry       ; BP06, default v86 int 06 handler
     dd Int19_V86Entry       ; BP19, Reboot
     dd Int67_V86Entry       ; BP67, default v86 int 67 handler
@@ -296,7 +297,7 @@ if ?ROMRO
 PageFaultFF proc
 
     @dprintf ?V86DBG, <"Write access to FF000",10>
-    @GETPTEPTR ebx, ?PAGETAB0+0FFh*4, 1
+    mov ebx, @GetPTEAddr(?PAGETAB0+0FFh*4)
     mov ecx, [ebx]  ;get PTE for FF000
     mov dword ptr [ebx], 0FF000h + 111B ;set the "original" PTE
     mov [dwSavedRomPTE], ecx
@@ -330,7 +331,7 @@ endif
     pop ds
     @dprintf ?V86DBG, <"After write access to FF000",10>
     mov ecx, [dwSavedRomPTE]
-    @GETPTEPTR eax, ?PAGETAB0+0FFh*4, 1
+    mov eax, @GetPTEAddr(?PAGETAB0+0FFh*4)
     mov [eax],ecx
     xor eax, eax
     mov cr2, eax
@@ -1079,7 +1080,7 @@ Int06_Entry proc
     mov ebp, esp        ; ebp -> Client_Reg_Struc
     mov eax, ss         ; might be better to use "mov eax,cs" "add eax,8"
     mov ds, eax
-    jmp @@Is_BP
+    jmp Is_BP
     align 4
 Int06_Entry endp
 endif
@@ -1122,8 +1123,9 @@ endif
 
     CMP ECX,0DH             ; general protection exception?
     JNZ @@V86_TEST_EXC      ; no, check further
-@@Is_BP:                    ; <--- entry from INT 06 if breakpoint is ARPL
-
+if ?BPOPC ne 0F4h
+Is_BP::                     ; <--- entry from INT 06 if breakpoint is ARPL
+endif
 ;--- a monitor "bp", used to switch back from v86 to protected-mode?
 ;--- EAX=flat selector
 
@@ -1149,8 +1151,9 @@ endif
     MOV AL,[ESI]                ; check opcode
     cmp AL, ?BPOPC
     jnz @@NoBPOPC               ; breakpoint?
-    mov eax, [bpstart]
-    sub esi, eax
+;    mov eax, [bpstart]
+;    sub esi, eax
+    sub esi, [bpstart]
     jb @@No_BP
     cmp esi, NUMBP
     jae @@No_BP
@@ -1165,7 +1168,7 @@ nmi_pl3:                        ; v5.87: handle NMI occured in PL3
 
 @@No_BP:
 if ?BPOPC ne 0F4h
-    jmp V86_Exc0D
+    jmp V86_Exc0D               ; if an ARPL occured at unknown location...
 endif
 @@Is_Hlt:
 
@@ -1193,8 +1196,8 @@ endif
 @@NoBPOPC:
 
 if ?BPOPC ne 0F4h
-    CMP AL,0F4H                 ; HLT-
-    JZ @@Is_Hlt                 ; command ?
+    CMP AL,0F4H                 ; HLT instr?
+    JZ @@Is_Hlt
 endif
 
 if ?SB
@@ -1327,7 +1330,7 @@ V86_Fault::
 
 if ?SKIPINT06
     movzx eax,word ptr ds:[6*4+2]
-    cmp eax,[dwRSeg]
+    cmp eax, [dwRSeg]
     jz handle_exception_ebp
 endif
 
@@ -1822,7 +1825,7 @@ MapPhysPagesEx endp     ;fall thru
 MapPhysPages proc public
 
     mov ebx, edx
-    sub ebx, ?SYSLINEAR+?PAGETABSYS
+    sub ebx, ?SYSBASE+?PAGETABSYS
     shl ebx, 10
     add ebx, ?SYSBASE
     and ah, 0F0h
@@ -2164,7 +2167,7 @@ Simulate_Int endp
 ;--- modifies EAX,ECX,EDX
 
 Begin_Nest_Exec proc public
-    mov ecx,[dwRSeg]
+    mov ecx, [dwRSeg]
     movzx edx, [bBpBack]
     jmp Simulate_Far_Call
     align 4
@@ -2837,8 +2840,8 @@ vmm_service_table label VMM_SERV_TABLE
     dd VDS_Call_Table
     dd VCPI_Call_Table
     dd IO_Trap_Table
-    dd V86_Monitor
-    dd offset dwStackCurr ;obsolete
+;    dd V86_Monitor        ;v5.87: obsolete
+;    dd offset dwStackCurr ;v5.87: obsolete
     dd MoveMemory
     dd offset pV86Hooks	;v5.85
     dd offset V86_Fault	;v5.86

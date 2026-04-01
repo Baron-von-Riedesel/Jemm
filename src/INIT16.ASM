@@ -24,6 +24,7 @@ ifndef ?NOVMWARE
 endif
 
 	include jemm.inc
+	include jsystem.inc
 	include jemm16.inc
 	include debug16.inc
 	include xms.inc
@@ -67,9 +68,6 @@ bNoE801	DB 0
 endif
 bVerbose	DB FALSE
 
-if ?LOAD
-bLoad	DB FALSE
-endif
 if ?I15RESNOSCAN
 bI15RsvdChk db FALSE
 endif
@@ -132,12 +130,12 @@ endif
 sig1        db 'EMMXXXX0',0
 sig2        db 'EMMQXXX0',0 ; ID if NOEMS specified
 
-szError		DB 'Error',  07H, 0
-szWarning	DB 'Warning', 0
+szError		DB 'Error',07H,0
+szWarning	DB 'Warning',0
 szOn		DB "On",0
 szOff		DB "Off",0
-szStartup	DB NAMEMOD, " v", @CatStr(!",%?VERSIONHIGH,!"), ".", @CatStr(!",%?VERSIONLOW,!")," [", @CatStr(!",%@Date,!"), "]", LF, 0
-szCopyRight	DB NAMEMOD, '. Parts (c) tom ehlert 2001-2006 c''t/H. Albrecht 1990', LF, 0
+szStartup	DB "%j v", @CatStr(!",%?VERSIONHIGH,!"), ".", @CatStr(!",%?VERSIONLOW,!")," [", @CatStr(!",%@Date,!"), "]",LF,0
+szCopyRight	DB '%j. Parts (c) tom ehlert 2001-2006 c''t/H. Albrecht 1990',LF,0
 
 szHelp label byte
 	db "usage: either add a line to CONFIG.SYS: DEVICE=",NAMEEXE,".EXE [ options ]",LF
@@ -157,7 +155,7 @@ if ?EMX
 	db " EMX           increased EMX DOS extender compatibility",LF
 endif
 if ?FASTBOOT
-	db " FASTBOOT      fast reboot. Requires ",NAMEMOD," to be loaded in CONFIG.SYS.",LF
+	db " FASTBOOT      fast reboot. Requires %j to be loaded in CONFIG.SYS.",LF
 endif
 	db " FRAME=E000    set EMS page frame (FRAME=NONE disables frame). Any value",LF
 	db "               between 8000 and E000 is accepted, but not all will work.",LF
@@ -211,17 +209,17 @@ if ?VME
     db "+VME/NOVME     V86-Mode Extensions on/off (default off)",LF
 endif
     db " VERBOSE       display additional details during start (abbr: /V)",LF
-    db " X=start-end   exclude region from being touched or used by ",NAMEMOD,LF
+    db " X=start-end   exclude region from being touched or used by %j",LF
     db " X=TEST        scan memory region C000-EFFF for UMB exclusion",LF
 if ?INTEGRATED
     db " X2MAX=n       max. value in Kb for XMS V2 free memory report (default=65535)",LF
     db " XMSHANDLES=n  number of available XMS handles (",@CatStr(!",%?XMS_STATICHDLS,!"),"<=n<=",@CatStr(!",%?XMS_MAXHDLS,!"),", default=",@CatStr(!",%?XMS_DEFHDLS,!"),")",LF
 endif
     db LF
-    db " '+': option can be set dynamically by running ",NAMEMOD," from the command line",LF
+    db " '+': option can be set dynamically by running %j from the command line",LF
 if ?LOAD
     db LF
-    db "When invoked from the command line ",NAMEMOD," additionally will understand:",LF
+    db "When invoked from the command line, %j additionally will understand:",LF
     db " LOAD          install",LF
 endif
 if ?UNLOAD
@@ -374,6 +372,8 @@ donenumber:
 	je handle_i
 	cmp al,'s'
 	je handle_s
+	cmp al,'j'
+	je handle_j
 	cmp al,'u'
 	je handle_u
 	jmp @@L359
@@ -383,6 +383,10 @@ handle_c:
 @@L359:
 	call handle_char
 	retn
+
+handle_j:
+	mov si,CStr(NAMEMOD)
+	jmp @@do_outputstring260
 
 handle_s:
 	mov si,[di]
@@ -522,7 +526,7 @@ SetMemoryType PROC stdcall uses si address:word, mtype:byte
 
 	mov si,address
 	shr si,8
-	add si,OFFSET SystemMemory
+	add si,offset SystemMemory
 	mov al,mtype
 	.if byte ptr [si] != 'I' || al == 'X'
 		mov [si],al
@@ -759,7 +763,7 @@ endif
 	mov si, 0C0h
 	.repeat
 		lea ax, mem
-		invoke TestForSystemRAM, OFFSET SystemMemory, si, ax
+		invoke TestForSystemRAM, offset SystemMemory, si, ax
 		mov si,ax
 		.if ax
 			mov ax,mem
@@ -901,7 +905,7 @@ $frameset251:
 		invoke printf, CStr("Using page frame %02x00", LF), si
 	.endif
 	.if bWarning && (!bSearching) || di < 0C0h
-		invoke printf, CStr("%s: page frame %02x00 might not work reliably", LF), OFFSET szWarning, si
+		invoke printf, CStr("%s: page frame %02x00 might not work reliably", LF), offset szWarning, si
 	.endif
 
 if ?USEMEMSET
@@ -1084,7 +1088,7 @@ nextitem:
 	.if bVerbose
 		push cx
 		shl cx,2
-		invoke printf, CStr("Int15, ax=E820: reserved region=%04X, size=%u kB",LF), si, cx
+		invoke printf, CStr("Int15, ax=E820: reserved region=%04X, size=%u kB", LF), si, cx
 		pop cx
 	.endif
 	.while cx
@@ -1461,7 +1465,7 @@ detect_fast proc
 	jne @@fail
 	test bl,2		;PS/2 supported?
 	je @@fail
-	mov si,OFFSET disable_enable_a20_fast
+	mov si,offset disable_enable_a20_fast
 	call test_A20_proc
 	ret
 @@fail:
@@ -1483,7 +1487,7 @@ detect_PS2 proc uses es
 	test BYTE ptr es:[bx+5],2
 	jz @@fail		; not micro channel
 
-	mov si,OFFSET disable_enable_a20_fast
+	mov si,offset disable_enable_a20_fast
 	call test_A20_proc
 	ret
 
@@ -1498,7 +1502,7 @@ detect_PS2 endp
 
 detect_port92 proc
 
-	mov si,OFFSET disable_enable_a20_fast
+	mov si,offset disable_enable_a20_fast
 	call test_A20_proc
 	ret
 
@@ -1514,7 +1518,7 @@ detect_BIOS proc
 	jne @@fail
 ;	mov cl,al		; save status
 
-	mov si,OFFSET disable_enable_a20_BIOS
+	mov si,offset disable_enable_a20_BIOS
 	call test_A20_proc
 	ret
 @@fail:
@@ -1526,7 +1530,7 @@ detect_BIOS endp
 
 detect_KBC proc
 
-	mov si,OFFSET disable_enable_a20_KBC
+	mov si,offset disable_enable_a20_KBC
 	call test_A20_proc
 	ret
 
@@ -2074,7 +2078,7 @@ endif
 	call NotInstalled
 	jmp @@exit2
 @@nouninst:
-	MOV DX, CStr( NAMEGEN, " cannot be unloaded.",CR,LF,'$' )
+	MOV DX, CStr( NAMEGEN," cannot be unloaded.",CR,LF,'$' )
 	jmp @@exit
 TryUnload endp
 
@@ -2104,7 +2108,7 @@ endif
 	jc jemm_not_found
 	movzx ax, byte ptr [buff+0]
 	movzx cx, byte ptr [buff+1]
-	invoke printf, CStr( NAMEMOD," v%u.%02u installed.",LF), ax, cx
+	invoke printf, CStr( "%j v%u.%02u installed.", LF), ax, cx
 
 ;--- get EMS, VCPI, UMB, VME, A20 infos
 
@@ -2363,13 +2367,14 @@ GetValue PROC stdcall uses esi di cmdline:ptr BYTE, base:WORD, usesuffix:WORD
 	inc bx
 @@I322:
 	push esi
+;--- remove string from cmdline
 	mov si,bx
 	mov di, cmdline
-@@nextchar:
+@@:
 	lodsb
 	stosb
 	and al,al
-	jnz @@nextchar
+	jnz @B
 	pop eax		;result in EAX
 exit:
 	ret
@@ -2381,9 +2386,10 @@ nodigit:
 GetValue ENDP
 
 ;--- FindCommand(searchstring) parses the command line
-;--- for a specific command. If found, the command is removed and
-;--- the address behind that command is returned. Else, 0 is returned
-;--- SI=cmdline
+;--- for a specific command. If found, the command is removed.
+;--- in: SI=cmdline
+;--- out: AX ->behind the found string
+;---      AX = 0 if the string wasn't found
 
 FindCommand PROC stdcall uses di si searchstring:ptr BYTE
 
@@ -2398,21 +2404,31 @@ FindCommand PROC stdcall uses di si searchstring:ptr BYTE
 ;	pop es
 nextcmp:
 	xor ax,ax
-	cmp BYTE PTR [si],al
+	lodsb
+	and al,al
 	je done
-	invoke _memicmp, si, di, bx   ;assumes that BX remains unchanged!
-	inc si
-	or ax,ax
-	jne nextcmp
+	cmp al,' '
+	jbe nextcmp   ;skip white spaces
 	dec si
+	invoke _memicmp, si, di, bx   ;assumes that BX remains unchanged!
+	or ax,ax
+	je found
+@@:
+	lodsb
+	cmp al,' '  ;skip the word in cmdline
+	ja @B
+	dec si
+	jmp nextcmp
+found:
+;--- remove found string in cmdline
 	push si
 	mov di,si
 	add si,bx
-nextitem:
+@@:
 	lodsb
 	stosb
 	and al,al
-	jnz nextitem
+	jnz @B
 	pop ax
 done:
 	ret
@@ -2437,22 +2453,18 @@ VMwareDetect proc c
 VMwareDetect endp
 
 ;--- Display current status of (conventional) memory map
+;--- modifies SI, DI!
 
 DisplayMemoryMap proc
-	invoke printf, CStr(<"Memory Map: R/S=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb",LF>)
-	sub sp,64+4
-	mov cx,4
+	invoke printf, CStr("Memory Map: R/S=system ram, G=graphics, E=rom/rsvd, P=page frame, U/I=umb", LF)
+	sub sp,4*16+4
 	mov si,offset SystemMemory
-	.while cx
-		push cx
-		movzx eax,si
-		sub ax,offset SystemMemory
-		shl eax,12
-		invoke printf, CStr(<"%05lX: ">), eax
+	.repeat
+		mov cx,si
+		sub cx,offset SystemMemory
+		shr cx,4
 		mov al,' '
 		mov di,sp
-		add di,2
-		push di
 		movsd
 		movsd
 		movsd
@@ -2474,12 +2486,9 @@ DisplayMemoryMap proc
 		movsd
 		mov al,0
 		stosb
-		pop di
-		invoke printf, CStr(<"%s",LF>), di
-		pop cx
-		dec cx
-	.endw
-	add sp,64+4
+		invoke printf, CStr("%X0000: %s", LF), cx, sp
+	.until si >= offset SystemMemory + sizeof SystemMemory
+	add sp,4*16+4
 	ret
 DisplayMemoryMap endp
 
@@ -2523,19 +2532,19 @@ disp_xbda_size endp
 endif
 
 if ?INTEGRATED
-if ?XMS35
+ if ?XMS35
 hascpuid proc
 	push di
 	mov di,sp
 	and sp,0fffch	;make sure we don't get an exc 11 (if AM set in CR0)
-	pushfd						; save EFlags
+	pushfd			; save EFlags
 	cli
-	pushd 240000h				; set AC bit in eflags, reset IF
-	popfd						; pop extended flags
-	pushfd						; push extended flags
+	pushd 240000h	; set AC bit in eflags, reset IF
+	popfd			; pop extended flags
+	pushfd			; push extended flags
 	pop ax
-	pop ax						; get HiWord(EFlags) into AX
-	popfd						; restore EFlags
+	pop ax			; get HiWord(EFlags) into AX
+	popfd			; restore EFlags
 	mov sp,di
 	pop di
 	test al,04	;AC bit set?
@@ -2548,7 +2557,7 @@ hascpuid proc
 	stc
 	ret
 hascpuid endp
-endif
+ endif
 endif
 
 ;--- DS=ES=SS=dgroup
@@ -2560,17 +2569,21 @@ local rangestop:word
 local found:word
 local wChkVMWare:word
 local memtype:byte
-local bOptionSet:byte
 local bHelp:byte
+if ?LOAD
+local bLoad:byte
+endif
 
 	.data
 	even
+
 cmdopts1 label word
 	dw CStr("NOVCPI"), offset setnovcpi
 	dw CStr("VCPI"),   offset setvcpi
 if ?INTEGRATED
-;--- /* must come before A20 option - it's a noop for Jemm32, since handled by 16-bit code */
-	dw CStr("A20METHOD:"), offset geta20method
+;--- FindCommand() requires that A20METHOD is *before* A20 option!
+;--- that's a bit unfortunate, since A20METHOD doesn't belong to cmdopts1.
+	dw CStr("A20METHOD:"), offset seta20method
 endif
 if ?A20PORTS or ?A20XMS
 	dw CStr("NOA20"),  offset setnoa20
@@ -2646,7 +2659,6 @@ endcmdopts2 label word
 	@dprintf ?INITRMDBG, <"mainex enter",10>
 	cld
 	mov bHelp, FALSE
-	mov bOptionSet, 0
 	mov wChkVMWare, offset checkvmware
 
 	mov si,cmdline
@@ -2670,20 +2682,9 @@ if ?UNLOAD
 endif
 if ?LOAD
 		invoke FindCommand, CStr("LOAD")
-		.if ax
-			mov bLoad, TRUE
-		.else
-			mov al,0ffh
-			mov jemmini.NoVCPI,al
- if ?A20PORTS or ?A20XMS
-			mov jemmini.NoA20,al
- endif
- if ?VME
-			mov jemmini.NoVME,al
- endif
- if ?PGE
-			mov jemmini.NoPGE,al
- endif
+		mov bLoad, al
+		.if !ax
+			mov jemmini.dwDynSet,-1
 		.endif
 endif
 		invoke FindCommand, CStr("/?")
@@ -2706,7 +2707,6 @@ nextitem1:
 	invoke FindCommand, [di+0]
 	and ax, ax
 	jz @F
-	mov bOptionSet, 1
 	call word ptr [di+2]
 @@:
 	add di, 2+2
@@ -2829,7 +2829,7 @@ $I395:
 	mov si,ax
 @@:
 	.if BYTE PTR [si]
-		invoke printf, CStr("* ignored commandline: '%s'", LF), si
+		invoke printf, CStr("%s: ignored commandline '%s'", LF), offset szWarning, si
 		cmp mode,EXECMODE_EXE
 		je exit1
 	.endif
@@ -2840,10 +2840,10 @@ $I395:
 			invoke printf, addr szCopyRight
 			invoke printf, addr szHelp
 		.else
-			.if bOptionSet
+			.if jemmini.dwDynSet != -1
 				invoke EmmUpdate
 				.if ax
-					invoke printf, CStr("option(s) passed to installed instance of ", NAMEMOD, LF)
+					invoke printf, CStr("option(s) passed to installed instance of %j", LF)
 				.endif
 			.else
 				invoke EmmStatus
@@ -2949,8 +2949,8 @@ endif
 MONITORMIN equ 20+12+12+4
 
 	invoke UMBpageswanted
-	shl	ax,2
-	mov	si,ax
+	shl ax,2
+	mov si,ax
 
 	.if bVerbose
 		invoke printf, CStr("Needed: %u kB for monitor, %u kB for UMBs, %u kB for DMA buffer", LF), MONITORMIN, ax, jemmini.DMABufferSize
@@ -3021,7 +3021,7 @@ endif
 			invoke printf, CStr("Total/available EMS memory: %d/%d pages (= %lu/%lu kB)", LF), dx, bx, ecx, eax
 		.endif
 	.endif
-	invoke printf, CStr( NAMEMOD," loaded",LF )
+	invoke printf, CStr( "%j loaded", LF)
 if ?INTEGRATED eq 0
 	invoke xmscall, XMS_DISABLEA20	;local disable A20
 endif
@@ -3040,7 +3040,7 @@ setvcpi:
 	mov jemmini.NoVCPI,FALSE
 	retn
 if ?INTEGRATED
-geta20method:
+seta20method:
 	invoke GetA20Method, ax
 	jc @F
 	mov jemmini.A20Method, al

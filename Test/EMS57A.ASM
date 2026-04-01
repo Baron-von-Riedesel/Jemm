@@ -73,7 +73,8 @@ local frame:word
 	jmp exit
 @@:
 	mov handle,dx
-	invoke printf, CStr("Handle %u allocated",lf), handle
+	invoke printf, CStr("Handle %u allocated, size=%u * 16 kB pages",lf), handle, ?SIZE*2
+	invoke printf, CStr("int 67h, AX=5700h (move), AX=5701h (xchg)",lf)
 
 	mov si, offset emm57
 	mov emm57.dwSize, 100000h
@@ -89,7 +90,7 @@ local frame:word
 	mov ax,5700h	;move memory region
 	int 67h
 	movzx ax,ah
-	invoke printf, CStr( "5700,0->1: move conv to expanded memory, status=%X",lf),ax
+	invoke printf, CStr( "5700,0->1: move conv to expanded memory, 1MB, status=%X (0 exp)",lf),ax
 
 ;--- move from EMS to EMS non-overlapp
 
@@ -108,7 +109,7 @@ local frame:word
 	mov ax,5700h	;move memory region
 	int 67h
 	movzx ax,ah
-	invoke printf, CStr( "5700,1->1: move EMS to EMS memory (non-overlapp), status=%X",lf),ax
+	invoke printf, CStr( "5700,1->1: move EMS to EMS memory (non-overlapp), status=%X (0 exp)",lf),ax
 
 ;--- move from EMS to EMS overlapp
 
@@ -146,7 +147,7 @@ local frame:word
 	mov ax,5701h	;xchg memory region
 	int 67h
 	movzx ax,ah
-	invoke printf, CStr( "5701,1->1: xchg EMS to EMS memory (non-overlapp), status=%X",lf),ax
+	invoke printf, CStr( "5701,1->1: xchg EMS to EMS memory (non-overlapp), status=%X (0 exp)",lf),ax
 
 ;--- xchg from EMS to EMS overlapp
 
@@ -165,7 +166,7 @@ local frame:word
 	mov ax,5701h	;xchg memory region
 	int 67h
 	movzx ax,ah
-	invoke printf, CStr( "5701,1->1: xchg EMS to EMS memory (overlapp), status=%X",lf),ax
+	invoke printf, CStr( "5701,1->1: xchg EMS to EMS memory (overlapp), status=%X (97 exp)",lf),ax
 
 ;--- set invalid region type
 
@@ -184,7 +185,7 @@ local frame:word
 	mov ax,5700h	;move memory region
 	int 67h
 	movzx ax,ah
-	invoke printf, CStr( "5700,2->1: src has invalid type (2), status=%X",lf),ax
+	invoke printf, CStr( "5700,2->1: src has invalid type (2), status=%X (98 exp)",lf),ax
 
 exit2:
 	mov dx,handle

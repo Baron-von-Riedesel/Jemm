@@ -13,6 +13,10 @@ sym db text,0
 	exitm <offset sym>
 endm
 
+ifndef ?KD
+?KD equ 0
+endif
+
 ;--- constants
 
 ?PAGEMAP		equ	3FEh	;page table for mapping page tables

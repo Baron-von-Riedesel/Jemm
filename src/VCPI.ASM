@@ -107,7 +107,7 @@ VCPI_GetInterface   PROC
     movzx edi,WORD PTR [ebp].Client_Reg_Struc.Client_EDI
     shl esi,4
     add edi,esi             ; edi -> client zero page table
-    @GETPTEPTR  esi,?PAGETAB0,1 ; esi -> page table for first 1M
+    mov esi, @GetPTEAddr(?PAGETAB0) ; page table for first 1M
 
 ;--- Jemm must ensure that label VCPI_PM_Entry will be in shared memory.
 ;--- Since this label is located in .text$2, 1 page should suffice.
@@ -231,7 +231,7 @@ VCPI_GetAddress PROC
     cmp cx,256
     jae @@vga_bad       ; page outside of first megabyte
 
-    @GETPTE edx, ecx*4+?PAGETAB0
+    mov edx, @GetPTEAddr(ecx*4+?PAGETAB0)
     and dx,0f000h       ; mask to page frame address
     mov ah,EMSS_OK
     ret

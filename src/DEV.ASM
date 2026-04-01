@@ -149,7 +149,7 @@ endif
 @@func04:
     cmp edx,4   ;bytes to read
     jb @@error
-    mov eax,[dwRSeg]
+    mov eax, [dwRSeg]
     mov [ebx+0], eax
     jmp @@ok
 @@func06:
@@ -235,13 +235,14 @@ if ?SERVTABLE
     cmp edx, size EMX08
     jb  @@error
     mov [ebx].EMX08.e08_ServiceTable, offset vmm_service_table
-    mov [ebx].EMX08.e08_BPTable, offset bptable
+    mov [ebx].EMX08.e08_pCallBack, offset bptable + BPTABLE.pInt19
     mov eax, [dwRSeg]
     shl eax, 16
     mov ecx, [bpstart]
+    inc ecx     ;use second static BP ( for INT 19h )
     sub ecx, [dwRes]
     mov ax, cx
-    mov [ebx].EMX08.e08_BPTableRM, eax
+    mov [ebx].EMX08.e08_CallBackRM, eax
     mov word ptr [ebx].EMX08.e08_GDTR, GDT_SIZE-1
     mov dword ptr [ebx].EMX08.e08_GDTR+2, offset V86GDT
     mov eax,dword ptr [IDT_PTR+2]
@@ -318,7 +319,7 @@ if ?PGE
     xor al,1
     mov [bPageMask],al
  if 0
-    @GETPTEPTR edi, ?PAGETAB0, 1;start of pagetab 0
+    mov edi, @GetPTEAddr(?PAGETAB0) ;start of pagetab 0
     mov ecx,110h+1          ;00000000-00110FFF
 @@FILL_PAGETAB0:
     mov edx, [edi]

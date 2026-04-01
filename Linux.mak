@@ -51,6 +51,8 @@ else
 AOPTD=
 endif
 
+AOPT=-c -nologo -IInclude $(AOPTD)
+
 # list of 32bit modules
 COFFMODS=OUTD/JEMM32.obj OUTD/EMS.obj OUTD/VCPI.obj OUTD/DEV.obj \
  OUTD/XMS.obj OUTD/UMB.obj OUTD/VDMA.obj OUTD/I15.obj \
@@ -73,18 +75,18 @@ COFFDEP1=$(subst OUTD,$(OUTD1),$(COFFMODS))
 COFFDEP2=$(subst OUTD,$(OUTD2),$(COFFMODS))
 OMFDEP1=$(subst OUTD,$(OUTD1),$(OMFMODS))
 OMFDEP2=$(subst OUTD,$(OUTD2),$(OMFMODS))
-AOPT16=-c -nologo -omf
+AOPT16=-omf
 
 LOPT32=format raw bin name $@ disable 1014 op q, offs=0x110000, start=_start
 
-32BITDEPS=src/JEMM.INC src/JEMM32.INC src/DEBUG32.INC src/EXTERN32.INC
-16BITDEPS=src/JEMM.INC src/JEMM16.INC src/DEBUG16.INC
+32BITDEPS=src/JEMM.INC src/JEMM32.INC src/DEBUG32.INC src/EXTERN32.INC Include/JSYSTEM.INC
+16BITDEPS=src/JEMM.INC src/JEMM16.INC src/DEBUG16.INC Include/JSYSTEM.INC
 
 $(OUTD1)/%.obj: src/%.ASM
-	@$(ASM) -c -nologo -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)/ -Fo$@ $<
+	@$(ASM) -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)/ -Fo$@ $<
 
 $(OUTD2)/%.obj: src/%.ASM
-	@$(ASM) -c -nologo -coff -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)/ -Fo$@ $<
+	@$(ASM) -coff -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)/ -Fo$@ $<
 
 ALL: $(OUTD1) $(OUTD2) $(OUTD1)/$(NAME1).EXE $(OUTD2)/$(NAME2).EXE
 
@@ -98,16 +100,16 @@ $(OUTD2)/$(NAME2).EXE: $(OMFDEP2)
 	@jwlink format dos file {$(OMFDEP2)} name $@ option q, m=$(OUTD2)/$(NAME2).map
 
 $(OUTD1)/INIT16.obj: src/INIT16.ASM $(16BITDEPS) Linux.mak
-	@$(ASM) $(AOPT16) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD1)/ -Fo$@ src/INIT16.ASM
+	@$(ASM) $(AOPT16) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)/ -Fo$@ src/INIT16.ASM
 
 $(OUTD2)/INIT16.obj: src/INIT16.ASM $(16BITDEPS) Linux.mak
-	@$(ASM) $(AOPT16) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)/ -Fo$@ src/INIT16.ASM
+	@$(ASM) $(AOPT16) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)/ -Fo$@ src/INIT16.ASM
 
 $(OUTD1)/JEMM16.obj: src/JEMM16.ASM $(OUTD1)/jemm32.bin $(16BITDEPS) Linux.mak
-	@$(ASM) $(AOPT16) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD1)/ -Fo$@ -I$(OUTD1) src/JEMM16.ASM
+	@$(ASM) $(AOPT16) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)/ -Fo$@ -I$(OUTD1) src/JEMM16.ASM
 
 $(OUTD2)/JEMM16.obj: src/JEMM16.ASM $(OUTD2)/jemm32.bin $(16BITDEPS) Linux.mak
-	@$(ASM) $(AOPT16) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)/ -Fo$@ -I$(OUTD2) src/JEMM16.ASM
+	@$(ASM) $(AOPT16) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)/ -Fo$@ -I$(OUTD2) src/JEMM16.ASM
 
 $(OUTD1)/jemm32.bin: $(COFFDEP1)
 	@jwlink $(LOPT32) file {$(COFFDEP1)} op map=$(OUTD1)/jemm32.map

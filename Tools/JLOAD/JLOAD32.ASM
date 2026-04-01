@@ -10,8 +10,9 @@
 	option casemap:none
 	option proc:private
 
-	include jemm.inc
-	include jemm32.inc
+;	include jemm.inc
+	include x86.inc
+	include jsystem.inc
 	include jlm.inc
 	include jload.inc
 	include jload32.inc
@@ -24,20 +25,14 @@
 
 g_dwIDT		dd 0	;linear address IDT
 
-if ?USEVCPIEXIT
-vcpi		label fword
-vcpiofs		dd 0
-vcpisel 	dd 0
-endif
-
 	.code
 
 ;--- entry from real-mode - must be at offset 0.
 ;--- This is a true VCPI entry, meaning SS:ESP still on host stack.
 ;--- CS,DS,ES=Flat (v5.86: CS is correct, but DS/ES was just an assumption)
+;--- SS:ESP -> top of 128 byte vcpi stack of Jemm
 ;--- ecx->VMMS structure
 ;--- edi=phys page for protected-mode stack
-;--- ebp=vcpi entry (if ?USEVCPIEXIT is 1)
 ;--- out: EDX=returncode from JLM
 
 start proc c public
@@ -55,7 +50,7 @@ start proc c public
 ;--- to be fixed: don't modify PTEs of the F8000000-F83FFFFF region, it's
 ;--- reserved for Jemm!
 
-	xchg edi,ds:[?PAGEDIR+?PAGETABSYS+0FFCh]  ;set the stack PTE ( =F83FF000h )
+	xchg edi,ds:[?SYSBASE+?PAGETABSYS+0FFCh]  ;set the stack PTE ( =F83FF000h )
 
 ;--- init stack. It's flat; since Jemm's ?SYSBASE is 0F8000000h, the
 ;--- stack is F8400000h.
@@ -63,17 +58,13 @@ start proc c public
 	mov ss, eax
 	mov esp, ?SYSBASE + 400000h
 
-if ?USEVCPIEXIT
-	mov [vcpiofs],ebp
-	mov [vcpisel],cs
-endif
-
 	push edi			;save old PTE for stack
 	cmp word ptr [dfOldint20+4],0	;already initialized?
 	jnz @F
 	call InitVMM
 	jc @@exit
 @@:
+
 	call Get_Cur_VM_Handle
 	mov ebp,[ebx].cb_s.CB_Client_Pointer
 
@@ -134,21 +125,18 @@ isapp:
 	xor eax,eax
 @@exit:
 	@dprintf ?INITDBG, <"start exit (returns to v86)",10>
-	mov edx, eax	;save returncode in edx
+	mov [ebp].Client_Reg_Struc.Client_EDX, eax
 	pop eax
-
-	lea esp, [ebp].Client_Reg_Struc.Client_EIP
-	mov ds:[?PAGEDIR+?PAGETABSYS+0FFCh], eax	;restore stack PTE
+	mov esp, ebp
+	mov ds:[?SYSBASE+?PAGETABSYS+0FFCh], eax	;restore stack PTE
 
 	mov eax, cr3	;flush TLB to validate the just restored stack PTE
 	mov cr3, eax
 
-if ?USEVCPIEXIT
-	mov ax,0DE0Ch
-	call [vcpi]
-else
+	popad
+	add esp, 4+4   ; skip int# and errcode
 	iretd
-endif
+
 	align 4
 start endp
 

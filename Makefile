@@ -101,6 +101,8 @@ AOPTD=-D_DEBUG $(DBGOPT) -Sg
 AOPTD=
 !endif
 
+AOPT=-c -nologo -IInclude $(AOPTD)
+
 # list of 32bit modules
 COFFMODS=.\jemm32.obj .\ems.obj .\vcpi.obj .\dev.obj .\xms.obj .\umb.obj .\vdma.obj .\i15.obj .\emu.obj .\vds.obj .\pool.obj .\init.obj .\debug.obj
 
@@ -137,13 +139,13 @@ LINK16=wlink.exe format dos file jemm16.obj,init16.obj name $@.EXE option map=$@
 LINK16=link16.exe /NOLOGO/MAP:FULL/NOD /NOI jemm16.obj init16.obj,$@.EXE,$@.MAP;
 !endif
 
-32BITDEPS=src\jemm32.inc src\jemm.inc src\extern32.inc src\debug32.inc Makefile
+32BITDEPS=src\jemm32.inc src\jemm.inc src\extern32.inc src\debug32.inc Include\jsystem.inc Makefile
 
 {src\}.asm{$(OUTD1)}.obj:
-	@$(ASM) -c -nologo -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<
+	@$(ASM) -coff -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)\ -Fo$(OUTD1)\ $<
 
 {src\}.asm{$(OUTD2)}.obj:
-	@$(ASM) -c -nologo -coff -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
+	@$(ASM) -coff -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)\ -Fo$(OUTD2)\ $<
 
 ALL: $(BUILD) $(OUTD1) $(OUTD2) $(OUTD1)\$(NAME1).EXE $(OUTD2)\$(NAME2).EXE
 
@@ -160,18 +162,18 @@ $(OUTD2)\$(NAME2).EXE: $(OUTD2)\jemm16.obj $(OUTD2)\init16.obj
 	@$(LINK16)
 	@cd ..\..
 
-$(OUTD1)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD1)\ -Fo$(OUTD1)\ src\init16.asm
+$(OUTD1)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Include\jsystem.inc Makefile
+	@$(ASM) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)\ -Fo$(OUTD1)\ src\init16.asm
 
-$(OUTD2)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ src\init16.asm
+$(OUTD2)\init16.obj: src\init16.asm src\jemm16.inc src\jemm.inc Include\jsystem.inc Makefile
+	@$(ASM) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)\ -Fo$(OUTD2)\ src\init16.asm
 
 !if $(MASM)
 $(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
+	@$(ASM) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
 
 $(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\_jemm32.inc src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
+	@$(ASM) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
 
 $(OUTD1)\_jemm32.inc: $(OUTD1)\jemm32.bin
 	@bin2inc.exe -q $(OUTD1)\jemm32.bin $(OUTD1)\_jemm32.inc
@@ -181,10 +183,10 @@ $(OUTD2)\_jemm32.inc: $(OUTD2)\jemm32.bin
 
 !else
 $(OUTD1)\jemm16.obj: src\jemm16.asm $(OUTD1)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=0 -D?KD=$(KD) $(AOPTD) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
+	@$(ASM) -D?INTEGRATED=0 -D?KD=$(KD) $(AOPT) -Fl$(OUTD1)\ -Fo$(OUTD1)\ -I$(OUTD1) src\jemm16.asm
 
 $(OUTD2)\jemm16.obj: src\jemm16.asm $(OUTD2)\jemm32.bin src\jemm.inc src\jemm16.inc src\debug16.inc Makefile
-	@$(ASM) -c -nologo -D?INTEGRATED=1 -D?KD=$(KD) $(AOPTD) -Sg -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
+	@$(ASM) -D?INTEGRATED=1 -D?KD=$(KD) $(AOPT) -Fl$(OUTD2)\ -Fo$(OUTD2)\ -I$(OUTD2) src\jemm16.asm
 
 !endif
 

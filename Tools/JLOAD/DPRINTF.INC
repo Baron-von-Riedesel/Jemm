@@ -22,7 +22,7 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 @@:
 	mov ebx,outb
 	add ebx,22
-	mov byte ptr [ebx],0
+	mov byte ptr ss:[ebx],0
 @@nextdigit:
 	dec ebx
 	xor edx,edx
@@ -35,14 +35,14 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 	jbe @F
 	add dl,7+20h
 @@:
-	mov [ebx],dl
+	mov ss:[ebx],dl
 	mov edx, eax
 	or edx, esi
 	jne @@nextdigit
 	cmp ch,0
 	je @F
 	dec ebx
-	mov [ebx],ch
+	mov ss:[ebx],ch
 @@:
 	mov eax,ebx
 	ret
@@ -82,13 +82,13 @@ formatitem:
 	mov [longarg],dl
 	mov bl,1
 	mov cl,' '
-	cmp BYTE PTR [esi],'-'
+	cmp BYTE PTR cs:[esi],'-'
 	jne @F
 	dec bl
 	inc esi
 @@:
 	mov [flag],bl
-	cmp BYTE PTR [esi],'0'
+	cmp BYTE PTR cs:[esi],'0'
 	jne @F
 	mov cl,'0'
 	inc esi
@@ -96,8 +96,8 @@ formatitem:
 	mov [fillchr],ecx
 	mov ebx,edx
 
-	.while ( byte ptr [esi] >= '0' && byte ptr [esi] <= '9' )
-		lodsb
+	.while ( byte ptr cs:[esi] >= '0' && byte ptr cs:[esi] <= '9' )
+		lodsb cs:[esi]
 		sub al,'0'
 		movzx eax,al
 		imul ecx,ebx,10		;ecx = ebx * 10
@@ -106,12 +106,12 @@ formatitem:
 	.endw
 
 	mov [size_],ebx
-	cmp BYTE PTR [esi],'l'
+	cmp BYTE PTR cs:[esi],'l'
 	jne @F
 	mov [longarg],1
 	inc esi
 @@:
-	lodsb
+	lodsb cs:[esi]
 	mov [fmt],esi
 	cmp al,'x'
 	je handle_x
@@ -130,14 +130,14 @@ formatitem:
 	pop eax
 	jmp done
 handle_c:
-	mov eax,cs:[edi]
+	mov eax, ss:[edi]
 	add edi, 4
 @@:
 	call VPUTCHR
 	retn
 
 handle_s:
-	mov esi,cs:[edi]
+	mov esi, ss:[edi]
 	add edi,4
 	jmp print_string
 handle_d:
@@ -151,11 +151,11 @@ handle_x:
 	mov ebx, 16
 @@:
 	xor edx,edx
-	mov eax,cs:[edi]
+	mov eax, ss:[edi]
 	add edi,4
 	cmp longarg,1
 	jnz @F
-	mov edx,cs:[edi]
+	mov edx, ss:[edi]
 	add edi,4
 	jmp printnum
 @@:
@@ -170,7 +170,7 @@ printnum:
 
 print_string:		;print string ESI, size EAX
 	mov eax, esi
-	.while byte ptr cs:[esi]
+	.while byte ptr ss:[esi]
 		inc esi
 	.endw
 	sub esi, eax
@@ -185,8 +185,8 @@ print_string:		;print string ESI, size EAX
 		.endw
 	.endif
 
-	.while byte ptr cs:[esi]
-		lodsb cs:[esi]
+	.while byte ptr ss:[esi]
+		lodsb ss:[esi]
 		call VPUTCHR		;print char of string
 	.endw
 

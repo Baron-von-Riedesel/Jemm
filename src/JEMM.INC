@@ -7,9 +7,6 @@
 LF              EQU 0AH
 CR              EQU 0DH
 
-?VERSIONHIGH    equ 5
-?VERSIONLOW     equ 87
-
 ifndef ?INTEGRATED
 ?INTEGRATED     EQU 0       ; 1=integrated version (XMS + EMM)
 endif
@@ -98,61 +95,6 @@ INTERFACE_VER   equ 300h
 
 endif
 
-if ?EMMXXXX0
-
-;--- ioctl read functions
-EMMDEV_GETAPI  equ 0
-EMMDEV_GEMMIS  equ 1
-EMMDEV_VERSION equ 2
-EMMDEV_GETRES  equ 4
-EMMDEV_SYSVARS equ 6
-EMMDEV_GETUMBS equ 7
-EMMDEV_GETSTAB equ 8    ;get VMM info
-;--- ioctl write functions
-EMMDEV_UPDATE  equ 15
-
-;--- structure returned by Jemm386 if a SYSVARS request was made
-;--- for device "EMMXXXX0"
-
-EMX06 struct
-e06_NoEMS       db ? ;+0
-e06_Frame       dw ? ;+1 segment
-e06_NoVCPI      db ? ;+3
-e06_DMABuff     dd ? ;+4 physical address DMA buffer
-e06_NoPGE       db ? ;+8
-                db ?
-                db ?
-                db ?
-e06_DMASize     dw ? ;+12 in KB
-e06_NoVME       db ? ;+14
-e06_NoA20       db ? ;+15
-e06_VCPITotal   dd ? ;+16 VCPI pages total (def 120 MB)
-e06_VCPIUsed    dd ? ;+20 VCPI pages allocated
-EMX06 ends
-
-;--- this is the structure for a "Get VMM info" request
-
-EMX08 struct
-e08_ServiceTable    dd ?	;linear address service table
-e08_BPTable         dd ?	;linear address BP table
-e08_BPTableRM       dd ?	;segment:offset of BP table
-e08_GDTR            df ?
-e08_IDTR            df ?
-e08_TR              dw ?
-e08_FlatCS          dw ?
-EMX08 ends
-
-;--- this is the structure for an "UPDATE" request with IoctlWrite
-
-EMX15W struct
-e15_bVME    db ?
-e15_bA20    db ?
-e15_bVCPI   db ?
-e15_bPGE    db ?
-EMX15W ends
-
-endif
-
 DMABUFFDEFAULT equ 64 ;/* DMA buffer default size in kB */
 MINMEM16K_DEFAULT equ 0 ;/* MIN= default (in 16 kB units) */
 
@@ -187,11 +129,16 @@ NoEMS             db 0
 NoFrame           db 0
 NoPool            db 0
 ;AltBoot           db 0   ;v5.80: has become a bit in V86Flags
-NoVME             db 1
 NoVDS             db 0
-NoPGE             db 1
-NoA20             db 0
+union 
+ struct
 NoVCPI            db 0
+NoA20             db 0
+NoVME             db 1
+NoPGE             db 1
+ ends
+dwDynSet          dd ?
+ends
 NoInvlPg          db -1
 V86Flags          db 0
 NoRAM             db 0
@@ -258,6 +205,51 @@ wSize   dw ?    ;size in paras, high bit used as flag free/allocated
 UMBBLK ends
 
 UMB_ALLOCATED equ 80h	;flag in wSize+1
+
+if ?EMMXXXX0
+
+;--- ioctl read functions
+EMMDEV_GETAPI  equ 0
+EMMDEV_GEMMIS  equ 1
+EMMDEV_VERSION equ 2
+EMMDEV_GETRES  equ 4    ;get EMM resident segment/size?
+
+EMMDEV_SYSVARS equ 6    ;get state of jemm32 variables
+EMMDEV_GETUMBS equ 7    ;get state of UMBs
+EMMDEV_GETSTAB equ 8    ;get VMM info
+
+;--- ioctl write functions
+EMMDEV_UPDATE  equ 15
+
+;--- structure returned by Jemm386 if a SYSVARS request was made
+;--- for device "EMMXXXX0"
+
+EMX06 struct
+e06_NoEMS       db ? ;+0
+e06_Frame       dw ? ;+1 segment
+e06_NoVCPI      db ? ;+3
+e06_DMABuff     dd ? ;+4 physical address DMA buffer
+e06_NoPGE       db ? ;+8
+                db ?
+                db ?
+                db ?
+e06_DMASize     dw ? ;+12 in KB
+e06_NoVME       db ? ;+14
+e06_NoA20       db ? ;+15
+e06_VCPITotal   dd ? ;+16 VCPI pages total (def 120 MB)
+e06_VCPIUsed    dd ? ;+20 VCPI pages allocated
+EMX06 ends
+
+;--- the structure for an "UPDATE" request with IoctlWrite
+
+EMX15W struct
+e15_bVME    db ?
+e15_bA20    db ?
+e15_bVCPI   db ?
+e15_bPGE    db ?
+EMX15W ends
+
+endif
 
 ;--- macros
 

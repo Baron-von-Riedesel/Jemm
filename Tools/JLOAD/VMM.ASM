@@ -8,8 +8,9 @@
 	option casemap:none
 	option proc:private
 
-	include jemm.inc
-	include jemm32.inc
+;	include jemm.inc
+	include x86.inc
+	include jsystem.inc
 	include jlm.inc
 	include jload.inc
 	include jload32.inc
@@ -41,15 +42,15 @@ bprm	 		dd 0	;real-mode address of first bp
 dwTSSbase		dd 0	;start TSS of monitor
 
 lpV86Hooks		dd 0	;page for hooks (v86 int chain)
-lpV86_Monitor	dd 0	;address V86_Monitor() function in Jemm
-lpStackCurr		dd 0	;address of dwStackCurr variable in Jemm
+;lpV86_Monitor	dd 0	;address V86_Monitor() function in Jemm
+;lpStackCurr		dd 0	;address of dwStackCurr variable in Jemm
 ppV86Hooks		dd 0	;v5.85: address of pV86Hooks variable in Jemm
 retaddr			dd 0	;v5.85: return address to V86_Monitor
 lpV86Faults		dd 0	;v5.86: original address stored in vmm_service_table
 
 ScratchPTE		dd 0	;PTE used to simplify page memory management
 oldiohandler	dd 0	;saved Jemm's IO handler
-oldbp1			dd 0	;saved Jemm's breakpoint 1 (the "reboot" bp)
+oldbp1			dd 0	;saved Jemm's breakpoint 1 (the "int 19h" bp)
 IO_Handler_Region dd 0	;linear address IO handler array (256 kB)
 IO_Handler_Pages dq 0	;64 pages reserved for IO handlers
 Int2fHooked     dd 0
@@ -64,9 +65,10 @@ bKDdetected		db 0
 	align 4
 endif
 
-;--- generic "control block" returned by Get_Cur_VM_Handle
+;--- generic "control block" returned by Get_Cur_VM_Handle;
+;--- the only important part is linear address of the client register struct;
 
-vmcb	cb_s <0,0,?TOS - size Client_Reg_Struc,1>
+vmcb	cb_s <0,0,?TOS - sizeof Client_Reg_Struc,1>
 
 ;--- start of device list known to the int 20h loader
 
@@ -179,10 +181,11 @@ InitVMM proc public
 	mov VCPI_Call_Table, eax
 	lodsd
 	mov IO_Trap_Table, eax
-	lodsd
-	mov lpV86_Monitor, eax
-	lodsd
-	mov lpStackCurr, eax
+;--- v5.87: next 2 fields now obsolete and removed
+;	lodsd
+;	mov lpV86_Monitor, eax
+;	lodsd
+;	mov lpStackCurr, eax
 	lodsd
 	mov MoveMemory, eax		;new for v5.69
 	lodsd
@@ -208,12 +211,11 @@ endif
 ;--- modify Jemm's BP 1 (which is the "reboot" BP)
 ;--- to become the "generic" BP
 
-	mov esi, [ecx].VMMS.emx08.e08_BPTable
+	mov esi, [ecx].VMMS.emx08.e08_pCallBack
 	mov eax, offset V86_Callback_Handler
-	xchg eax, [esi+4]
+	xchg eax, [esi]
 	mov [oldbp1], eax
-	mov eax, [ecx].VMMS.emx08.e08_BPTableRM
-	inc ax
+	mov eax, [ecx].VMMS.emx08.e08_CallBackRM
 	mov [bprm],eax
 
 ;--- since jemm v5.70, the TSS is no longer at a fix address
@@ -298,7 +300,7 @@ isv86:
 Int20_Handler endp
 
 ;--- generic breakpoint
-;--- has replaced Jemm's "REBOOT" breakpoint on init
+;--- has replaced Jemm's "Int 19h" breakpoint on init
 
 V86_Callback_Handler  proc
 	mov eax,[ebp].Client_Reg_Struc.Client_CS 
@@ -1297,7 +1299,7 @@ InitMapPage proc
 	jnz @@error
 	or edx,3							;set P, R/W, S
 	mov ds:[?PAGEDIR+?PAGEMAP*4],edx	;set the PDE
-	mov ds:[?PAGEDIR+?PAGETABSYS+0FF8h],edx  ;map the table in scratch region
+	mov ds:[?SYSBASE+?PAGETABSYS+0FF8h],edx  ;map the table in scratch region
 
 	call AllocPage			;alloc a second page (scratch PTE)
 	cmp ah,0
@@ -1328,7 +1330,7 @@ InitMapPage proc
 	
 ;--- now move scratch PTE to scratch region and clear it
 	
-	mov dword ptr ds:[?PAGEDIR+?PAGETABSYS+0FF8h],edx
+	mov dword ptr ds:[?SYSBASE+?PAGETABSYS+0FF8h],edx
 
 	mov eax, cr3
 	mov cr3, eax
@@ -1336,7 +1338,7 @@ InitMapPage proc
 	mov ecx, 1000h/4
 	xor eax, eax
 	rep stosd
-	mov dword ptr ds:[?PAGEDIR+?PAGETABSYS+0FF8h],0
+	mov dword ptr ds:[?SYSBASE+?PAGETABSYS+0FF8h],0
 
 	popad
 	clc

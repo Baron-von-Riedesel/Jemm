@@ -612,7 +612,7 @@ endif
     SHR ECX,12                  ; linear end   address -> PTE
     sub ecx, esi
     
-    @GETPTEPTR ESI, ESI*4+?PAGETAB0 ; ESI -> PTE
+    lea esi, @GetPTEAddr(ESI*4+?PAGETAB0) ; ESI -> PTE
     MOV EAX,[ESI]               ; get PTE
 
     @dprintf ?DMADBG, <"Dma_IsContiguous: PTE=%X ecx=%X",10>, eax, ecx

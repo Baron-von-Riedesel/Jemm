@@ -31,12 +31,12 @@ VXD1  = VMM
 VXD4  = VDMAD
 LIBS  = 
 
-ASM   = jwasm -c -nologo -Fl$(OUTD)/ -Sg $(AOPTD) -I../../Include -I../../src -DOUTD=$(OUTD)
-ASM32 = jwasm -c -nologo -Fl$(OUTD)/ -Sg $(AOPTD) -I../../Include -I../../src -DOUTD=$(OUTD)
+ASM   = jwasm -c -nologo -Fl$(OUTD)/ -Sg $(AOPTD) -I../../Include -DOUTD=$(OUTD)
+ASM32 = jwasm -c -nologo -Fl$(OUTD)/ -Sg $(AOPTD) -I../../Include -DOUTD=$(OUTD)
 
 LINK32=
-INC32=jload.inc jload32.inc debug.inc ../../src/Jemm32.inc                    ../../Include/jlm.inc
-INC16=jload.inc             debug.inc ../../src/Jemm32.inc ../../src/Jemm.inc ../../Include/jlm.inc
+INC32=JLOAD.INC JLOAD32.INC DEBUG.INC ../../Include/JSYSTEM.INC ../../Include/JLM.INC
+INC16=JLOAD.INC             DEBUG.INC ../../Include/JSYSTEM.INC ../../Include/JLM.INC
 
 ALL: $(OUTD) $(OUTD)/$(NAME).EXE
 
@@ -50,7 +50,7 @@ $(OUTD)/$(NAME).obj: $(NAME).ASM $(OUTD)/$(NAME32).bin $(INC16)
 	@$(ASM) -omf -D__UNIX__ -Fo$@ $(NAME).ASM
 
 $(OUTD)/$(NAME32).bin: $(OUTD)/$(NAME32).obj $(OUTD)/$(VXD1).obj $(OUTD)/$(VXD4).obj
-	@jwlink format raw bin f { $(OUTD)/$(NAME32).obj $(OUTD)/$(VXD1).obj $(OUTD)/$(VXD4).obj } name $@ op q,map=$(OUTD)/$(NAME32),offset=0xF8400000,start=_start
+	@jwlink format raw bin f { $(OUTD)/$(NAME32).obj $(OUTD)/$(VXD1).obj $(OUTD)/$(VXD4).obj } name $@ disable 1014 op q,map=$(OUTD)/$(NAME32),offset=0xF8400000,start=_start
 
 $(OUTD)/$(NAME32).obj: $(NAME32).ASM $(INC32) Linux.mak
 	@$(ASM32) -coff -Fo$@ $(NAME32).ASM

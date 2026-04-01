@@ -33,6 +33,8 @@ endif
 
 GDT_SIZE        equ 200h    ; size of GDT
 
+	include jsystem.inc
+
 ;--- the following equates define Jemm's memory layout:
 ;--- Jemm starts at 110000h with data and code (4-5 pages)
 ;--- system space is F8000000h-F83FFFFFh:
@@ -47,13 +49,7 @@ GDT_SIZE        equ 200h    ; size of GDT
 ;---  + c: DMA buffer
 ;---  + d: scratch region for physical page mapping
 
-?BASE           EQU 110000h         ; base of Jemm 32bit code
-?SYSBASE        EQU 0F8000000h      ; system space
-?SYSLINEAR      EQU ?SYSBASE+1000h
-?PAGEDIR        EQU ?SYSBASE+1000h  ; linear address page dir
-?PAGETAB0       EQU 1000h           ; offset for page table 0
-?PAGETABSYS     EQU 2000h           ; offset for system page table
-?TOS            EQU ?SYSLINEAR + 3000h + 1000h  ;top of ring 0 stack
+?PAGETAB0       EQU 2000h           ; rel. offset (?SYSBASE) for page table 0
 ?TSSLEN         EQU 68h+32+2000h+8  ; size of TSS "segment"
 
 ?HLPSTKSIZE     EQU 80h     ; size of help stack for VCPI
@@ -136,7 +132,7 @@ DMAREQ ends
 
 BPTABLE struct
 pInt06  dd ?
-pInt19  dd ?
+pInt19  dd ?	;this BP will be used by JLOAD and become "dynamic"
 pInt67  dd ?
 if ?VDS
 pInt4B  dd ?
@@ -229,8 +225,8 @@ pYield                  dd ?
 pVDS_Call_Table         dd ?
 pVCPI_Call_Table        dd ?
 pIO_Trap_Table          dd ?
-pV86_Monitor            dd ?	; linear address of V86_Monitor() (obsolete with ppV86Hooks)
-pStackCurr              dd ?	; linear address of dwStackCurr (obsolete with ppV86Hooks)
+;pV86_Monitor            dd ?	; linear address of V86_Monitor() (v5.87: obsolete with ppV86Hooks)
+;pStackCurr              dd ?	; linear address of dwStackCurr (v5.87: obsolete with ppV86Hooks)
 pMoveMemory             dd ?	; linear address of MoveMemory()
 ppV86Hooks              dd ?	; v5.85: address of pV86Hooks variable
 pV86Faults              dd ?	; v5.86: address of V86Faults
@@ -244,49 +240,21 @@ DEVICE_REBOOT_NOTIFY equ 17h
 
 ;--- macros
 
-;--- macro to get a pointer to PTEs
-;--- reg: register to set
-;--- ofs: offset in page dir/page table
-;--- bIsConst: if blank, then ofs is/contains a register
+;--- return a pointer to PTEs
+;--- ofs: offset in page dir/page table 0/sys page table
 
-@GETPTEPTR macro reg, ofs, bIsConst
-if 0
-    mov reg,[PAGEDIR]
-  ifnb <ofs>
-    lea reg, [reg+ofs]
-  endif  
-else
-  ifnb <ofs>
-    ifnb <bIsConst>
-      mov reg,?PAGEDIR+ofs
-    else
-      lea reg,[?PAGEDIR+ofs]
-    endif
-  else
-    mov reg, ?PAGEDIR
-  endif
-endif
-endm
-
-@GETPTE macro reg, ofs, bIsConst
-if 0
-    mov reg,[PAGEDIR]
-    mov reg,[reg+ofs]
-else
-    ifnb <bIsConst>
-      mov reg,ds:[?PAGEDIR+ofs]
-    else
-      mov reg,[?PAGEDIR+ofs]
-    endif
-endif
+@GetPTEAddr macro ofs:req
+    exitm <[?SYSBASE+ofs]>
 endm
 
 ;--- macro to convert a pointer to PTEs in system page table
 ;--- to the according linear address
 
-@SYSPTE2LINEAR macro reg, pPT
+@LinearFromSysPTE macro reg, pPT
+ifdif <reg>,<pPT>
     mov reg, pPT
-    sub reg, ?SYSLINEAR+?PAGETABSYS
+endif
+    sub reg, ?SYSBASE+?PAGETABSYS
     shl reg, 10
     add reg, ?SYSBASE
 endm

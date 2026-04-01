@@ -16,8 +16,8 @@ _DATA ends
 	option casemap:none
 	option proc:private
 
-	include jemm.inc
-	include jemm32.inc	; because of ?SYSLINEAR
+;	include jemm.inc
+	include jsystem.inc
 	include jlm.inc
 	include jload.inc
 	include debug.inc
@@ -160,13 +160,6 @@ i15tab  label desc
 	desc <-1,0,0,93h,0CFh,0>
 	desc <0,0,0,0,0,0>
 	desc <0,0,0,0,0,0>
-
-if ?USEVCPIEXIT
-vcpigdt label desc
-	desc <0,0,0,0,0,0>
-	desc <0,0,0,0,0,0>
-	desc <0,0,0,0,0,0>
-endif
 
 vcpisw	V862PM <0,0,0,0,0,0>
 
@@ -862,13 +855,6 @@ if ?CATCHEXC06
 endif
 
 	@dprintf ?RMDBG, <"RunVMM: preparing switch to protected-mode",lf>
-if ?USEVCPIEXIT
-	mov di,offset buffer
-	mov si,offset vcpigdt
-	mov ax,0DE01h
-	int 67h
-	mov ebp, ebx
-endif
 
 	mov eax, cr3
 	mov vcpisw.swCR3, eax

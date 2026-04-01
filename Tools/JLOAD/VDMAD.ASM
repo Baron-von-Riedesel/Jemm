@@ -8,8 +8,7 @@
 	option casemap:none
 	option proc:private
 
-	include jemm.inc
-	include jemm32.inc
+;	include jemm.inc
 	include vds.inc
 	include jlm.inc
 	include jload32.inc

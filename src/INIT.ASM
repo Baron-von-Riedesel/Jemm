@@ -16,8 +16,7 @@ endif
 
 ;--- assembly time constants
 
-?SYSPDE     EQU (?SYSBASE shr 20) and 0FFFh     ; offset in pagedir
-?SYSPTE     EQU (?SYSLINEAR shr 10) and 0FFFh   ; offset in page table
+?SYSPDE     EQU ?SYSBASE shr 20    ; offset of PDE for system space in pagedir
 
 ?PAT        equ 0       ; std=0, 1=use PAT to change WT to WC
 ?DMABELOW16M equ 0      ; 1=set DMA buffer size to 0 if physical address of buffer is beyond 16M
@@ -389,16 +388,17 @@ endif
     MOV [EDI+000h],EDX
     OR DWORD PTR [EDI+000h], PTF_PRESENT or PTF_RW or PTF_USER
     add edx, eax
-    mov [EDI+?SYSPDE], EDX
-    OR DWORD PTR [EDI+?SYSPDE], PTF_PRESENT or PTF_RW or PTF_USER
-
-    add edi, eax     ;edi -> mapped page table 0
 
     push edx         ;save mapped system page table
 
+    OR edx, PTF_PRESENT or PTF_RW or PTF_USER
+    mov [EDI+?SYSPDE], EDX
+
+    add edi, eax     ;edi -> mapped page table 0
+
 ;-- init page table 0 address space 0-110000h
 
-    mov edx, PTF_PRESENT or PTF_RW or PTF_USER  ;set flags u/ser, w/riteable, p/resent
+    movzx edx, dl  ;just flags u/ser, w/riteable, p/resent
 if ?PGE
     test byte ptr tmpFeatures+1,CF_PGE shr 8  ;PGE supported?
     jz @F
@@ -435,7 +435,6 @@ if ?PGE
 ;--- set first page (which is shared) global
     or ah, tmpPageMask
 endif
-
 @@:
     stosd
     ADD EAX,1000h
@@ -447,32 +446,31 @@ if ?PGE
 endif
     loop @B
 
-if 1;?MAPEXTMEM
-
-;-- for VCPI intruders, identity map remaining PTEs in page tab 0.
+;-- v5.86, option SB: identity map remaining PTEs in page tab 0.
 
 	test [esi].JEMMINIT.V86Flags, V86F_SB
 	jz nomapping
     push eax
- if 1
+if 1
     movzx eax, di
     and ah, 0Fh
     shl eax, 10     ;transform offset in page table -> linear address
     or al, PTF_PRESENT or PTF_RW or PTF_USER
- endif
-    mov cx, 400h    ;hiword ecx is clear
+endif
 @@:
     stosd
     ADD EAX,1000h
     test di,0FFFh
-    loopnz @B
+    jnz @B
 
-;--- identity map extended memory 400000-7fffffffh?
+;--- identity map extended memory 400000h-7fffffffh?
 ;--- with PSE, there's no big loss, since just the page dir
 ;--- has to be adjusted. However, possible intruders most
 ;--- likely won't understand 4MB PDEs.
- if 0
-    sub edi, 2000h-4	; =pagedir+4
+;--- if activated: add check if CPU supports PSE!
+if 0
+;    sub edi, 2000h-4	; =pagedir+4
+	mov edi, ?PAGEDIR+4
     mov ecx, 1FFh
 ;--- bit 7=1: PSE 4MB page
 ;--- bits 13-21: 0
@@ -482,17 +480,18 @@ if 1;?MAPEXTMEM
     stosd
     add eax, 400000h
     loop @B
- endif
+endif
     pop eax
 nomapping:
-endif
 
 ;-- init system page table with the rest.
-;-- in a first step just 3 PTEs are needed (to map page tables)
+;-- in a first step just 4 PTEs are needed (to map page tables and stack)
 
-    pop edi         ;get saved mapped system page table
-    add edi, ?SYSPTE
-    mov ecx,3+1     ;+ 4k stack
+    pop edi         ;restore saved mapped system page table (=linear address)
+
+    add edi, 4      ;skip first page ( remains uncommitted )    
+
+    mov ecx,3+1     ;3 page tables + 1 page for stack
 @@:
     stosd
     ADD EAX,1000h
@@ -562,11 +561,12 @@ endif
 
     @dprintf ?INITDBG, <"monitor code+data moved to extended memory",10>
 
-;--- load final values for GDTR + IDTR
+;--- load final values for GDTR
 
     .386p
-    LGDT FWORD PTR [GDT_PTR]
+    LGDT [GDT_PTR]
     .386
+
     @dprintf ?INITDBG, <"GDTR set, edi=%X",10>, edi
 
 ;-- create INT_TABLE + set IDT
@@ -823,7 +823,7 @@ if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
 @@buffernull:
     MOV [vdsstat.DMABuffStartPhys], ecx
 
-    @dprintf ?INITDBG, <"DMA buffer linear=%X physical=%X size=%X phys rest=%X",10>, [DMABuffStart], [vdsstat.DMABuffStartPhys], [vdsstat.DMABuffSize], eax
+    @dprintf ?INITDBG, <"DMA buffer linear=%X physical=%X size=%X phys rest=%X",10>, [vdsstat.DMABuffStart], [vdsstat.DMABuffStartPhys], [vdsstat.DMABuffSize], eax
 
 endif
 
@@ -832,7 +832,7 @@ endif
 
     push eax     ;rest of physical mem below DMA buffer
 
-    mov edi, ?SYSLINEAR + 3000h ; skip page dir + 2 page tables
+    mov edi, ?SYSBASE + 3000h + 1000h ; skip free page, page dir + 2 page tables
     mov eax,"KATS"
     mov ecx, 1000h/4
     rep stosd
@@ -906,7 +906,7 @@ endif
 
     @dprintf ?INITDBG, <", remaining bytes=%X",10>, eax
 
-    @SYSPTE2LINEAR edi, [PageMapHeap]
+    @LinearFromSysPTE edi, [PageMapHeap]
 
 ;--- here:
 ;--- eax = amount of space below DMA buffer (in bytes)
@@ -937,7 +937,7 @@ endif
 
 if ?INITDBG
     lea ebx, [edx-4]
-    @SYSPTE2LINEAR ebx, ebx
+    @LinearFromSysPTE ebx, ebx
     dec ebx
     @dprintf ?INITDBG, <"heap created at %X-%X, free PTEs starting at %X",10>, edi, ebx, edx
 endif
@@ -1079,10 +1079,10 @@ endif
 
     call EMS_Init2
 
-;--- get the (linear) page number into EAX
+;--- set EAX = index PTE of linear address in EDI in system page table
 
     mov eax, edi
-    sub eax, ?SYSLINEAR
+    sub eax, ?SYSBASE
     shr eax, 12
 
 if 0
@@ -1090,7 +1090,7 @@ if 0
     xor ecx,ecx
     test di,0fffh
     setnz cl
-    @GETPTEPTR esi, ?PAGETABSYS+eax*4+?SYSPTE
+    lea esi, @GetPTEAddr(?PAGETABSYS+eax*4)
     lea esi,[esi+ecx*4]
     xor ecx, ecx
 @@:
@@ -1103,9 +1103,9 @@ if 0
 endif
 
 ;--- convert EDI back into a physical address
-;--- use the page directory for the conversion
+;--- use system page table for the conversion
 
-    @GETPTE eax, ?PAGETABSYS+eax*4+?SYSPTE
+    mov eax, @GetPTEAddr(?PAGETABSYS+eax*4)
     and ax, 0F000h
     and edi, 0FFFh
 
@@ -1187,7 +1187,7 @@ if ?SPLIT
     jmp @@pageshadowed
 @@isstdumb:
 endif
-    @GETPTEPTR EAX, ?PAGETAB0+ecx*4
+    lea eax, @GetPTEAddr(?PAGETAB0+ecx*4)
     mov edx,[eax]
     and edx,0FFFh       ;don't modify the PTE bits
     or edx,edi
@@ -1219,8 +1219,8 @@ endif
     mov ecx, 0FFh
     call CopyROM
     mov WORD PTR ds:[0FFFF0h],19CDh     ; set "INT 19h" at FFFF:0000
-    @GETPTEPTR EDX, ?PAGETAB0+ecx*4
-    and byte ptr [edx],not 2        ; make this page R/O
+    lea edx, @GetPTEAddr(?PAGETAB0+ecx*4)
+    and byte ptr [edx],not PTF_RW       ; make this page R/O
     add edi,1000h
     sub eax,1000h
 @@noshadow:
@@ -1237,7 +1237,7 @@ if ?PGE
     jnz @F
     .586p
     mov ecx, CR4
-    or cl,CR4_PGE
+    or cl, CR4_PGE
     mov CR4, ecx
     .386
 @@:
@@ -1271,9 +1271,9 @@ endif
 
 ;-- clear all dirty + accessed flags in page table 0
 
-    @GETPTEPTR edx, ?PAGETAB0, 1
+    mov edx, @GetPTEAddr(?PAGETAB0)
     mov ecx, 1000h/4
-    mov al, not (20h or 40h)
+    mov al, not (PTF_ACCESS or PTF_DIRTY)
 @@:
     and [edx],al
     add edx, 4
@@ -1410,7 +1410,7 @@ endif
     mov [dwRes],edi
     mov eax,edi
     shr eax,4
-    mov [dwRSeg],eax
+    mov [dwRSeg], eax
     sub edi, esi
   if ?HOOK13
     add [dwRFlags],edi
@@ -1447,7 +1447,7 @@ CopyROM proc
     mov eax,edi
     call MapPhysPagesEx  ;map a free page in PTE heap
     pop esi
-    @GETPTEPTR EBX, ?PAGETAB0+esi*4
+    lea ebx, @GetPTEAddr(?PAGETAB0+esi*4)
     mov edx, [ebx]      ;get PTE for ROM page
     and edx, 0FFFh
     or edx, edi        ;copy the PTE attributes

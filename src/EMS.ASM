@@ -38,17 +38,6 @@ else
 endif
 .text$02 ENDS
 
-@emmpushreg macro
-    SUB ESP, CRS_SIZEX
-    PUSHAD
-    MOV EBP, ESP
-    endm
-@emmpopreg macro
-    mov esp, ebp
-    POPAD
-    ADD ESP, CRS_SIZEX
-    endm
-
 ;--- EMS page descriptor
 ;--- for 4 GB, there are 4096/1.5 = 2731 possible pool descriptor indices
 
@@ -214,6 +203,7 @@ EMS_MAX equ ($ - EMS_Call_Table) / 4
 ;--- is called and will finally met a breakpoint which will get us here.
 
 Int67_V86Entry proc public
+    @dprintf ?EMSDBG, <"Int 67h (V86Entry): CS:EIP=%X:%X EBP=%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, ebp
     call Simulate_Iret
     add esp,4       ;skip return address
     mov esi,[ebp].Client_Reg_Struc.Client_ESI
@@ -222,36 +212,52 @@ Int67_V86Entry proc public
     JMP EMM_ENTRY_2
 Int67_V86Entry endp
 
+@emmpushreg macro
+    SUB ESP, CRS_SIZEX
+    PUSHAD
+    MOV EBP, ESP
+endm
+
+@emmpopreg macro setebp
+if setebp
+    mov esp, ebp
+endif
+    POPAD
+    ADD ESP, CRS_SIZEX
+endm
+
+;--- IVT 67h is hooked; enter monitor to run the IVT code...
+
 Int67_Indirect:
-    @emmpopreg
+    @emmpopreg 0
     push 67h
     jmp V86_Monitor
 
     align 4
 ;
 ; Here starts the Expanded Memory Manager (EMM) Version 4.0
-;
+; Int67_Entry is the IDT entry for INT 67h.
 
 Int67_Entry PROC public
 
     @emmpushreg     ; make EBP -> Client_Reg_Struc
 
+;--- must be one source line without concatenation operator \, or Masm complains
+    @dprintf ?EMSDBG, <"Int 67h (IDT): CS:EIP=%X:%X EBP=%X AX=%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, ebp, ax
+
+    mov ecx, cs:[dwRSeg]
+    cmp cx, cs:[67h*4+2] ;IVT vector 67h modified?
+    jnz Int67_Indirect
+
     MOV ECX,SS      ; address everything
     MOV DS,ECX
     MOV ES,ECX
-
-;--- must be one source line without concatenation operator \, or Masm complains
-    @dprintf ?V86DBG, <"Int 67h in v86-mode, CS:EIP=%X:%X EBP=%X AX=%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, ebp, ax
-
-    mov ecx,[dwRSeg]
-    cmp cx,ds:[67h*4+2]     ;IVT vector 67h modified?
-    jnz Int67_Indirect
-
     mov esp,[dwStackCurr]
 
 EMM_ENTRY_2::
 
     CLD
+    @dprintf ?EMSDBG, <"Int 67h: CS:EIP=%X:%X EBP=%X AX=%X ESP=%X",10>, [ebp].Client_Reg_Struc.Client_CS, [ebp].Client_Reg_Struc.Client_EIP, ebp, ax, esp
 
 if ?VCPI
     cmp ah,0deh         ; see if VCPI function
@@ -299,7 +305,7 @@ endif
     mov word ptr [ebp].Client_Reg_Struc.Client_EDX,dx
 @@byeems:
     mov byte ptr [ebp].Client_Reg_Struc.Client_EAX+1,ah
-    @emmpopreg
+    @emmpopreg 1
     IRETD
 
 @@vcpi_inv_call:
@@ -337,11 +343,11 @@ EMS_MAP_REL_PAGE endp   ;fall thru!!!
 ; the logical page in BX might belong to no handle!
 
 EMS_MAP_ABS_PAGE PROC
-    movzx   eax,al
-    mov     al, [EMSPage2Segm+EAX]
+    movzx eax,al
+    mov al, [EMSPage2Segm+EAX]
 
-    @GETPTEPTR EDI, EAX*4+?PAGETAB0 ; EDI -> PTE
-    SHL     eax, 12             ; C0 -> C0000, C4-> C4000
+    lea edi, @GetPTEAddr(EAX*4+?PAGETAB0) ; EDI -> PTE
+    SHL eax, 12             ; C0 -> C0000, C4-> C4000
 
 EMS_MAP_ABS_PAGE ENDP   ;fall through!!!
 
@@ -521,7 +527,7 @@ ems4_get_set_partial_page_map PROC
     movzx eax,al
     push ecx
     movzx ecx, byte ptr [esi-1]
-    @GETPTEPTR ecx,ECX*4+?PAGETAB0
+    lea ecx, @GetPTEAddr(ECX*4+?PAGETAB0)
     mov ecx,[ecx]
     mov cl,0
     or eax,ecx
@@ -1122,7 +1128,7 @@ endif
     add ecx,[regSize]
     mov esi,[pPTE]
     mov eax, esi
-    sub eax, ?SYSLINEAR+?PAGETABSYS
+    sub eax, ?SYSBASE+?PAGETABSYS
     shl eax, 10
     add eax, ?SYSBASE
     add ecx, eax        ;let ecx point to end of region
@@ -1693,7 +1699,7 @@ EMS_Init1 proc public
 if 0    ;not needed. Once the pages are remapped, the bits are cleared
 ;--- reset the "global page" attribute for the EMS frame PTEs
 
-    @GETPTEPTR eax, eax*4+?PAGETAB0
+    lea eax, @GetPTEAddr(eax*4+?PAGETAB0)
     mov ecx,16
 @@nextitem:
     and byte ptr [eax+1],not 1
@@ -1758,7 +1764,7 @@ endif
     inc dh
     mov [bEmsPhysPages],al
 if 0        ;is not needed, since once the page is remapped, the bit is reset    
-    @GETPTEPTR eax,?PAGETAB0+ecx*4
+    lea eax, @GetPTEAddr(?PAGETAB0+ecx*4)
     and byte ptr [eax+00+1],not 1   ;reset "global" attribute
     and byte ptr [eax+04+1],not 1   ;reset "global" attribute
     and byte ptr [eax+08+1],not 1   ;reset "global" attribute

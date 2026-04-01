@@ -1,12 +1,10 @@
 
 ;--- assembly conditionals
 
-?USEVCPIEXIT    equ 0		;std=0, 1=use VCPI ax=DE0Ch to return to v86-mode
-
 ;--- constants
-;--- ?SYSLINEAR is from Jemm32.inc, value is ?SYSBASE+1000h (=0F8001000h)
+;--- ?SYSBASE is from Jemm32.inc (=0F8000000h)
 
-?SYSTEMADDR 	equ ?SYSLINEAR +3FF000h	;linear address "system" region
+?SYSTEMADDR 	equ ?SYSBASE+400000h	;linear address "system" region
 ?PRIVATEADDR 	equ 400000h	;linear address "private" region
 
 VMMS	struc

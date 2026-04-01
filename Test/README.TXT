@@ -12,6 +12,7 @@ frameres:   reset page frame mapping to a known value
 hlttest:    emulation of HLT, IF=1
 hlttest2:   emulation of HLT, IF=0
 i15move:    move block using int 15h, ah=87h
+int67:      test monitor if IVT 67h is hooked
 testdma:    read FD in UMB, using int 25h
 testdma2:   read FD in UMB, using int 13h
 testdma3:   read FD in UMB, using int 13h, ensured that DMA buffer/PTE remap must be used.

@@ -471,7 +471,7 @@ vds_contiguous proc
     push esi
     push edi
 
-    @GETPTEPTR esi, ?PAGETAB0, 1    ;get start of page tab 0
+    mov esi, @GetPTEAddr(?PAGETAB0)   ;get start of page tab 0
 
     mov ecx, [esi+eax*4]
     and cx, 0F000h
@@ -743,7 +743,7 @@ vds_scatterlock proc
 
     lea ebx,[ebx+edx-1] ; ebx == final linear address
     shr ebx,12          ; convert to 4K frame
-    @GETPTE edx, eax*4+?PAGETAB0
+    mov edx, @GetPTEAddr(eax*4+?PAGETAB0)
     and dx, 0F000h
     mov esi,edx         ; current physical address of 4K page
     cmp cx,[edi].EDDS.wNumAvail
@@ -779,7 +779,7 @@ vds_scatterlock proc
 
 @@next2:
     add esi, 1000h
-    @GETPTE edx, eax*4+?PAGETAB0
+    mov edx, @GetPTEAddr(eax*4+?PAGETAB0)
     and dx, 0F000h
     cmp edx, esi
     je @@samereg
@@ -849,7 +849,7 @@ endif
     push eax            ; save linear address
 
     shr eax,12          ; convert linear start to PTE index
-    @GETPTEPTR esi, ?PAGETAB0, 1
+    mov esi, @GetPTEAddr(?PAGETAB0)
 @@loop:
     xor edx, edx
     cmp eax, 400h       ; don't cross page table 0 border!

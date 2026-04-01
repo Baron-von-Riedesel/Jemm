@@ -329,7 +329,7 @@ machine_type label byte
 	iret
 @@get_xms_handle_table:
 	mov al,ah		;al==43h if function supported
-	mov bx,OFFSET xms_handle_table
+	mov bx,offset xms_handle_table
 	jmp @@shared2f
 
 NEW2F endp
@@ -749,7 +749,7 @@ done:
 	push EXECMODE_SYS
 	call mainex
 	add sp,128+2+2
-;	MOV DX,OFFSET dFailed
+;	MOV DX,offset dFailed
 	or ax,ax			; error occured?
 	mov ax,0
 	jnz @@driver_exit
@@ -784,14 +784,14 @@ EmmInstallcheck proc c public
 	MOV AX,ES			; EMM already installed ?
 	OR AX,BX
 	JZ @@ok
-	MOV DI,10
-	MOV SI,OFFSET sig1
+	MOV DI, 10
+	MOV SI, offset sig1
 	CLD
-	MOV CX,8
+	MOV CX, 8
 	REPZ CMPSB
 	je @@error			; matched 1st ID string
 	mov di, 10			; didn't match, check 2nd ID (NOEMS version)
-	mov si, OFFSET sig2
+	mov si, offset sig2
 	mov cl, 8
 	repz cmpsb
 	clc

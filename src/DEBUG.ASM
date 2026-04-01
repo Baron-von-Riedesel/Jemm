@@ -12,8 +12,8 @@
 	include jemm32.inc		;declarations for Jemm32
 	include debug32.inc
 
-?WAIT     equ 1             ;wait for "SPACE released" on LF
-?SLOWDOWN equ 256           ;slow down factor for debug displays
+?WAIT     equ 0             ;std=0; 1=wait for "SPACE released" on LF
+;?SLOWDOWN equ 256           ;slow down factor debug displays (just LF)
 
 ;--- publics/externals
 
@@ -92,7 +92,7 @@ else
 	jnz @@wait
 	cmp al,39h+80h;space released?
 	jnz @@wait
- elseif ?SLOWDOWN
+ elseifdef ?SLOWDOWN
 	mov ecx,?SLOWDOWN*100
 @@:
 	in al,61h
