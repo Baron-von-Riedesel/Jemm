@@ -47,7 +47,7 @@
  3. Technical Details about JLMs
 
   JLMs must be non-segmented and linked as Win32 PE binaries. But despite the
- similiarities, JLMs should not be confused with such binaries. Some of the
+ similarities, JLMs should not be confused with such binaries. Some of the
  differences are:
 
  - JLMs always run in ring 0 protected-mode.
@@ -59,7 +59,7 @@
 
   The only API JLMs can use directly is the one installed by JLoad, which more
  or less is a small subset of the Windows 3x/9x VMM API. This API usually is
- invoked by an INT 20h opcode, followed by two words which determine the
+ invoked by an INT 20h opcode, followed by two words that determine the
  module and function to be called. The API also allows "nested execution",
  that is, a JLM can indirectly call BIOS or other software interrupts outside
  of the client's context. For details about what functions are implemented
@@ -92,7 +92,7 @@
  
   Loading JDeb386 - which is a JLM itself - is the easiest method to debug JLMs.
  This debugger has a simple line-oriented interface. Once loaded, a breakpoint
- will activate the debugger.
+ ( or pressing SysReq ) will activate the debugger.
 
   Alternatively, Deb386v.sys may be used. This is a DebugR variant in DOS
  device driver format. This debugger has the advantage that it can debug Jemm

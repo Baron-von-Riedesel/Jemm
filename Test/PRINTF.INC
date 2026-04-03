@@ -1,5 +1,6 @@
 
 ;--- simple printf() implementation
+;--- assume ds=dgroup
 
 handle_char proc
 
@@ -34,7 +35,7 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 @@:
 	mov bx,outb
 	add bx,10
-	mov BYTE PTR [bx],0
+	mov BYTE PTR ss:[bx],0
 	dec bx
 @@nextdigit:
 	xor edx, edx
@@ -44,13 +45,13 @@ ltob PROC stdcall uses edi number:dword, outb:word, base:word
 	jbe @F
 	add dl,7+20h
 @@:
-	mov [bx],dl
+	mov ss:[bx],dl
 	dec bx
 	and eax, eax
 	jne @@nextdigit
 	cmp ch,0
 	je @F
-	mov [bx],ch
+	mov ss:[bx],ch
 	dec bx
 @@:
 	inc bx
@@ -81,7 +82,9 @@ nextchar:
 done:
 	xor ax,ax
 	ret
+
 formatitem:
+	push offset @@L335
 	xor dx,dx
 	mov [longarg],dl
 	mov bl,1
@@ -142,14 +145,14 @@ formatitem:
 	je handle_u	;'u'
 	jmp @@L359
 handle_c:				;'c'
-	mov ax,[di]
+	mov ax,ss:[di]
 	add di,2
 @@L359:
 	call handle_char
-	jmp @@L335
+	retn
 
 handle_s:				;'s'
-	mov si,[di]
+	mov si,ss:[di]
 	add di,2
 	jmp @@do_outputstring260
 
@@ -163,7 +166,7 @@ handle_i:				;'i'
 handle_u:				;'u'
 	mov bx,10
 @@lprt262:
-	mov ax,[di]
+	mov ax,ss:[di]
 	add di,2
 	sub dx,dx
 	cmp bx,0		;signed or unsigned?
@@ -172,12 +175,18 @@ handle_u:				;'u'
 @@:
 	cmp [longarg],0
 	je @F
-	mov dx,[di]
+	mov dx,ss:[di]
 	add di,2
 @@:
 	lea cx,[szTmp]
 	invoke ltob, dx::ax, cx, bx
 	mov si,ax
+	push ds
+	push ss
+	pop ds
+	call @@do_outputstring260
+	pop ds
+	retn
 
 @@do_outputstring260:
 	mov ax,si
@@ -186,7 +195,6 @@ handle_u:				;'u'
 	.endw
 	xchg ax, si
 	sub ax, si
-
 	sub [size_],ax
 	cmp BYTE PTR [flag],1
 	jne @@L360
@@ -201,7 +209,6 @@ handle_u:				;'u'
 	jg @@F270
 	mov [size_],bx
 	jmp @@L360
-
 @@F273:
 	mov al,[si]
 	call handle_char
@@ -212,11 +219,12 @@ handle_u:				;'u'
 	mov bx,[size_]
 @@:
 	or bx,bx
-	jle @@L335
+	jle @F
 	mov al,[fill]
 	call handle_char
 	dec bx
 	jmp @B
-
+@@:
+	retn
 printf ENDP
 

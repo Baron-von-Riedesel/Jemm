@@ -286,7 +286,7 @@ Client_EBX  dd ?    ;+16
 Client_EDX  dd ?    ;+20
 Client_ECX  dd ?    ;+24
 Client_EAX  dd ?    ;+28
-Client_Int  dd ?    ;+32
+Client_Int  dd ?    ;+32 (pushed as sign-extended byte - so check lowest byte only!)
 Client_Error dd ?   ;+36
 Client_EIP  dd ?    ;+40
 Client_CS   dd ?    ;+44    

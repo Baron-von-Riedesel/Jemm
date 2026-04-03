@@ -36,7 +36,7 @@
    - VMM.ASM: bugfix in _PageFree()
  v5.73:
    - bugfix: Hook_V86_Int_Chain might have messed the stack.
-   - automatically alloc/free V86 breakpoint if v86 API is to be
+   - automatically alloc/free V86 callback if v86 API is to be
      installed by a device. 
    - when the first v86 API is installed, v86 int 2Fh is hooked to
      handle ax=1684h.

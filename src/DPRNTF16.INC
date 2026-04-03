@@ -54,7 +54,7 @@ ltoa ENDP
 	exitm %localbyte
 endm
 
-OPTION PROLOGUE: @dprologue
+	OPTION PROLOGUE: @dprologue
 
 dprintf proc c public fmt:ptr, args:vararg
 
@@ -232,4 +232,4 @@ VPUTCHR:
 
 dprintf endp
 
-OPTION PROLOGUE: prologuedef
+	OPTION PROLOGUE: prologuedef

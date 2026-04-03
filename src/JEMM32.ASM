@@ -119,8 +119,8 @@ dwMaxPhysMem    dd 0        ; XMS highest address (r/o)
 bpstart         dd 0        ; linear address start of static bp array in Jemm16.RSEG
 PageMapHeap     dd ?SYSBASE+?PAGETABSYS+6*4
 
-;--- address space heap for 4MB pages.
-;--- v5.95: the heap starts at SYSBASE - 8MB ; it's usually max 4 PTEs ( 16MB ), but is
+;--- address space heap for 4MB pages (PDEs).
+;--- v5.85: the heap starts at SYSBASE - 8MB ; it's usually max 4 PTEs ( 16MB ), but is
 ;--- reentrant and grows downwards.
 ;--- previously the heap did start at 400000h and grew upwards,
 ;--- but this address region may be used by VMM's _PageReserve() function (PR_PRIVATE)
@@ -622,7 +622,7 @@ V86_Monitor PROC public
 ;-- at the very least cleared HiWord(ESP) so EBP will point to a
 ;-- valid frame.
 
-    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
+    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY (the int# is sign-extended)!
 
 if ?V86DBG
   if ?SELINTLOG
@@ -726,7 +726,7 @@ endif
 ;--- it's an IRQ - DS should be set correctly;
 ;--- v5.86: fixed, V86FRAME._IntNo isn't correct for IRQs!
 ;    MOVZX ECX,byte ptr [EBP].V86FRAME._IntNo ;load 1 byte ONLY!
-    MOV ECX, [EBP+sizeof PUSHADS]
+    MOVZX ECX, byte ptr [EBP+sizeof PUSHADS]  ; int# is sign-extended!
 
 if ?V86DBG
   if ?SELINTLOG
@@ -1895,10 +1895,7 @@ MapPhysPagesPSE proc uses ecx
 @@:
 	mov ds:[ebx+4], eax
 	and esi,3fffffh
-	mov eax,ebx			; convert PD offset to linear address
-	sub eax,?PAGEDIR
-	shl eax,20
-	add esi,eax
+	add esi,@LinearFromPDE(eax,ebx)	; convert PD offset to linear address
 	.486p
 	invlpg ds:[esi]
 	invlpg ds:[esi+400000h]

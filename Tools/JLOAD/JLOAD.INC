@@ -2,10 +2,14 @@
 ;--- assembly conditionals
 
 ;--- constants
-;--- ?SYSBASE is from Jemm32.inc (=0F8000000h)
+;--- ?SYSBASE is from JSYSTEM.INC (=0F8000000h)
 
-?SYSTEMADDR 	equ ?SYSBASE+400000h	;linear address "system" region
-?PRIVATEADDR 	equ 400000h	;linear address "private" region
+?SYSTEMADDR		equ ?SYSBASE+400000h;linear address "system" region
+?PRIVATEADDR	equ 400000h			;linear address "private" region
+
+?PMSTACK	equ 1	;1=alloc a 4 kB stack space; 0=use Jemm's stack
+
+;--- communication structure 16-bit real-mode -> 32-bit protected-mode
 
 VMMS	struc
 		JLCOMM <?>

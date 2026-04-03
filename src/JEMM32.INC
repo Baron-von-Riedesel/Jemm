@@ -165,7 +165,7 @@ Client_EBX  dd ?    ;+16
 Client_EDX  dd ?    ;+20
 Client_ECX  dd ?    ;+24
 Client_EAX  dd ?    ;+28
-Client_Int  dd ?    ;+32
+Client_Int  dd ?    ;+32 ; pushed as sign-extended byte - so use lowest byte only!
 Client_Error dd ?   ;+36
 Client_EIP  dd ?    ;+40
 Client_CS   dd ?    ;+44    
@@ -257,4 +257,15 @@ endif
     sub reg, ?SYSBASE+?PAGETABSYS
     shl reg, 10
     add reg, ?SYSBASE
+endm
+
+;--- macro to convert a pointer to PDEs to linear address
+
+@LinearFromPDE macro reg, pPD
+ifdif <reg>,<pPD>
+    mov reg, pPD
+endif
+    sub reg, ?PAGEDIR
+    shl reg, 20
+    exitm <reg>
 endm

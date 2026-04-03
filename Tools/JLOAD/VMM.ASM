@@ -8,7 +8,6 @@
 	option casemap:none
 	option proc:private
 
-;	include jemm.inc
 	include x86.inc
 	include jsystem.inc
 	include jlm.inc
@@ -17,13 +16,14 @@
 	include debug.inc
 
 ?MAXBP	equ 32
+?SYSTABSCRATCHIDX equ 3feh	;index PTE for scratch address space
 
 ?APIINT equ 2Fh
 
-BPDYN	struc
+CBDYN	struc
 dwCallback	dd ?
 dwRefData	dd ?
-BPDYN	ends
+CBDYN	ends
 
 ;--- v86-hook
 
@@ -50,7 +50,7 @@ lpV86Faults		dd 0	;v5.86: original address stored in vmm_service_table
 
 ScratchPTE		dd 0	;PTE used to simplify page memory management
 oldiohandler	dd 0	;saved Jemm's IO handler
-oldbp1			dd 0	;saved Jemm's breakpoint 1 (the "int 19h" bp)
+oldbp1			dd 0	;saved Jemm's static callback
 IO_Handler_Region dd 0	;linear address IO handler array (256 kB)
 IO_Handler_Pages dq 0	;64 pages reserved for IO handlers
 Int2fHooked     dd 0
@@ -137,9 +137,9 @@ MoveMemory  		dd 0
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 
-;--- VMM breakpoint table
+;--- VMM callback table
 
-v86_bp	BPDYN ?MAXBP dup (<>)
+v86_cb	CBDYN ?MAXBP dup (<>)
 v86faulthooks dd 32 dup (0)	;v5.86
 
 	.code
@@ -151,7 +151,7 @@ InitVMM proc public
 
 	@dprintf ?INITDBG,<"Init enter",10>
 
-;--- save the vectors received from Jemm
+;--- save the vectors received from Jemm;
 ;--- e08_ServiceTable is a VMM_SERV_TABLE struct
 
 	mov esi, [ecx].VMMS.emx08.e08_ServiceTable
@@ -181,7 +181,7 @@ InitVMM proc public
 	mov VCPI_Call_Table, eax
 	lodsd
 	mov IO_Trap_Table, eax
-;--- v5.87: next 2 fields now obsolete and removed
+;--- v5.87: next 2 fields obsolete since v5.85; now removed
 ;	lodsd
 ;	mov lpV86_Monitor, eax
 ;	lodsd
@@ -208,8 +208,8 @@ endif
 	call InitMapPage
 	jc @@exit
 
-;--- modify Jemm's BP 1 (which is the "reboot" BP)
-;--- to become the "generic" BP
+;--- modify one of Jemm's static BPs
+;--- to become the generic v86 callback BP.
 
 	mov esi, [ecx].VMMS.emx08.e08_pCallBack
 	mov eax, offset V86_Callback_Handler
@@ -218,20 +218,21 @@ endif
 	mov eax, [ecx].VMMS.emx08.e08_CallBackRM
 	mov [bprm],eax
 
-;--- since jemm v5.70, the TSS is no longer at a fix address
+;--- since jemm v5.70, the TSS is no longer at a fix address;
 
 	movzx edx, [ecx].VMMS.emx08.e08_TR
 	add edx, dword ptr [ecx].VMMS.emx08.e08_GDTR+2
-	mov ah,[edx+7]
-	mov al,[edx+4]
+	mov ah,[edx].DESCRIPTOR.bA2431
+	mov al,[edx].DESCRIPTOR.bA1623
 	shl eax,16
-	mov ax,[edx+2]
+	mov ax,[edx].DESCRIPTOR.wA0015
 	mov [dwTSSbase],eax
 
 	mov eax, dword ptr [ecx].VMMS.emx08.e08_IDTR+2
 	mov [g_dwIDT], eax
 
-;--- install a int 20h handler in IDT
+;--- install an int 20h handler in IDT;
+;--- it will install the jlm dynamic linking mechanism (Win3x/9x style)
 
 	mov esi, eax
 	add esi, 20h*8
@@ -299,8 +300,8 @@ isv86:
 
 Int20_Handler endp
 
-;--- generic breakpoint
-;--- has replaced Jemm's "Int 19h" breakpoint on init
+;--- generic callback;
+;--- has replaced Jemm's static callback on init
 
 V86_Callback_Handler  proc
 	mov eax,[ebp].Client_Reg_Struc.Client_CS 
@@ -310,8 +311,8 @@ V86_Callback_Handler  proc
 	neg ax
 	movzx eax,ax
 	shl eax,3
-	mov edx, [eax+offset v86_bp].BPDYN.dwRefData
-	jmp [eax+offset v86_bp].BPDYN.dwCallback
+	mov edx, [eax+offset v86_cb].CBDYN.dwRefData
+	jmp [eax+offset v86_cb].CBDYN.dwCallback
 isdefbp:
 	jmp [oldbp1]
 	align 4
@@ -346,21 +347,21 @@ Crash_Cur_VM endp
 
 Allocate_V86_Call_Back proc
 	push edi
-	mov edi, offset v86_bp
+	mov edi, offset v86_cb
 	mov ecx, ?MAXBP
 	xor eax, eax
 @@nextitem:
-	cmp eax, [edi].BPDYN.dwCallback
+	cmp eax, [edi].CBDYN.dwCallback
 	jz @@freecb
-	add edi, size BPDYN
+	add edi, size CBDYN
 	loop @@nextitem
 	pop edi
 	stc
 	ret
 @@freecb:
-	mov [edi].BPDYN.dwCallback, esi
-	mov [edi].BPDYN.dwRefData, edx
-	sub edi, offset v86_bp
+	mov [edi].CBDYN.dwCallback, esi
+	mov [edi].CBDYN.dwRefData, edx
+	sub edi, offset v86_cb
 	shr edi, 3
 	inc edi
 	mov ax, word ptr [bprm+2]
@@ -396,7 +397,7 @@ Free_V86_Call_Back proc
 	cmp eax, ecx
 	pop ecx
 	jnz @@fail
-	mov [v86_bp+ecx*8].BPDYN.dwCallback,0
+	mov [v86_cb+ecx*8].CBDYN.dwCallback,0
 	ret
 @@fail:
 	stc
@@ -1270,7 +1271,7 @@ FreePage endp
 
 ;--- esi=V86TOPM struct
 ;--- ebp=client reg struc
-;--- both structures have to be copied into first MB
+;--- both structures have to be copied into shared space
 
 V86ToPM proc public
 	mov edi, ?BASE+10h
@@ -1297,19 +1298,18 @@ InitMapPage proc
 	call AllocPage
 	cmp ah,0
 	jnz @@error
-	or edx,3							;set P, R/W, S
+	or edx,PTF_PRESENT or PTF_RW		;set P, R/W
 	mov ds:[?PAGEDIR+?PAGEMAP*4],edx	;set the PDE
-	mov ds:[?SYSBASE+?PAGETABSYS+0FF8h],edx  ;map the table in scratch region
+	mov ds:[?SYSBASE+?PAGETABSYS+?SYSTABSCRATCHIDX*4],edx  ;map the table in scratch region
 
 	call AllocPage			;alloc a second page (scratch PTE)
 	cmp ah,0
 	jnz @@error
-	or edx,3
+	or edx,PTF_PRESENT or PTF_RW
 	mov [ScratchPTE],edx
 
 	mov eax, cr3			;flush TLB
-	mov cr3, eax		
-
+	mov cr3, eax
 
 	mov eax, edx			;fill mapping table PDE with scratch PTE
 	mov edi, ?SYSBASE + 3FE000h
@@ -1328,9 +1328,9 @@ InitMapPage proc
 	mov eax,ds:[?PAGEDIR+?PAGEMAP*4]	;copy PDE "pagemap"
 	mov [edi+?PAGEMAP*4],eax
 	
-;--- now move scratch PTE to scratch region and clear it
+;--- now map scratch PTE into scratch region and clear it
 	
-	mov dword ptr ds:[?SYSBASE+?PAGETABSYS+0FF8h],edx
+	mov dword ptr ds:[?SYSBASE+?PAGETABSYS+?SYSTABSCRATCHIDX*4], edx
 
 	mov eax, cr3
 	mov cr3, eax
@@ -1338,7 +1338,7 @@ InitMapPage proc
 	mov ecx, 1000h/4
 	xor eax, eax
 	rep stosd
-	mov dword ptr ds:[?SYSBASE+?PAGETABSYS+0FF8h],0
+	mov dword ptr ds:[?SYSBASE+?PAGETABSYS+?SYSTABSCRATCHIDX*4], eax
 
 	popad
 	clc
@@ -1475,9 +1475,9 @@ _PageReserve proc public
 		cmp ah,0
 		pop eax
 		jnz @@error
-		or edx,7
+		or edx,PTF_PRESENT or PTF_RW or PTF_USER
 		mov ds:[?PAGEDIR + EAX],edx
-		and dl, not 4
+		and dl, not PTF_USER
 		mov ds:[(?PAGEMAP shl 22) + (?PAGEMAP shl 12) + EAX],edx
 		push edi
 		push ecx
@@ -1492,7 +1492,7 @@ _PageReserve proc public
 		pop ecx
 		pop edi
 @@:
-		mov eax, 6		;set USER + R/W + NP
+		mov eax, PTF_RW or PTF_USER	;set USER + R/W + NP
 		cmp edi,ebx		;first PTE?
 		setz ah
 		shl ah,1		;set first "available" bit in PTE
@@ -1771,7 +1771,7 @@ FindDevice endp
 
 ;--- esi -> DDB
 ;--- C set on failure
-;--- new v5.74: alloc v86 breakpoint if v86 api is to be installed
+;--- new v5.74: alloc v86 callback if v86 api is to be installed
 
 VMM_Add_DDB proc public
 	movzx eax, [esi].VxD_Desc_Block.DDB_Req_Device_Number
@@ -1877,7 +1877,7 @@ Int2fHook endp
 
 ;--- edi -> DDB
 ;--- C set on failure
-;--- new v5.74: free v86 breakpoint if v86 api exists
+;--- new v5.74: free v86 callback if v86 api exists
 
 VMM_Remove_DDB proc public
 	xor eax, eax

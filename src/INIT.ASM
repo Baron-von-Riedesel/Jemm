@@ -258,12 +258,12 @@ SetIDTEntry endp
 
 ;--- memory layout installed by the initialization code:
 ;--- shared memory (110000 - 11xxxx):
-;---  0-3.0 kB    wasted space because of rounding to page border
+;---  0-3.0 kB    wasted space because of rounding to page border (Jemm386 only)
 ;---    0.125 kB  monitor help stack for VCPI
 ;---    0.5 kB    GDT  [GDT_PTR] (size 200h)
 ;---  ~14.0 kB    resident monitor data+code (V86_ENDRES - ?BASE)
 ;---    2.0 kB    IDT  [IDT_PTR]
-;---   ~1.7 kB    interrupt table (size E0h*7)
+;---   ~1.7 kB    interrupt table (size E1h*7)
 ;---  0-3.0 kB    wasted space because of rounding to page border
 ;---              (if > 2 kB it is filled with STATUSTABLE)
 
@@ -303,12 +303,12 @@ dwSizeV86   equ <[ebp-24]>
 ;--- no access to global variables possible until paging is enabled
 ;--- and memory block has been moved to extended memory!
 
-;--- dprintf used direct addressing, doesn't work yet
+;--- dprintf uses direct addressing, doesn't work yet
 ;    @dprintf ?INITDBG, <"Welcome in PM",10>
 
     push edi                ;== jemmini [ebp-4]
     push ebx                ;== rsofsinit [ebp-8]
-    push esi                ;== codesrc [ebp-12]
+    push esi                ;== codeadr [ebp-12]
 
 if 1
     pushfd                      ; clear the NT flag to avoid a "reboot"
@@ -345,7 +345,7 @@ ife ?INTEGRATED
 endif
 
 ;-- calc size of the items which must be in page table 0:
-;-- GDT, (IDT), (stack), code+data
+;-- VCPI stack, GDT, code+data, IDT, INT_TABLE
 
 ;-- ?INTTABSIZ is size of INT_TABLE
 
@@ -658,9 +658,8 @@ if ?KD
 @@:
 endif
 
-;--- switch to the stack in extended memory
-
 if 0
+;--- switch to the stack in extended memory
     mov ebp, ?TOS - size IRETDV86
     lea esp, [ebp-24]   ;take care of the local variables
     @dprintf ?INITDBG, <"init: ESP reset",10>
@@ -744,15 +743,15 @@ endif
 
 ;--- until now are consumed:
 ;--- 3 pages for pagedir+pagetab
-;--- 4-5 pages for monitor (hlp stack,) GDT, IDT, data, code
+;--- 4-5 pages for monitor (hlp stack,) GDT, data, code, IDT
 
     pop ebx ; get free phys mem ptr
 
     @dprintf ?INITDBG, <"page table 0 initialised, EDI=%X EBX=%X",10>, edi, ebx
 
-if 1; ?DMAPT ( DMA buffer is not related to DMA port trapping! )
+if 1
 
-;--- set bits in DMABuffFree bit array
+;--- set bits in VDS DMABuffFree bit array
 
     mov esi, jemmini
     movzx eax, [esi].JEMMINIT.DMABufferSize ;buffer size in kB

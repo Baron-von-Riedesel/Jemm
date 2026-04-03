@@ -44,6 +44,17 @@ ltoa PROC stdcall uses edx edi number:dword, outb:word, base:word
 
 ltoa ENDP
 
+;--- dprintf is to preserve registers & flags; needs a special prologue:
+
+@dprologue macro procname,flag,parmbyte,localbyte,reglist,userparms
+	push bp
+	mov bp,sp
+	lea esp,[esp-localbyte]   ;there exists no 16-bit "lea sp,[sp-xx]"
+	exitm %localbyte
+endm
+
+	OPTION PROLOGUE: @dprologue
+
 ;--- it's assumed cs=DGROUP (model tiny)
 ;--- no assume for SS & DS, ES unused.
 
@@ -57,10 +68,11 @@ local szTmp[12]:byte
 
 	pusha
 	pushf
-	cld
-	lea di,args
+	push ds
 	push cs
 	pop ds
+	cld
+	lea di,args
 @@L335:
 	mov si,fmt
 nextchar:
@@ -72,6 +84,7 @@ nextchar:
 	call VPUTCHR
 	jmp nextchar
 done:
+	pop ds
 	popf
 	popa
 	ret
@@ -220,3 +233,5 @@ VPUTCHR:
 	retn
 
 dprintf endp
+
+	OPTION PROLOGUE: prologuedef

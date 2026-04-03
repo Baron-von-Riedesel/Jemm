@@ -10,7 +10,6 @@
 	option casemap:none
 	option proc:private
 
-;	include jemm.inc
 	include x86.inc
 	include jsystem.inc
 	include jlm.inc
@@ -18,6 +17,10 @@
 	include jload32.inc
 	include winnt.inc
 	include debug.inc
+
+if ?PMSTACK
+?SYSTABSTKIDX equ 3ffh
+endif
 
 	.data
 
@@ -32,7 +35,7 @@ g_dwIDT		dd 0	;linear address IDT
 ;--- CS,DS,ES=Flat (v5.86: CS is correct, but DS/ES was just an assumption)
 ;--- SS:ESP -> top of 128 byte vcpi stack of Jemm
 ;--- ecx->VMMS structure
-;--- edi=phys page for protected-mode stack
+;--- edi=phys page for protected-mode stack (if ?PMSTACK==1)
 ;--- out: EDX=returncode from JLM
 
 start proc c public
@@ -44,21 +47,23 @@ start proc c public
 	mov ds, eax
 	mov es, eax
 
-	or edi, PTF_PRESENT or PTF_RW or PTF_USER
-
+if ?PMSTACK
 ;--- set the 4kB stack allocated in 16-bit init code
 ;--- to be fixed: don't modify PTEs of the F8000000-F83FFFFF region, it's
 ;--- reserved for Jemm!
 
-	xchg edi,ds:[?SYSBASE+?PAGETABSYS+0FFCh]  ;set the stack PTE ( =F83FF000h )
-
+	or edi, PTF_PRESENT or PTF_RW or PTF_USER
+	xchg edi,ds:[?SYSBASE+?PAGETABSYS+?SYSTABSTKIDX*4]  ;set the stack PTE ( =F83FF000h )
 ;--- init stack. It's flat; since Jemm's ?SYSBASE is 0F8000000h, the
 ;--- stack is F8400000h.
-
 	mov ss, eax
 	mov esp, ?SYSBASE + 400000h
-
 	push edi			;save old PTE for stack
+else
+	mov ss, eax
+	mov esp, ?TOS - 200h
+endif
+
 	cmp word ptr [dfOldint20+4],0	;already initialized?
 	jnz @F
 	call InitVMM
@@ -126,13 +131,15 @@ isapp:
 @@exit:
 	@dprintf ?INITDBG, <"start exit (returns to v86)",10>
 	mov [ebp].Client_Reg_Struc.Client_EDX, eax
+if ?PMSTACK
 	pop eax
+endif
 	mov esp, ebp
-	mov ds:[?SYSBASE+?PAGETABSYS+0FFCh], eax	;restore stack PTE
-
+if ?PMSTACK
+	mov ds:[?SYSBASE+?PAGETABSYS+?SYSTABSTKIDX*4], eax	;restore stack PTE
 	mov eax, cr3	;flush TLB to validate the just restored stack PTE
 	mov cr3, eax
-
+endif
 	popad
 	add esp, 4+4   ; skip int# and errcode
 	iretd
@@ -484,7 +491,7 @@ GetDOSBuffer proc public
 	ret
 GetDOSBuffer endp
 
-if ?TRACE
+if ?LOG
 
 	include vioout.inc 
 	include dprintf.inc 

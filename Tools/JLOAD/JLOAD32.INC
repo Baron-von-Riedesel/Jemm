@@ -19,7 +19,7 @@ endif
 
 ;--- constants
 
-?PAGEMAP		equ	3FEh	;page table for mapping page tables
+?PAGEMAP		equ	3FEh	;page table for mapping page tables (it's a PDE index)
 
 ;--- structs
 

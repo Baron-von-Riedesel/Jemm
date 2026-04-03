@@ -16,7 +16,6 @@ _DATA ends
 	option casemap:none
 	option proc:private
 
-;	include jemm.inc
 	include jsystem.inc
 	include jlm.inc
 	include jload.inc
@@ -168,7 +167,9 @@ vcpisw	V862PM <0,0,0,0,0,0>
 vmms	VMMS <<0,0,0,<0>>,<0,0,0,0,0,0,0>,-1,offset szLdrPath, offset szPgmName, offset PE_Hdr, offset buffer, 0>
 ddb		VxD_Desc_Block <?>
 
+if ?PMSTACK
 dwStack   dd 0			;phys page for protected-mode stack
+endif
 dwPageTab dd 0			;phys page for VMM page table
 dwVmmPage dd 0			;phys page for VMM code/data
 dwBuffer  dd 0			;linear address of buffer
@@ -826,6 +827,7 @@ RunVMM proc public
 	add eax, ecx
 	mov [vmms.lpCmdLine],eax
 
+if ?PMSTACK
 ;--- allocate a 4k page to be used for protected-mode stack
 
 	mov ax,0DE04h
@@ -838,6 +840,7 @@ RunVMM proc public
 	ret
 @@:
 	mov [dwStack], edx
+endif
 
 ;--- install a handler for "invalid opcodes"
 ;--- which is the Jemm method of telling that an error has occured
@@ -879,7 +882,9 @@ endif
 	invoke GetLinear, offset vmms
 	mov ecx, eax
 
+if ?PMSTACK
 	mov edi, [dwStack]
+endif
 if ?CATCHEXC06
 	mov [spsaved],sp
 endif
@@ -891,12 +896,12 @@ endif
 
 ;--- returncode from JLM is stored in EDX
 	push edx
-
+if ?PMSTACK
 ;--- free the 4kB stack
 	mov edx, [dwStack]
 	mov ax,0DE05h
 	int 67h
-
+endif
 if ?CATCHEXC06
 	push ds
 	lds dx,[oldint06]

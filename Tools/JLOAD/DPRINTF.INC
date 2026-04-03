@@ -49,6 +49,18 @@ i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
 
 i64toa endp
 
+;--- dprintf has to preserve eflags, but usage of local vars will include a "sub esp,xxx"!
+;--- hence a special prologue is required:
+
+@dprologue macro procname,flag,parmbyte,localbyte,reglist,userparms
+	push ebp
+	mov ebp,esp
+	lea esp,[esp-localbyte]
+	exitm %localbyte
+endm
+
+	OPTION PROLOGUE: @dprologue
+
 dprintf proc c public fmt:ptr, args:vararg
 
 local flag:byte
@@ -69,7 +81,7 @@ nextchar:
 	je done
 	cmp al,'%'
 	je formatitem
-	call VPUTCHR
+	call handle_char
 	jmp nextchar
 done:
 	popfd
@@ -133,7 +145,7 @@ handle_c:
 	mov eax, ss:[edi]
 	add edi, 4
 @@:
-	call VPUTCHR
+	call handle_char
 	retn
 
 handle_s:
@@ -178,23 +190,35 @@ print_string:		;print string ESI, size EAX
 	mov ebx,size_
 	sub ebx,eax
 	.if flag == 1
-		.while sdword ptr ebx > 0
+		.while sdword ptr ebx > 0	;print leading filler chars
 			mov eax, [fillchr]
-			call VPUTCHR	;print leading filler chars
+			call handle_char
 			dec ebx
 		.endw
 	.endif
 
 	.while byte ptr ss:[esi]
 		lodsb ss:[esi]
-		call VPUTCHR		;print char of string
+		call handle_char
 	.endw
 
-	.while sdword ptr ebx > 0
+	.while sdword ptr ebx > 0		;print trailing spaces
 		mov eax, [fillchr]
-		call VPUTCHR		;print trailing spaces
+		call handle_char
 		dec ebx
 	.endw
 	retn
 
+handle_char:
+	cmp al,10
+	jnz @F
+	mov al,13
+	call @F
+	mov al,10
+@@:
+	call VPUTCHR
+	retn
+
 dprintf endp
+
+OPTION PROLOGUE: prologuedef

@@ -43,8 +43,10 @@ endif
 	MOV DH,CL
 	LEA EDI, [EDI+EAX*2]
 	MOV AL, [ESP+1Ch]
+	CMP AL, 13
+	JZ exit
 	CMP AL, 10
-	JZ @@NEWLINE
+	JZ @@LF
 	MOV [EDI], AL
 	MOV byte ptr [EDI+1], 07
 	INC DL
@@ -54,7 +56,7 @@ else
 	CMP DL, BYTE PTR DS:[44Ah]
 endif
 	JB @@OLDLINE
-@@NEWLINE:
+@@LF:
 	MOV DL, 00
 	INC DH
 if ?USEMONO
