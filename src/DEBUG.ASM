@@ -168,7 +168,8 @@ if 0
 ;--- expects that extended memory is mapped into linear address space,
 ;--- at least those parts of XMS memory that 386SWAT uses for itself.
 ;--- Jemm simply doesn't do that; it maps the memory that it needs and
-;--- nothing else.
+;--- nothing else ( unless SB option is set, but even then it's just
+;--- the memory of page table 0 ).
 
 ;--- check if int 3 vector still points to
 ;--- the monitor code segment. If no, assume 386SWAT has intruded

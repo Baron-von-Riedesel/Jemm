@@ -5,7 +5,7 @@
 ;*** move 1024 kB EMS to EMS memory overlapping
 
 	.286
-	.model small
+	.model tiny
 	option casemap:none
 	.stack 1024
 	.dosseg
@@ -196,7 +196,7 @@ exit:
 main endp
 
 start:
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 	mov cx,ss
 	sub cx,ax

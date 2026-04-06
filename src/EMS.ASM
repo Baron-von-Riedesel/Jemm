@@ -1,7 +1,7 @@
 
 ;--- EMS implementation
 ;--- EMS 4.0 is Public Domain, originally written by Michael Devore,
-;--- extended and modified for Jemm by Japheth 
+;--- extended and modified for Jemm by Japheth;
 ;--- the EMS 3.2 part is copyrighted and has therefore
 ;--- been moved into a separate include file (EMS32.INC)
 
@@ -30,13 +30,6 @@ DEVICE_NAME equ 000Ah   ; offset device name in RSEG
 ;--- public/externals
 
     include extern32.inc
-
-if ?CODEIN2PAGE
-    @seg .text$02,<PAGE>
-else
-    @seg .text$02,<PARA>
-endif
-.text$02 ENDS
 
 ;--- EMS page descriptor
 ;--- for 4 GB, there are 4096/1.5 = 2731 possible pool descriptor indices

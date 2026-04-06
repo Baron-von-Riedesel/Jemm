@@ -13,7 +13,7 @@ _BSS segment para public 'BSS'
 _BSS ends
 
 	.286
-	.model small
+	.model tiny
 	.stack 2048
 	.dosseg
 	.386P
@@ -622,7 +622,7 @@ main endp
 
 
 start:
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 	mov bx,ss
 	mov cx,ds
@@ -641,6 +641,7 @@ start:
 	mov ah,4ah
 	int 21h
 
+;--- clear uninitialized data
 	push es
 	push ds
 	pop es
@@ -649,8 +650,10 @@ start:
 	sub cx, di
 	shr cx, 1
 	xor ax, ax
+	cld
 	rep stosw
 	pop es
+
 	call main
 	mov ax,4c00h
 	int 21h

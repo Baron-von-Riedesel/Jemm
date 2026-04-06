@@ -288,12 +288,12 @@ PRDAd   dd  0           ;PRD 32-bit command addr. (Init set).
 ; - 0BEh:  read CD (raw)
 ;
 Packet label byte
-PktOPC  db  0       ;Opcode.
-        db  0       ;Unused (LUN and reserved).
-PktLBA  dd  0       ;CD-ROM logical block address.
-PktLH   db  0       ;"Transfer length" (sector count).
-PktLn   dw  0       ;Middle- and low-order sector count.
-PktRM   db  0       ;Read mode ("Raw" Read Long only).
+PktOPC  db  0       ;+0 Opcode.
+        db  0       ;+1 Unused (LUN and reserved).
+PktLBA  dd  0       ;+2 CD-ROM logical block address.
+PktLH   db  0       ;+6 "Transfer length" (sector count).
+PktLn   dw  0       ;+7 Middle- and low-order sector count.
+PktRM   db  0       ;+9 Read mode ("Raw" Read Long only).
         dw  0       ;Unused ATAPI "pad" bytes (required).
         align 4
 ;

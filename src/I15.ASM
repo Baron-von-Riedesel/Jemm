@@ -11,17 +11,11 @@
     include jemm32.inc      ;declarations for Jemm32
     include debug32.inc
 
-;--- equates
-
-;--- assembly time constants
-
-;--- segment definitions
-
 ;--- publics/externals
 
     include extern32.inc
 
-;--- expected GDT structure pointed to by ES:SI for int 15h, ah=87
+;--- expected GDT structure pointed to by ES:SI for int 15h, ah=87h
 
 I15MOVE struct
     dq ?
@@ -72,16 +66,19 @@ I15_Simulate87 proc public
     cmp cx, 8000h
     ja @@error02
     or ecx,ecx
-    je @@ok            ; nothing to do
-    shl ecx,1
+    je @@ok            ; nothing to do - MS Emm386 returns with error AH=2 if CX == 0!
+    shl ecx,1          ; convert words to bytes
 
-    mov eax,ecx         ; verify that src and dst descriptors are ok.
-    dec eax             ; we don't care about segment access rights
-                        
+;--- verify that src and dst descriptors are ok.
+;--- we don't care about segment access rights
+
+    lea eax,[ecx-1]
     cmp ax, [esi].I15MOVE.src.wLimit; 16-bit overflow not an issue (0->ffff)
-    ja @@error80
+;    ja @@error80
+    ja @@error02                    ; v5.87: error 2 is MS EMM386 compatible
     cmp ax, [esi].I15MOVE.dst.wLimit
-    ja @@error80
+;    ja @@error80
+    ja @@error02                    ; v5.87: error 2 is MS EMM386 compatible
 
     mov al,[esi].I15MOVE.src.bA1623
     mov ah,[esi].I15MOVE.src.bA2431 ; get linear source address
@@ -149,10 +146,12 @@ endif
     mov ah,02h
     or [ebp].Client_Reg_Struc.Client_EFlags, 1 ;CF=1
     jmp @@i1587_exit
+if 0 ; v5.87: error 80h should never be returned
 @@error80:
     mov ah,80h
     or [ebp].Client_Reg_Struc.Client_EFlags, 1 ;CF=1
     jmp @@i1587_exit
+endif
 @@fail:
     jmp V86_Exc0D
 

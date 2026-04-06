@@ -2,7 +2,7 @@
 ;*** EMS move
 
 	.286
-	.model small
+	.model tiny
 	option casemap:none
 	option casemap:none
 	.stack 1024
@@ -18,26 +18,24 @@ endm
 
 lf equ 10
 
-        
-?BUFSIZE	equ 10000h
-?SIZE		equ ?BUFSIZE/4000h	;size in EMS pages
-        
+?BUFSIZE equ 10000h
+?SIZE    equ ?BUFSIZE/4000h	;size in EMS pages
 
-        .386
+	.386
 
 EMM57 struct
-dwSize	DD ?	; +0  size of region
+dwSize  DD ?	; +0  size of region
 bSrcTyp DB ?	; +4  src memory type
 wSrcHdl DW ?	; +5  src handle
 wSrcOfs DW ?	; +7  src ofs
 wSrcSeg DW ?	; +9  src segm./log. page
 bDstTyp DB ?	; +11 dst memory type
-wDstHdl	DW ?	; +12 dst handle
-wDstOfs	DW ?	; +14 dst ofs
-wDstSeg	DW ?	; +16 dst segm./log. page
+wDstHdl DW ?	; +12 dst handle
+wDstOfs DW ?	; +14 dst ofs
+wDstSeg DW ?	; +16 dst segm./log. page
 EMM57 ends
 
-    .data
+	.data
 
 emm57   EMM57 <>
 
@@ -148,7 +146,7 @@ error3:
 main endp
 
 start:
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 	mov cx,ss
 	sub cx,ax

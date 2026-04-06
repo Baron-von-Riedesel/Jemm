@@ -19,10 +19,10 @@ MINXMSSIZE  equ 16      ; ignore XMS blocks smaller 16 kB
 ;--- assembly time constants
 
 if ?INTEGRATED
-?FREEXMS    equ 1       ; std=1, 0 might work
+?FREEXMS    equ 1       ; std=1; 1=free XMS blocks if jemm is unloaded; 0 might work
 ?EXPANDFIRST equ 0      ; std=0, 1 might work
 else
-?FREEXMS    equ 1       ; std=1, 1=free all XMS on exit
+?FREEXMS    equ 1       ; std=1; 0 won't work
 ?EXPANDFIRST equ 0      ; std=0, 1 won't work
 endif
 
@@ -32,50 +32,43 @@ externdef EMS_CheckMax:near
 
     include extern32.inc
 
-;--- private structures
+;--- Memory pool descriptor.
+;--- the pool descriptor array can grow up to 174784 bytes (64*2731) for 4 GB
+;--- standard is 80*(16+48) = 5120 bytes for 120 MB
 
-;--- Memory pool descriptor item
-;--- this table can grow up to 174784 bytes (64*2731) for 4 GB
-;--- standard is 80*64 = 5120 bytes for 120 MB
-
-POOL_SYSTEM_INFO    struct
-psi_addressK    DD ? ; base address in K (may not be XMS handle base if handle size changed later)
-psi_descptr     DD ? ; pointer to XMS handle descriptor array entry/pseudo-handle value
-psi_4kfree      DW ? ; free number of 4K slots (>psi_16kfree*4 if any partials)
-psi_16kfree     DB ? ; free number of 16K slots
-psi_16kmax      DB ? ; maximum number of 16K allocations (used allocation bytes*2)
-psi_startadj    DB ? ; unused K from XMS handle base for 4K alignment (0-3)
-psi_endadj      DB ? ; unused K at XMS handle end as 16K chunks (0-15)
-psi_flags       DB ? ; various flag values
-                DB ? ; alignment
-POOL_SYSTEM_INFO    ends
-
-; number of bytes for system info in EMS/VCPI pool allocation block,
-;  must be >= sizeof POOL_SYSTEM_INFO or bad things will happen quickly
-
-POOLBLOCK_SYSTEM_SPACE  EQU 16
-
-; number of bytes for allocation in a pool allocation block
+; number of bytes for allocation in a pool allocation descriptor
 ; that are 48*8=384 bits, -> 384 * 4 kB -> 1536 kB
 
-POOLBLOCK_ALLOCATION_SPACE  EQU 48
-POOLBLOCK_MEMSIZE           equ POOLBLOCK_ALLOCATION_SPACE*8*4
+POOLDESC_ALLOCATION_SPACE  EQU 48
 
-POOLBLOCK_TOTAL_SPACE   EQU POOLBLOCK_SYSTEM_SPACE+POOLBLOCK_ALLOCATION_SPACE
+POOL_DESC struct
+dwAddressK      DD ? ; phys. base address in K (may not be XMS handle base if handle size changed later)
+pXMSdesc        DD ? ; pointer to XMS handle descriptor array entry/pseudo-handle value
+w4kfree         DW ? ; free number of 4K slots (>b16kfree*4 if any partials)
+b16kfree        DB ? ; free number of 16K slots
+b16kmax         DB ? ; maximum number of 16K allocations (used allocation bytes*2)
+bStartAdj       DB ? ; unused K from XMS handle base for 4K alignment (0-3)
+bEndAdj         DB ? ; unused K at XMS handle end as 16K chunks (0-15)
+bFlags          DB ? ; various flag values
+                DB ? ; alignment
+bits            DB POOLDESC_ALLOCATION_SPACE dup (?)
+POOL_DESC ends
 
-LPPOOL_SYSTEM_INFO typedef ptr POOL_SYSTEM_INFO
+; size a pool descriptor will manage (in kB): 48*8*4 = 1536
+
+POOLDESC_MEMSIZE equ POOLDESC_ALLOCATION_SPACE*8*4
 
 .text$01 SEGMENT
 
 pmem PAGEMEM <0,0,0>
 
-PoolAllocationTable DD 0    ; start of pool table
-PoolAllocationEnd   DD 0    ; current end of pool table
-PoolAllocationMax   DD 0    ; end of pool table (usually 80 entries)
+PoolAllocationTable DD 0    ; start of pool descriptor array
+PoolAllocationEnd   DD 0    ; current end of descriptor array
+PoolAllocationMax   DD 0    ; max end of descriptor array (default: 80 entries = 120 MB)
 
-LastBlockAllocated  DD 0    ; last pool block used for alloc
-LastBlockFreed      DD 0    ; last pool block used for free
-XMSPoolBlockCount   DD 0    ; count of XMS handles allocated for pool blocks (not counting initial UMB block)
+LastBlockAllocated  DD 0    ; last pool desc used for alloc
+LastBlockFreed      DD 0    ; last pool desc used for free
+XMSPoolBlockCount   DD 0    ; count of XMS handles allocated for pool descs (not counting initial UMB block)
 
 .text$01 ends
 
@@ -83,17 +76,19 @@ XMSPoolBlockCount   DD 0    ; count of XMS handles allocated for pool blocks (no
 
 ; Pool memory management routines
 
-;--- convert block index + nibble offset to a physical address
-;--- ecx=block index
+;--- convert desc index + nibble offset to a physical address
+;--- ecx=desc index
 ;--- eax=nibble offset
 ;--- out: physical address in EAX
 
 Pool_GetPhysAddr proc public
-    shl ecx,6                       ; convert to 64-byte block offset
+    .errnz sizeof POOL_DESC - 64
+;--- if sizeof POOL_DESC changes, next line must be adjusted!
+    shl ecx,6                       ; convert to 64-byte desc offset
     shl eax,14                      ; 16K to bytes
-    add ecx, [PoolAllocationTable]  ; esi -> pool allocation block for page
+    add ecx, [PoolAllocationTable]  ; ecx -> pool desc for page
 
-    mov ecx,[ecx].POOL_SYSTEM_INFO.psi_addressK
+    mov ecx,[ecx].POOL_DESC.dwAddressK
     shl ecx,10                      ; K address to bytes
     add eax,ecx                     ; = physical memory address of page
     ret 
@@ -144,12 +139,12 @@ Pool_GetFree16KPages PROC public
     xor eax, eax
     mov ecx, eax
     mov esi, [PoolAllocationTable]
-@@findblkloop:
-    mov cl,[esi].POOL_SYSTEM_INFO.psi_16kfree   ; high words known zero
-    add eax,ecx
-    add esi,POOLBLOCK_TOTAL_SPACE
+nextitem:
+    mov cl, [esi].POOL_DESC.b16kfree   ; high words known zero
+    add eax, ecx
+    add esi, sizeof POOL_DESC
     cmp esi, [PoolAllocationEnd]
-    jb  @@findblkloop
+    jb  nextitem
 
 ;--- get MIN(free XMS pages, pmem.dwMaxMem4k - dwTotalMem)/4 into ESI
 
@@ -178,13 +173,13 @@ Pool_GetFree16KPages PROC public
 Pool_GetFree16KPages ENDP
 
 
-; locate any adjacent free XMS block to current pool allocation block
-; if found, try consuming 32K of it for pool allocation block
+; locate any adjacent free XMS block to current pool allocation desc;
+; if found, try consuming 32K of it for pool allocation block;
 ; the adjacent XMS block must be at the end of current pool block,
-; since the pool block base cannot be changed once set
+; since the pool block base cannot be changed once set.
 ; pool block base+block size == owner XMS handle base+handle size (end match end)
 ; ends must match since you can't span noncontiguous sub-blocks of an owner XMS
-; block with a single EMS/VCPI pool allocation block
+; block with a single EMS/VCPI pool allocation block.
 ; INP: ESI -> Pool block to expand (and is ensured to be expandable)
 ; OUT: NC if success, C if fail
 ; all registers preserved
@@ -193,29 +188,29 @@ Pool_ExpandBlock PROC
 
     pushad
 
-    @dprintf ?POOLDBG, <"Pool_ExpandBlock: esi=%X, addrK=%X, pArray=%X",10>, esi, [esi].POOL_SYSTEM_INFO.psi_addressK, [esi].POOL_SYSTEM_INFO.psi_descptr
+    @dprintf ?POOLDBG, <"Pool_ExpandBlock: esi=%X, addrK=%X, pArray=%X",10>, esi, [esi].POOL_DESC.dwAddressK, [esi].POOL_DESC.pXMSdesc
 
-    mov edi,[esi].POOL_SYSTEM_INFO.psi_descptr
+    mov edi,[esi].POOL_DESC.pXMSdesc
 if ?EXPANDFIRST
     add edi,[dwRes]
 endif
     
     mov ebx,[edi].XMS_HANDLE.xh_baseK
-    add ebx,[edi].XMS_HANDLE.xh_sizeK   ; ebx -> end of current pool block owner XMS
+    add ebx,[edi].XMS_HANDLE.xh_sizeK   ; ebx -> end of current pool desc owner XMS
 
-; see if owner XMS for pool allocation block end matches
-;  end of pool allocation block
+; see if owner XMS for pool allocation desc end matches
+; end of pool allocation block
 
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_startadj
-    mov eax,[esi].POOL_SYSTEM_INFO.psi_addressK
-    sub eax,ecx                 ; true XMS start when pool allocation block created
-    mov cl,[esi].POOL_SYSTEM_INFO.psi_endadj
-    add eax,ecx                 ; true XMS end when block created
-    mov cl,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx ecx,[esi].POOL_DESC.bStartAdj
+    mov eax,[esi].POOL_DESC.dwAddressK
+    sub eax,ecx                 ; true XMS start when pool allocation desc created
+    mov cl,[esi].POOL_DESC.bEndAdj
+    add eax,ecx                 ; true XMS end when desc created
+    mov cl,[esi].POOL_DESC.b16kmax
     shl ecx,4                   ; convert to K
     add eax,ecx
     cmp eax,ebx
-    jne @@locfail               ; owner XMS end no longer matches initial pool block owner XMS end
+    jne @@locfail               ; owner XMS end no longer matches initial pool desc owner XMS end
 
     movzx ecx, [XMS_Handle_Table.xht_numhandles]
     mov edx, [XMS_Handle_Table.xht_pArray]
@@ -237,35 +232,35 @@ endif
 @@found:
     test [edx].XMS_HANDLE.xh_flags,XMSF_FREE    ; if block is not free, abort scan
     je  @@locfail
-    movzx eax,[esi].POOL_SYSTEM_INFO.psi_endadj
+    movzx eax,[esi].POOL_DESC.bEndAdj
     add eax,[edx].XMS_HANDLE.xh_sizeK
     cmp eax,32                  ; large enough?
     jb @@locfail
 
 ; transfer 32K of following block to current block - unused end K in current
     mov eax,32
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_endadj
-    sub eax,ecx                 ; adjust amount to change preceding block
-    add [edx].XMS_HANDLE.xh_baseK,eax       ; move changed block address ahead
-    sub [edx].XMS_HANDLE.xh_sizeK,eax       ; and adjust size
-    mov edi,[esi].POOL_SYSTEM_INFO.psi_descptr
+    movzx ecx,[esi].POOL_DESC.bEndAdj
+    sub eax,ecx                       ; adjust amount to change preceding block
+    add [edx].XMS_HANDLE.xh_baseK,eax ; move changed block address ahead
+    sub [edx].XMS_HANDLE.xh_sizeK,eax ; and adjust size
+    mov edi,[esi].POOL_DESC.pXMSdesc
 if ?EXPANDFIRST
     add edi,[dwRes]
 endif
-    add [edi].XMS_HANDLE.xh_sizeK,eax       ; increase pool associated XMS block size
-    mov [esi].POOL_SYSTEM_INFO.psi_endadj,0     ; no end overlap
+    add [edi].XMS_HANDLE.xh_sizeK,eax ; increase pool associated XMS block size
+    mov [esi].POOL_DESC.bEndAdj,0     ; no end overlap
 
-    add [esi].POOL_SYSTEM_INFO.psi_16kmax,2     ; adjust allocation tracking bytes
-    add [esi].POOL_SYSTEM_INFO.psi_16kfree,2
-    add [esi].POOL_SYSTEM_INFO.psi_4kfree,2*4
+    add [esi].POOL_DESC.b16kmax,2     ; adjust allocation tracking bytes
+    add [esi].POOL_DESC.b16kfree,2
+    add [esi].POOL_DESC.w4kfree,2*4
     add [pmem.dwTotalMem4K],2*4
     
 ;--- zero tracking allocation byte (not really needed)
 
 if 0
-    movzx eax,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx eax,[esi].POOL_DESC.b16kmax
     shr eax,1                   ; byte offset in allocation space (32K/byte)
-    mov BYTE PTR [esi+eax+POOLBLOCK_SYSTEM_SPACE-1],0
+    mov BYTE PTR [esi].POOL_DESC.bits[eax-1],0
 endif
 
 ; see if changed contiguous XMS block size went to <16K,
@@ -274,7 +269,7 @@ endif
     mov eax,[edx].XMS_HANDLE.xh_sizeK
     cmp eax,MINXMSSIZE
     jae @@loc2
-    mov [esi].POOL_SYSTEM_INFO.psi_endadj,al
+    mov [esi].POOL_DESC.bEndAdj,al
 
     xor eax,eax
     mov [edx].XMS_HANDLE.xh_baseK,eax           ;required for FD Himem
@@ -289,8 +284,8 @@ endif
 
 Pool_ExpandBlock ENDP
 
-; expand any available allocation pool block by minimum amount, if possible
-; return NC on success, then ESI=block which has been expanded
+; expand any available allocation pool desc by minimum amount, if possible
+; return NC on success, then ESI=desc which has been expanded
 ; return C on failure
 ; other registers preserved
 ; called by VCPI, do not write segment registers here!
@@ -298,25 +293,24 @@ Pool_ExpandBlock ENDP
 Pool_ExpandAnyBlock PROC
 
     cmp [bNoPool],0 ; dynamic memory allocation on?
-    jne @@fail
+    jne fail
     mov esi, [PoolAllocationTable]
-
-@@findblkloop:
-    cmp [esi].POOL_SYSTEM_INFO.psi_addressK,0   ; unused/deallocated block?
-    je  @@nextblock
-    cmp [esi].POOL_SYSTEM_INFO.psi_16kmax,2*POOLBLOCK_ALLOCATION_SPACE - 1  ;32k still free?
-    jae @@nextblock             ; current block is full
-    test [esi].POOL_SYSTEM_INFO.psi_flags,PBF_DONTEXPAND
-    jne @@nextblock             ; can't expand this block
+nextitem:
+    cmp [esi].POOL_DESC.dwAddressK,0   ; unused/deallocated desc?
+    je  skipitem
+    cmp [esi].POOL_DESC.b16kmax, 2 * POOLDESC_ALLOCATION_SPACE - 1  ;32k still free?
+    jae skipitem              ; current block is full
+    test [esi].POOL_DESC.bFlags,PBF_DONTEXPAND
+    jne skipitem              ; can't expand this block
     call Pool_ExpandBlock
-    jnc @@done
-@@nextblock:
-    add esi,POOLBLOCK_TOTAL_SPACE
+    jnc done
+skipitem:
+    add esi, sizeof POOL_DESC
     cmp esi, [PoolAllocationEnd]
-    jb @@findblkloop
-@@fail:
+    jb nextitem
+fail:
     stc     ; failure
-@@done:
+done:
     ret
     align 4
 
@@ -337,7 +331,7 @@ Pool_Allocate4KPage PROC public
     mov esi, [LastBlockAllocated]
     or esi,esi
     je @@nolastalloc
-    cmp [esi].POOL_SYSTEM_INFO.psi_4kfree,ax
+    cmp [esi].POOL_DESC.w4kfree,ax
     jne @@searchbytes
 
 ; try last freed chunk
@@ -346,18 +340,18 @@ Pool_Allocate4KPage PROC public
     mov esi, [LastBlockFreed]
     or esi,esi
     je @@nolastfreed
-    cmp [esi].POOL_SYSTEM_INFO.psi_4kfree,ax
+    cmp [esi].POOL_DESC.w4kfree,ax
     jne @@searchbytes
-
 @@nolastfreed:
+
     mov esi, [PoolAllocationTable]
-@@findblkloop:
-    cmp [esi].POOL_SYSTEM_INFO.psi_4kfree,ax
+nextitem:
+    cmp [esi].POOL_DESC.w4kfree,ax
     jne @@searchbytes
 @@nextblock:
-    add esi,POOLBLOCK_TOTAL_SPACE
+    add esi, sizeof POOL_DESC
     cmp esi, [PoolAllocationEnd]
-    jb  @@findblkloop
+    jb  nextitem
     call Pool_ExpandAnyBlock    ; try to expand a pool block 
     jnc @@searchbytes           ; if NC, ESI -> expanded block
     call Pool_AllocateEMBForPool
@@ -365,11 +359,11 @@ Pool_Allocate4KPage PROC public
     ret
 
 @@searchbytes:
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx ecx,[esi].POOL_DESC.b16kmax
     shr ecx,1                   ; count of allocation bytes in block
     adc ecx,0                   ; don't forget the last nibble
 
-    lea edi,[esi+POOLBLOCK_SYSTEM_SPACE]
+    lea edi,[esi].POOL_DESC.bits
     mov al,-1
     repz scasb
     jz @@blockbad           ; jump should never happen
@@ -385,23 +379,23 @@ Pool_Allocate4KPage PROC public
 @@islownyb:
     and cl,0Fh
     setz cl                 ; cl will be 1 if low/high nibble became <> 0
-    sub [esi].POOL_SYSTEM_INFO.psi_16kfree, cl
+    sub [esi].POOL_DESC.b16kfree, cl
 if ?POOLDBG    
     jnc @@blockok
     @dprintf ?POOLDBG, <"Pool_Allocate4kPage: 16k-free count underflow for block %X",10>, esi
 @@blockok:
 endif
-    dec [esi].POOL_SYSTEM_INFO.psi_4kfree
+    dec [esi].POOL_DESC.w4kfree
     mov [LastBlockAllocated],esi    ; update "last block allocated from"
 
     inc [pmem.dwUsedMem4K]
 
     sub edi,esi
-    sub edi,POOLBLOCK_SYSTEM_SPACE  ; get "byte offset" into EDI
-    shl edi,15      ; each byte covers 32K
-    shl eax,12      ; each bit covers 1000h
+    sub edi,POOL_DESC.bits          ; get "byte offset" into EDI
+    shl edi,15      ; each byte covers 32k
+    shl eax,12      ; each bit covers 4k
     add eax,edi     ; compute base address of block addressed by byte
-    mov ecx,[esi].POOL_SYSTEM_INFO.psi_addressK
+    mov ecx,[esi].POOL_DESC.dwAddressK
     shl ecx,10      ; convert from K to bytes
     add eax,ecx
     @dprintf ?POOLDBG, <"Pool_Allocate4kPage ok, page=%X, block=%X",10>, eax, esi
@@ -433,7 +427,7 @@ Pool_Allocate16KPage PROC public
     mov esi, [LastBlockAllocated]
     or esi,esi
     je @@nolastalloc
-    cmp [esi].POOL_SYSTEM_INFO.psi_16kfree,dl
+    cmp [esi].POOL_DESC.b16kfree,dl
     jne @@searchbytes
 
 ; try last freed chunk
@@ -441,19 +435,18 @@ Pool_Allocate16KPage PROC public
     mov esi, [LastBlockFreed]
     or esi,esi
     je @@nolastfreed
-    cmp [esi].POOL_SYSTEM_INFO.psi_16kfree,dl
+    cmp [esi].POOL_DESC.b16kfree,dl
     jne @@searchbytes
 
 @@nolastfreed:
     mov esi, [PoolAllocationTable]
-
-@@findblkloop:
-    cmp [esi].POOL_SYSTEM_INFO.psi_16kfree,dl
+nextitem:
+    cmp [esi].POOL_DESC.b16kfree,dl
     jne @@searchbytes
 @@nextblock:    
-    add esi,POOLBLOCK_TOTAL_SPACE
+    add esi, sizeof POOL_DESC
     cmp esi, [PoolAllocationEnd]
-    jb @@findblkloop
+    jb nextitem
     call Pool_ExpandAnyBlock    ; expand a block
     jnc @@searchbytes           ; if NC, esi -> expanded block
     call Pool_AllocateEMBForPool
@@ -461,14 +454,14 @@ Pool_Allocate16KPage PROC public
     jmp @@exit                  ; error: no 16k page free anymore
 
 @@searchbytes:
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx ecx,[esi].POOL_DESC.b16kmax
     shr ecx,1           ; count of allocation bytes in block
     adc ecx,0
 
     xor edi,edi
 
 @@findbyteloop:
-    mov al,[esi+edi+POOLBLOCK_SYSTEM_SPACE]
+    mov al,[esi].POOL_DESC.bits[edi]
     xor al,-1           ; unallocated 4K areas show as bit set
     mov ah,al
     mov dl,0fh
@@ -491,15 +484,15 @@ Pool_Allocate16KPage PROC public
     stc
 @@lowfree:
     setc cl
-    or [esi+edi+POOLBLOCK_SYSTEM_SPACE],dl
+    or [esi].POOL_DESC.bits[edi],dl
 
-    dec [esi].POOL_SYSTEM_INFO.psi_16kfree
-    sub [esi].POOL_SYSTEM_INFO.psi_4kfree,4
+    dec [esi].POOL_DESC.b16kfree
+    sub [esi].POOL_DESC.w4kfree,4
     jnc @@valid2
 
     @CheckBlockIntegrity    ; force valid value
 
-    mov [esi].POOL_SYSTEM_INFO.psi_4kfree,0    
+    mov [esi].POOL_DESC.w4kfree,0    
 
 ; update ebx pointer
 
@@ -524,23 +517,23 @@ Pool_Allocate16KPage PROC public
 Pool_Allocate16KPage    ENDP
 
 ;--- find pool descriptor for 4k page in EDI
-;--- EDI is 1K address
-;--- returns PD in ESI and EAX=block base
-;--- destroy eax,ecx,esi
+;--- in: EDI = 1K address
+;--- out: NC = ok, ESI=PD, EAX=block base
+;---      C  = failed
+;--- destroys eax,ecx,esi
 
 Pool_FindBlock proc
 
     mov esi, [LastBlockFreed]
-
     or esi,esi
     je @@notlastfreed
-    mov eax,[esi].POOL_SYSTEM_INFO.psi_addressK
+    mov eax,[esi].POOL_DESC.dwAddressK
     or eax,eax
     je @@notlastfreed  ; unused/deallocated block
 
     cmp edi,eax
     jb @@notlastfreed  ; pool block starts after page
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx ecx,[esi].POOL_DESC.b16kmax
     shl ecx,4           ; convert 16K to 1K
     add ecx,eax         ; ecx == end of block
     cmp edi,ecx
@@ -550,38 +543,37 @@ Pool_FindBlock proc
     mov esi, [LastBlockAllocated]
     or esi,esi
     je @@notlastalloc
-    mov eax,[esi].POOL_SYSTEM_INFO.psi_addressK
+    mov eax,[esi].POOL_DESC.dwAddressK
     or eax,eax
     je @@notlastalloc  ; unused/deallocated block
 
     cmp edi,eax
     jb @@notlastalloc  ; pool block starts after page
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx ecx,[esi].POOL_DESC.b16kmax
     shl ecx,4           ; convert 16K to 1K
     add ecx,eax         ; ecx == end of block
     cmp edi,ecx
     jb @@rightblock    ; block found?
 
 @@notlastalloc:
-    mov esi, [PoolAllocationTable]
 
-@@findblkloop:
-    mov eax,[esi].POOL_SYSTEM_INFO.psi_addressK
+    mov esi, [PoolAllocationTable]
+nextitem:
+    mov eax,[esi].POOL_DESC.dwAddressK
     or eax,eax
     je @@nextblock     ; unused/deallocated block
 
     cmp edi,eax
     jb @@nextblock     ; pool block starts after page
-    movzx ecx,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    movzx ecx,[esi].POOL_DESC.b16kmax
     shl ecx,4           ; convert 16K to 1K
     add ecx,eax         ; ecx == end of block
     cmp edi,ecx
     jb @@rightblock    ; block found?
-
 @@nextblock:
-    add esi,POOLBLOCK_TOTAL_SPACE
+    add esi, sizeof POOL_DESC
     cmp esi, [PoolAllocationEnd]
-    jb @@findblkloop
+    jb nextitem
     @dprintf ?POOLDBG, <"Pool_FindBlock: page %X not in pool",10>, edx
     stc
     ret
@@ -591,9 +583,10 @@ Pool_FindBlock proc
     align 4
 Pool_FindBlock endp
 
-; upon entry edx = 4K page physical address to free
-; return carry clear on success, set on fail
-; destroy eax,ecx,esi,edi
+;--- release 4K page.
+;--- in: EDX = 4K page physical address to free
+;--- out: NC if ok, C if failed
+;--- destroys eax,ecx,esi,edi
 
 Pool_Free4KPage PROC public
 
@@ -606,7 +599,7 @@ Pool_Free4KPage PROC public
     call Pool_FindBlock ; find descriptor 
     jc @@fail1          ; error "page not in pool"
 
-; the pool allocation block is in ESI
+; the descriptor is in ESI
 
     sub edi,eax         ; 4K offset from block base in K
     mov eax,edi
@@ -615,24 +608,24 @@ Pool_Free4KPage PROC public
     shr eax,3           ; 4K page to 32K byte offset
     and ecx,7
 
-    btr dword ptr [esi+eax+POOLBLOCK_SYSTEM_SPACE],ecx  ; see if bit set (was allocated)
+    btr dword ptr [esi].POOL_DESC.bits[eax],ecx  ; see if bit set (was allocated)
     jnc @@fail2         ; no
 
-    inc [esi].POOL_SYSTEM_INFO.psi_4kfree
+    inc [esi].POOL_DESC.w4kfree
     mov [LastBlockFreed],esi
     
     dec [pmem.dwUsedMem4K]
 
 ; check if this frees up a 16K chunk
 
-    mov al,[esi+eax+POOLBLOCK_SYSTEM_SPACE]
+    mov al,[esi].POOL_DESC.bits[eax]
     cmp cl,4
     jc @@islow
     shr al,4
 @@islow:
     test al,0Fh         ; see if all bits of nybble cleared
     jne @@success       ; no
-    inc [esi].POOL_SYSTEM_INFO.psi_16kfree
+    inc [esi].POOL_DESC.b16kfree
     call Pool_TryFreeToXMS  ; free empty pool allocation block to XMS if appropriate
 @@success:
 
@@ -649,7 +642,7 @@ Pool_Free4KPage PROC public
 Pool_Free4KPage ENDP
 
 
-; inp: eax = descriptor index, ecx = nibble offset
+; in: EAX = descriptor index, ECX = nibble offset
 ; destroys eax, ecx
 
 Pool_Free16KPage PROC public
@@ -657,6 +650,7 @@ Pool_Free16KPage PROC public
     push esi
 
     mov esi,eax
+    .errnz sizeof POOL_DESC - 64
     shl esi,6                       ; convert 64-byte count to byte offset
     add esi, [PoolAllocationTable]  ; esi -> pool allocation block
 
@@ -665,15 +659,15 @@ Pool_Free16KPage PROC public
     jnc @@islow
     mov ah,0F0h
 @@islow:
-    mov al,[esi+ecx+POOLBLOCK_SYSTEM_SPACE]
+    mov al,[esi].POOL_DESC.bits[ecx]
     and al,ah           ; mask out bits which dont interest
     cmp al,ah
-    jne @@fail2
+    jne @@fail
     rol al,4
-    and [esi+ecx+POOLBLOCK_SYSTEM_SPACE],al ; reset all expected bits
+    and [esi].POOL_DESC.bits[ecx],al ; reset all expected bits
 
-    inc [esi].POOL_SYSTEM_INFO.psi_16kfree
-    add [esi].POOL_SYSTEM_INFO.psi_4kfree,4
+    inc [esi].POOL_DESC.b16kfree
+    add [esi].POOL_DESC.w4kfree,4
 
     sub [pmem.dwUsedMem4K],4; update pool page counter 
 
@@ -684,51 +678,44 @@ Pool_Free16KPage PROC public
     pop esi
     ret
 
-@@fail1:
-if ?POOLDBG
-    @dprintf ?POOLDBG, <"Pool_Free16kPage failed edx=%X">, edx
-    sub edx, [EMSPageAllocationStart]
-    shr edx, 2
-    @dprintf ?POOLDBG, <" EMS page=%X",10>, edx
-    jmp @@fail
-endif
-@@fail2:
-    @dprintf ?POOLDBG, <"Pool_Free16kPage failed page=%X, masks=%X",10>, edx, eax
 @@fail:
+    @dprintf ?POOLDBG, <"Pool_Free16kPage failed page=%X, masks=%X",10>, edx, eax
     @CheckBlockIntegrity
     stc
     jmp @@ret
+    align 4
 
 Pool_Free16KPage ENDP
 
 
-; find an unused Pool block
-; return NC and edx -> Pool block
-; or C if none and no space available
+; find an unused Pool descriptor
+; out: NC ok, EDX -> Pool block
+;       C failed - no unused descriptor found
 ; no other registers modified
 
 Pool_GetUnusedBlock PROC
 
     mov edx, [PoolAllocationTable]
-@@findblkloop:
-    cmp [edx].POOL_SYSTEM_INFO.psi_addressK,0   ; unused/deallocated block?
+nextitem:
+    cmp [edx].POOL_DESC.dwAddressK,0   ; unused/deallocated block?
     je @@found
-    add edx,POOLBLOCK_TOTAL_SPACE
+    add edx, sizeof POOL_DESC
     cmp edx, [PoolAllocationMax]
-    jb @@findblkloop
+    jb nextitem
     @dprintf ?POOLDBG, <"Pool_GetUnusedBlock failed, table start/end=%X/%X",10>, [PoolAllocationTable], [PoolAllocationMax]
     stc
 @@found:
     ret
+    align 4
 
 Pool_GetUnusedBlock ENDP
 
 ; prepare pool block for use
 ; upon entry:
-;  edx -> pool allocation block
+;  edx -> pool descriptor
 ;  ecx == raw size in K before alignment (max 1536+3)
 ;  edi == raw address in K before alignment
-;  esi == owner XMS handle psi_descptr value, do NOT use XMS handle values for
+;  esi == owner XMS handle pXMSdesc value, do NOT use XMS handle values for
 ;   size and address since this call may be part of a multi-pool block span
 ;  returns memory in 1kB assigned to this descriptor in EAX
 
@@ -738,21 +725,21 @@ Pool_PrepareBlock PROC
 
     @dprintf ?POOLDBG, <"Pool_PrepareBlock: size in kB=%X addr in kB=%X",10>, ecx, edi
 
-    mov [edx].POOL_SYSTEM_INFO.psi_descptr,esi
+    mov [edx].POOL_DESC.pXMSdesc,esi
 
     mov ebx,edi         ; raw address - must be aligned to page boundary
     add ebx,3
     and ebx,not 3
-    mov [edx].POOL_SYSTEM_INFO.psi_addressK, ebx
+    mov [edx].POOL_DESC.dwAddressK, ebx
     sub ebx, edi        ; 00->00, 01->03, 02->02, 03->01
-    mov [edx].POOL_SYSTEM_INFO.psi_startadj,bl
-    mov [edx].POOL_SYSTEM_INFO.psi_endadj,0
+    mov [edx].POOL_DESC.bStartAdj,bl
+    mov [edx].POOL_DESC.bEndAdj,0
 
 ; zero allocation entries
     xor eax,eax
-    lea edi,[edx+POOLBLOCK_SYSTEM_SPACE]
+    lea edi,[edx].POOL_DESC.bits
     push ecx
-    mov ecx,POOLBLOCK_ALLOCATION_SPACE/4
+    mov ecx,POOLDESC_ALLOCATION_SPACE / 4
     rep stosd
     pop ecx
     cmp edi,[PoolAllocationEnd]
@@ -766,28 +753,28 @@ Pool_PrepareBlock PROC
     sub eax,ebx
     shr eax,4           ; 16K count, known 16-bit value going to 8-bit
 
-    cmp ax,POOLBLOCK_ALLOCATION_SPACE*2
+    cmp ax,POOLDESC_ALLOCATION_SPACE * 2
     jbe @@setmax
-    mov ax,POOLBLOCK_ALLOCATION_SPACE*2
+    mov ax,POOLDESC_ALLOCATION_SPACE * 2
 
 @@setmax:
-    mov [edx].POOL_SYSTEM_INFO.psi_16kmax,al
-    mov [edx].POOL_SYSTEM_INFO.psi_16kfree,al
+    mov [edx].POOL_DESC.b16kmax,al
+    mov [edx].POOL_DESC.b16kfree,al
     test al,1
     jz @@is32kaligned   ;is 16kb page count "uneven"?
     movzx ebx, al
     shr ebx, 1
-    mov byte ptr [edx+ebx+POOLBLOCK_SYSTEM_SPACE],0F0h  ;mark last page "used"
+    mov byte ptr [edx].POOL_DESC.bits[ebx],0F0h  ;mark last page "used"
 @@is32kaligned:    
     shl eax,2           ; 8-bit value potentially going to 16-bit
-    mov [edx].POOL_SYSTEM_INFO.psi_4kfree,ax
+    mov [edx].POOL_DESC.w4kfree,ax
 
     add [pmem.dwTotalMem4K],eax
 
 ; return true memory assigned - (block size + start adjustment)
 
     shl eax,2           ; convert mem size to 1K
-    movzx ebx,[edx].POOL_SYSTEM_INFO.psi_startadj
+    movzx ebx,[edx].POOL_DESC.bStartAdj
     add eax,ebx
     mov [esp].PUSHADS.rEAX, eax
     popad
@@ -798,22 +785,24 @@ Pool_PrepareBlock ENDP
 
 if ?FREEXMS
 
+;--- called if Jemm is unloaded
+
 Pool_FreeAllBlocks proc public
 
     pushad
     mov esi, [PoolAllocationTable]  ; esi -> pool allocation block
-@@nextitem:
-    cmp [esi].POOL_SYSTEM_INFO.psi_addressK,0
+nextitem:
+    cmp [esi].POOL_DESC.dwAddressK,0
     jz @@skipitem
-    movzx eax, [esi].POOL_SYSTEM_INFO.psi_16kmax
-    mov [esi].POOL_SYSTEM_INFO.psi_16kfree,al
+    movzx eax, [esi].POOL_DESC.b16kmax
+    mov [esi].POOL_DESC.b16kfree,al
     shl eax, 2
-    mov [esi].POOL_SYSTEM_INFO.psi_4kfree,ax
+    mov [esi].POOL_DESC.w4kfree,ax
     call Pool_TryFreeToXMS
 @@skipitem:    
-    add esi,POOLBLOCK_TOTAL_SPACE
+    add esi, sizeof POOL_DESC
     cmp esi, [PoolAllocationEnd]
-    jb @@nextitem
+    jb nextitem
     popad
     ret
     align 4
@@ -825,24 +814,24 @@ endif
 ; upon entry esi -> pool allocation block to check if freeable to XMS
 ; perform the free if possible
 ; destroys eax,ecx
-; if a pool descriptor is freed, it gets fields psi_addressK,
-; psi_4kfree, psi_16kfree and psi_16kmax set to 0.
+; if a pool descriptor is freed, it gets fields dwAddressK,
+; w4kfree, b16kfree and b16kmax set to 0.
 
 Pool_TryFreeToXMS PROC
 
-    test [esi].POOL_SYSTEM_INFO.psi_flags,PBF_DONTFREE
+    test [esi].POOL_DESC.bFlags,PBF_DONTFREE
     jne @@exit          ; never free these blocks
 
-    mov al,[esi].POOL_SYSTEM_INFO.psi_16kfree
-    cmp al,[esi].POOL_SYSTEM_INFO.psi_16kmax
-    ja @@bad           ; free more than max, try to fix
+    mov al,[esi].POOL_DESC.b16kfree
+    cmp al,[esi].POOL_DESC.b16kmax
+    ja @@bad            ; free more than max, try to fix
     jne @@exit          ; free is less than maximum, used
 
-    movzx eax,[esi].POOL_SYSTEM_INFO.psi_4kfree
+    movzx eax,[esi].POOL_DESC.w4kfree
     shr eax,2
     or ah,ah
     jne @@bad
-    cmp al,[esi].POOL_SYSTEM_INFO.psi_16kmax
+    cmp al,[esi].POOL_DESC.b16kmax
     ja @@bad
     jne @@exit          ; free less than max
 
@@ -852,32 +841,32 @@ Pool_TryFreeToXMS PROC
 ; blocks.
 
     push esi
-    mov esi,[esi].POOL_SYSTEM_INFO.psi_descptr
-    mov eax,[PoolAllocationTable]
+    mov esi,[esi].POOL_DESC.pXMSdesc
 
-@@checkblkloop:
-    cmp [eax].POOL_SYSTEM_INFO.psi_addressK,0
+    mov eax,[PoolAllocationTable]
+nextitem:
+    cmp [eax].POOL_DESC.dwAddressK,0
     je @@checknext         ; unused block
 
-    cmp esi,[eax].POOL_SYSTEM_INFO.psi_descptr
+    cmp esi,[eax].POOL_DESC.pXMSdesc
     jne @@checknext
 
-    test [eax].POOL_SYSTEM_INFO.psi_flags,PBF_DONTFREE
+    test [eax].POOL_DESC.bFlags,PBF_DONTFREE
     jne @@checkdone     ; can't free this block
 
 ; see if block empty
-    movzx ecx,[eax].POOL_SYSTEM_INFO.psi_16kmax
-    cmp cl,[eax].POOL_SYSTEM_INFO.psi_16kfree
+    movzx ecx,[eax].POOL_DESC.b16kmax
+    cmp cl,[eax].POOL_DESC.b16kfree
     jne @@checkdone
 
     shl ecx,2               ; convert to 4K max
-    cmp cx,[eax].POOL_SYSTEM_INFO.psi_4kfree
+    cmp cx,[eax].POOL_DESC.w4kfree
     jne @@checkdone
 
 @@checknext:
-    add eax, POOLBLOCK_TOTAL_SPACE
+    add eax, sizeof POOL_DESC
     cmp eax, [PoolAllocationEnd]
-    jb @@checkblkloop
+    jb nextitem
 
 ; checked all blocks as empty, go through them again and mark unused.
 ; also update the PoolAllocationEnd variable if needed.
@@ -889,10 +878,10 @@ Pool_TryFreeToXMS PROC
 
     xor eax, eax
 
-@@freeblkloop:
-    cmp [edi].POOL_SYSTEM_INFO.psi_addressK,0
+nextitem2:
+    cmp [edi].POOL_DESC.dwAddressK,0
     je @@freenext          ; unused block
-    cmp esi,[edi].POOL_SYSTEM_INFO.psi_descptr
+    cmp esi,[edi].POOL_DESC.pXMSdesc
     je @@freenext2
     mov ecx, edi            ; remember last block not free
     jmp @@freenext
@@ -900,18 +889,18 @@ Pool_TryFreeToXMS PROC
 
 ; mark the block as free
 
-    movzx edx, [edi].POOL_SYSTEM_INFO.psi_16kmax 
+    movzx edx, [edi].POOL_DESC.b16kmax 
     shl edx, 2
-    mov [edi].POOL_SYSTEM_INFO.psi_addressK, eax
+    mov [edi].POOL_DESC.dwAddressK, eax
     sub [pmem.dwTotalMem4K], edx
-    mov dword ptr [edi].POOL_SYSTEM_INFO.psi_4kfree, eax    ;this also clears the 16kb counters
+    mov dword ptr [edi].POOL_DESC.w4kfree, eax    ;this also clears the 16kb counters
 
 @@freenext:
-    add edi,POOLBLOCK_TOTAL_SPACE
+    add edi, sizeof POOL_DESC
     cmp edi, [PoolAllocationEnd]
-    jb @@freeblkloop
+    jb nextitem2
 
-    add ecx,POOLBLOCK_TOTAL_SPACE
+    add ecx, sizeof POOL_DESC
     mov [PoolAllocationEnd], ecx
 
     pop edi
@@ -956,14 +945,14 @@ endif
     call Pool_GetUnusedBlock
     jc @@exit      ; no more blocks, remainder of XMS is effectively discarded
 
-    mov [edx].POOL_SYSTEM_INFO.psi_flags,al
+    mov [edx].POOL_DESC.bFlags,al
 
     push eax
     mov eax,edi     ; compute size of candidate block/offset to new
     add eax,3
     and al,not 3
     sub eax,edi
-    add eax,POOLBLOCK_MEMSIZE   ; 1.5M (in K) plus alignment adjustment size
+    add eax,POOLDESC_MEMSIZE   ; 1.5M (in K) plus alignment adjustment size
     cmp eax,ebx
     jbe @@sizeok
     mov eax,ebx
@@ -977,7 +966,7 @@ endif
     jnb @@allocloop
     test al,PBF_DONTEXPAND
     jnz @@exit
-    mov [edx].POOL_SYSTEM_INFO.psi_endadj,bl
+    mov [edx].POOL_DESC.bEndAdj,bl
 @@exit:
     ret
     align 4
@@ -1004,7 +993,7 @@ Pool_AllocateEMBForPool PROC
     cmp [bNoPool],0 ; check if pool sharing
     jne @@allocfail
 
-    mov ebp, POOLBLOCK_MEMSIZE  ;1536 kB
+    mov ebp, POOLDESC_MEMSIZE  ;1536 kB
     mov eax, [pmem.dwMaxMem4K]
     sub eax, [pmem.dwTotalMem4K] 
     jbe @@allocfail     ;if max memory already allocated
@@ -1024,23 +1013,21 @@ Pool_AllocateEMBForPool PROC
 
     mov esi, [XMS_Handle_Table.xht_pArray]
     movzx ecx, [XMS_Handle_Table.xht_numhandles]
-
     xor edx,edx             ; edx -> largest block <= 1.5M or smallest if none <=1.5M
-
-@@hanloop:
+nextitem:
     test [esi].XMS_HANDLE.xh_flags, XMSF_FREE   ; free XMS memory block?
-    je @@next                      ; no, don't check
+    je skipitem                                 ; no, don't check
     mov ebx,[esi].XMS_HANDLE.xh_baseK
     mov eax,[esi].XMS_HANDLE.xh_sizeK
 if ?XMS35COMPAT
 	test ebx,0ffc00000h    ; block beyond 4GB?
-	jnz @@next
+	jnz skipitem
 endif
 ife ?INTEGRATED    
     and ebx,ebx
-    je @@next              ; FD Himem bug, ignore blank or zero-sized handle
+    je skipitem            ; FD Himem bug, ignore blank or zero-sized handle
     or eax,eax
-    je @@next
+    je skipitem
 endif
     and bl,3
     mov bh,4
@@ -1049,7 +1036,7 @@ endif
     movzx ebx,bh
     sub eax,ebx     ;eax = page adjusted size in 1kb units
     cmp eax,MINXMSSIZE  ;ignore everything below our limit
-    jb @@next
+    jb skipitem
 
     or edx,edx
     je @@newcandidate      ; auto-match if first xms block available
@@ -1057,28 +1044,28 @@ endif
 ; eax = test value size, edi = current candidate size, both 4k adjusted
 
     cmp eax,edi
-    je @@next
+    je skipitem
     ja @@larger
 
 ; test XMS block smaller than candidate block
     cmp edi,ebp
-    jbe @@next          ; current candidate closer to match size
+    jbe skipitem           ; current candidate closer to match size
     jmp @@newcandidate
 
 ; test XMS block larger than candidate block
 @@larger:
     cmp edi,ebp
-    jae @@next          ; current candidate closer to match size
+    jae skipitem           ; current candidate closer to match size
     cmp eax,ebp
-    ja @@next          ; test too large
+    ja skipitem            ; test too large
 @@newcandidate:
     mov edx, esi        ; new best candidate
     mov edi, eax        ; edi = candidate size in 1 kB units
-@@next:
+skipitem:
     movzx eax, [XMS_Handle_Table.xht_sizeof]
     add esi,eax         ; move to next handle descriptor
     dec ecx
-    jne @@hanloop
+    jne nextitem
     or  edx,edx         ; candidate found?
     jne @@allocok
 @@allocfail:
@@ -1096,7 +1083,7 @@ endif
     mov [edx].XMS_HANDLE.xh_locks,1         ; and locked
 
     mov esi,ebp                     ; default allocation maximum size
-    cmp ebp,POOLBLOCK_MEMSIZE
+    cmp ebp,POOLDESC_MEMSIZE
     jnz @@adjusted
 
     mov eax, [XMSPoolBlockCount]
@@ -1135,21 +1122,20 @@ endif
     mov edi, [XMS_Handle_Table.xht_pArray]
     movzx ecx, [XMS_Handle_Table.xht_numhandles]
     movzx eax, [XMS_Handle_Table.xht_sizeof]
-
-@@freeloop:
+nextitem2:
     test [edi].XMS_HANDLE.xh_flags,XMSF_INPOOL
     jnz @@gotfree
 ife ?INTEGRATED
     cmp [edi].XMS_HANDLE.xh_flags,XMSF_USED ; some Himems dont set XMSF_INPOOL, so
-    je @@nextfree                  ; check FREE items if address/size is NULL
+    je skipitem2                            ; check FREE items if address/size is NULL
     cmp [edi].XMS_HANDLE.xh_baseK,0
     je @@gotfree
     cmp [edi].XMS_HANDLE.xh_sizeK,0
     je @@gotfree
 endif
-@@nextfree:
+skipitem2:
     add edi,eax         ; move to next handle descriptor
-    loop @@freeloop
+    loop nextitem2
 
 ; no free handle found, try to allocate multiple blocks, discarding excess
 
@@ -1219,20 +1205,20 @@ Pool_GetFreeXMSPages PROC
     push eax
     push ebx
 
-@@hanloop:
+nextitem:
     test [esi].XMS_HANDLE.xh_flags,XMSF_FREE
-    jz @@next
+    jz skipitem
 ife ?INTEGRATED
     xor eax,eax
     cmp eax,[esi].XMS_HANDLE.xh_baseK   ; account for FD Himem bug
-    je @@next
+    je skipitem
     cmp eax,[esi].XMS_HANDLE.xh_sizeK
-    je @@next
+    je skipitem
 endif
     mov eax,[esi].XMS_HANDLE.xh_baseK
 if ?XMS35COMPAT
 	test eax,0FFC00000h    ; block beyond 4GB?
-	jnz @@next
+	jnz skipitem
 endif
     mov ebx,eax
     add ebx,3       ; round up
@@ -1240,18 +1226,18 @@ endif
     and al,0fch     ; align to 4K boundary
     and bl,0fch
     sub eax,ebx     ; compute size of block after alignments
-    jbe @@next
+    jbe skipitem
     cmp eax,MINXMSSIZE  ; ignore free blocks < 16 kB
-    jb @@next
+    jb skipitem
     and al,NOT 0fh  ; mask to 16K
     shr eax,2       ; convert 1K to 4K
     add edx,eax     ; update total count
 
-@@next:
+skipitem:
     movzx eax, [XMS_Handle_Table.xht_sizeof]
     add esi,eax ; move to next handle descriptor
     dec ecx
-    jne @@hanloop
+    jne nextitem
 
     pop ebx
     pop eax
@@ -1259,6 +1245,7 @@ endif
     pop ecx
     pop esi
     ret
+    align 4
 
 Pool_GetFreeXMSPages ENDP
 
@@ -1324,6 +1311,7 @@ merge:
     mov [edi].XMS_HANDLE.xh_baseK,ebx
     mov [edi].XMS_HANDLE.xh_sizeK,ebx
     retn
+    align 4
 
 Pool_FreeEMB ENDP
 
@@ -1361,7 +1349,7 @@ Pool_Init1 proc public
 
     mov eax,[pmem.dwMaxMem4K]    ;= 30720 x 4k = 120 MB
     cdq
-    mov ecx,POOLBLOCK_MEMSIZE/4     ; since pmem.dwMaxMem4k is in 4k units
+    mov ecx,POOLDESC_MEMSIZE / 4 ; since pmem.dwMaxMem4k is in 4k units
     div ecx             ; default: 30720/384 = 80
     add eax,2           ; round up, not down (and 1 extra for NoPool)
     cmp [bNoPool],0
@@ -1370,9 +1358,9 @@ Pool_Init1 proc public
     dec ecx
     add eax, ecx
 @@isnopool:    
-    shl eax,6-2         ; size of 1 descriptor: 64 bytes or 16 dwords
+    .errnz sizeof POOL_DESC - 64
+    shl eax,6-2         ; size of 1 descriptor: 64 bytes -> 16 dwords
     mov ecx,eax
-
     xor eax,eax
     rep stosd
 

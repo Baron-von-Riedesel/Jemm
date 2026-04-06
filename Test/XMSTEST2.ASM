@@ -3,12 +3,11 @@
 ;--- Public Domain.
 ;--- to be assembled with JWasm or Masm v6.
 
-	.model small
-	.386
+	.model tiny
 	.dosseg
 	.stack 2048
+	.386
 
-cr  equ 13
 lf  equ 10
 
 BUFFSIZ equ 10000h
@@ -22,7 +21,7 @@ xxx db string
 	db 0
 	.code
 	exitm <offset xxx>
-	endm
+endm
 
 xms_move struct
   len           dd  ?       ; block length in bytes
@@ -37,8 +36,6 @@ xms_move ends
 xmsadr dd 0      ;XMS host call address
 
 	.code
-
-	assume DS:DGROUP
 
 	include printf.inc
 
@@ -134,7 +131,7 @@ movetest endp
 
 ;--- main
 
-main    proc c
+main proc c
 
 	mov ax,4300h
 	int 2fh
@@ -154,13 +151,13 @@ main1:
 
 exit:
 	ret
-main    endp
+main endp
 
 ;--- init
 
-start   proc
+start proc
 
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 
 	mov cx,ds
@@ -203,6 +200,6 @@ is386:
 done:
 	mov ah,4Ch
 	int 21h
-start   endp
+start endp
 
 	END start

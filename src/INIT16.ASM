@@ -2560,6 +2560,8 @@ hascpuid endp
  endif
 endif
 
+;--- mainex: scan cmdline, then either load/unload or update
+;---         an already installed Jemm.
 ;--- DS=ES=SS=dgroup
 
 mainex PROC c public uses di si mode:word, cmdline:ptr BYTE
@@ -2576,6 +2578,19 @@ endif
 
 	.data
 	even
+
+cmdopts0 label word
+if ?UNLOAD
+	dw CStr("UNLOAD"), offset _unload
+endif
+if ?LOAD
+	dw CStr("LOAD"), offset _load
+endif
+	dw CStr("/?"), offset sethelp
+	dw CStr("-?"), offset sethelp
+	dw CStr("/H"), offset sethelp
+	dw CStr("-H"), offset sethelp
+endcmdopts0 label word
 
 cmdopts1 label word
 	dw CStr("NOVCPI"), offset setnovcpi
@@ -2663,8 +2678,8 @@ endcmdopts2 label word
 
 	mov si,cmdline
 	.if mode != EXECMODE_EXE
-		invoke printf, addr szStartup
 		mov bLoad, TRUE
+		invoke printf, addr szStartup
 if ?FASTBOOT
 		invoke FindCommand, CStr("FASTBOOT")
 		.if ax
@@ -2672,46 +2687,31 @@ if ?FASTBOOT
 		.endif
 endif
 	.else
-if ?UNLOAD
-		invoke FindCommand, CStr("UNLOAD")
-		.if ax
-			invoke XMSinit
-			invoke TryUnload
-			jmp exit1
-		.endif
-endif
-if ?LOAD
-		invoke FindCommand, CStr("LOAD")
-		mov bLoad, al
-		.if !ax
-			mov jemmini.dwDynSet,-1
-		.endif
-endif
-		invoke FindCommand, CStr("/?")
-		.if !ax
-			invoke FindCommand, CStr("-?")
-			.if !ax
-				invoke FindCommand, CStr("/H")
-				.if !ax
-					invoke FindCommand, CStr("-H")
-				.endif
+		mov bLoad, FALSE
+		mov di, offset cmdopts0
+		.repeat
+			invoke FindCommand, [di+0]
+			.if ax
+				call word ptr [di+2]
 			.endif
-		.endif
-		.if ax
-			mov bHelp, TRUE
-		.endif
+			add di, 2+2
+		.until di == offset endcmdopts0
 	.endif
 
+;--- in case jemm isn't to be loaded, reset the dynamic options to "undefined"
+	.if bLoad == FALSE
+		mov jemmini.dwDynSet, -1
+	.endif
+
+;--- scan the "dynamic" options ( may be set if jemm is already loaded)
 	mov di, offset cmdopts1
-nextitem1:
-	invoke FindCommand, [di+0]
-	and ax, ax
-	jz @F
-	call word ptr [di+2]
-@@:
-	add di, 2+2
-	cmp di, offset endcmdopts1
-	jnz nextitem1
+	.repeat
+		invoke FindCommand, [di+0]
+		.if ax
+			call word ptr [di+2]
+		.endif
+		add di, 2+2
+	.until di == offset endcmdopts1
 
 	cmp bLoad, FALSE
 	je $I395
@@ -2760,15 +2760,13 @@ if ?INTEGRATED
 endif
 
 	mov di, offset cmdopts2
-nextitem2:
-	invoke FindCommand, [di+0]
-	and ax, ax
-	jz @F
-	call word ptr [di+2]
-@@:
-	add di, 2+2
-	cmp di, offset endcmdopts2
-	jnz nextitem2
+	.repeat
+		invoke FindCommand, [di+0]
+		.if ax
+			call word ptr [di+2]
+		.endif
+		add di, 2+2
+	.until di == offset endcmdopts2
 
 	invoke I15CheckRsvdRegion
 
@@ -3033,6 +3031,21 @@ exit1:
 	mov ax,1
 	jmp $EX338
 
+if ?LOAD
+_load:
+	mov bLoad, TRUE
+	retn
+endif
+if ?UNLOAD
+_unload:
+	pop ax
+	invoke XMSinit
+	invoke TryUnload
+	jmp exit1
+endif
+sethelp:
+	mov bHelp, TRUE
+	retn
 setnovcpi:
 	mov jemmini.NoVCPI,TRUE
 	retn

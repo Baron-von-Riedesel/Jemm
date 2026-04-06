@@ -172,7 +172,7 @@ V86F_ALTBOOT    equ 64  ; ALTBOOT active
 ;-- keep this value low for buggy VCPI clients
 ;-- that fail with large free amounts
 
-MAXMEM16K_DEFAULT   EQU 1E00h   ; 120M in 16K blocks
+MAXMEM16K_DEFAULT   EQU 1E00h   ; 7680 * 16 = 122880 kB or 120 MB
 
 MAX_EMS_PAGES_POSSIBLE  equ 8000h
 

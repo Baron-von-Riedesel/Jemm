@@ -62,6 +62,9 @@ endif
 
 ?FASTENTRIES    equ 32-1
 
+	include x86.inc
+	include xms.inc
+
 ;--- selector definitions
 ;--- FLAT_CODE_SEL must be first descriptor in GDT
 
@@ -73,8 +76,6 @@ REAL_DATA_SEL   equ 5 * sizeof DESCRIPTOR ;must follow REAL_CODE_SEL
 if ?CLEARHIGHESP
 V86_STACK_SEL   equ 6 * sizeof DESCRIPTOR
 endif
-
-	include x86.inc
 
 ;--- BIOS constants
 

@@ -1,8 +1,6 @@
 
 ;--- publics for Jemm32
 
-	include xms.inc
-
 @seg macro name_, align_
 name_ SEGMENT align_ FLAT public 'CODE'
 endm
@@ -80,7 +78,10 @@ endif
 
 ;--- Jemm32 publics
 
+externdef bptable:BPTABLE
+if ?FASTMON
 externdef int00:near
+endif
 externdef V86_Monitor:near
 externdef Begin_Nest_Exec:near
 externdef End_Nest_Exec:near
@@ -110,6 +111,9 @@ externdef V86_Exc0D:near
 if ?I41SUPP
 externdef Int41_Entry:near
 endif
+externdef vmm_service_table:VMM_SERV_TABLE
+
+;--- DEBUG publics
 
 externdef VPUTCHR:near
 
@@ -160,9 +164,18 @@ if ?ALT_TRAPHDL
 externdef ISA_DMA_Traphandler:near
 endif
 
+;--- EMU publics
+
 externdef ExtendedOp:near
 
+;--- I15 publics
+
 externdef I15_Simulate87:near
+
+;--- DEV publics
+
+externdef EMMXXXX0_Strategy:near
+externdef EMMXXXX0_Interrupt:near
 
 .text$03 ENDS
 
@@ -180,9 +193,5 @@ externdef Pool_Init1:near
 externdef Pool_Init2:near
 externdef InitMonitor:near
 externdef IsUMBMemory:near
-externdef EMMXXXX0_Strategy:near
-externdef EMMXXXX0_Interrupt:near
-externdef vmm_service_table:VMM_SERV_TABLE
-externdef bptable:BPTABLE
 .text$04 ends
 

@@ -3,14 +3,12 @@
 ;--- Public Domain.
 ;--- to be assembled with JWasm or Masm v6.
 
-	.model small
-DGROUP group _TEXT	;use tiny model
+	.model tiny
 	.386
 
 	.dosseg
 	.stack 2048
 
-cr  equ 13
 lf  equ 10
 
 ;--- XMS handle table
@@ -44,7 +42,7 @@ xxx db string
 	db 0
 	.code
 	exitm <offset xxx>
-	endm
+endm
 
 ;--- display word decimal
 
@@ -94,10 +92,10 @@ protocol proc
 	cmp al,0
 	jz @F
 	mov ah,0
-	invoke printf, CStr(" failed, bl=%02X", 10), ax
+	invoke printf, CStr(", failed, bl=%02X",lf), ax
 	ret
 @@:
-	invoke printf, CStr(" ok",10)
+	invoke printf, CStr(", ok",lf)
 	ret
 protocol endp
 
@@ -196,7 +194,7 @@ movetest endp
 
 ;--- main
 
-main    proc c
+main proc c
 
 	mov ax,4300h
 	int 2fh
@@ -209,18 +207,17 @@ main1:
 	int 2fh
 	mov word ptr xmsadr+0,bx
 	mov word ptr xmsadr+2,es
-	invoke printf, CStr("XMS call address: %X:%X",10),
-		word ptr [xmsadr+2], word ptr [xmsadr+0]
+	invoke printf, CStr("XMS call address: %X:%X",lf), word ptr [xmsadr+2], word ptr [xmsadr+0]
 
 	call movetest
 
 exit:
 	ret
-main    endp
+main endp
 
 ;--- init
 
-start   proc
+start proc
 
 	push cs
 	pop ds
@@ -237,14 +234,14 @@ start   proc
 	pushf
 	pushf
 	pop ax
-	or	ah,70h			;a 80386 will have bit 15 cleared
-	push ax 			;if bits 12-14 are 0, it is a 80286
-	popf				;or a bad emulation
+	or ah,70h		;a 80386 will have bit 15 cleared
+	push ax 		;if bits 12-14 are 0, it is a 80286
+	popf			;or a bad emulation
 	pushf
 	pop ax
 	popf
 	and ah,0f0h
-	js no386			;bit 15 set? then its a 8086/80186
+	js no386		;bit 15 set? then its a 8086/80186
 	jnz is386
 no386:
 	invoke printf, CStr("a 80386 is needed",lf)
@@ -254,6 +251,6 @@ is386:
 done:
 	mov ah,4Ch
 	int 21h
-start   endp
+start endp
 
 	END start

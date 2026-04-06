@@ -2,7 +2,7 @@
 ;*** move block by int 15h, ah=87h
 
 	.286
-	.model small
+	.model tiny
 	.stack 2048
 	.dosseg
 	.386
@@ -19,21 +19,21 @@ endm
 
 	.data
         
-gdt	label byte
+gdt label byte
 	dq 0
 	dq 0
 
-	dw -1
-wSrc dw 0
-bSrc db 0
-	db 0F3h
+wSrcLim dw -1
+wSrcA00 dw 0
+bSrcA16 db 0
+	db 093h
 	db 0
 	db 0
 
-	dw -1
-wDst dw 0
-bDst db 0
-	db 0F3h
+wDstLim dw -1
+wDstA00 dw 0
+bDstA16 db 0
+	db 093h
 	db 0
 	db 0
 
@@ -53,67 +53,91 @@ local	mblock:word
 	int 21h
 	jc nomem
 	mov mblock,ax
+
+;--- setup descriptors
+
 	movzx eax,ax
-	shl eax, 4		;get blocks linear address
-	add eax, 0FFCh
+	shl eax, 4		;get block's linear address
+;	add eax, 0FFCh  ;???
 	lea edx, [eax+20000h]
-	mov wSrc, ax
-	mov wDst, dx
+	push eax
+	push edx
+	mov wSrcA00, ax
+	mov wDstA00, dx
 	shr eax, 16
 	shr edx, 16
-	mov bSrc, al
-	mov bDst, dl
+	mov bSrcA16, al
+	mov bDstA16, dl
+	pop edx
+	pop eax
+
+	invoke printf, CStr("src/dst descriptor base = %lXh/%lXh",lf), eax, edx
+	invoke printf, CStr("src/dst descriptor limit = ffffh, ofs GDT=%Xh",lf), offset gdt
 
 	call clearblock
-	mov cx,8000h
-	push ds
-	pop es
-	mov si, offset gdt
-	mov ah,87h
-	stc
-	int 15h
-	jc error
-	movzx ax,ah
-	invoke printf, CStr("int 15h, ah=87, cx=%X ok, returned with ah=%X",lf),cx, ax
-	call testblock
 
+;--- copy 32kB - should be ok
+
+	mov cx, 4000h
+	call i15
+	invoke printf, CStr("int 15h, ah=87h, cx=%Xh returned with C=%u, ah=%X",lf), cx, dx, ax
+	call testblock
 	call clearblock
-	mov cx,4000h
-	push ds
-	pop es
-	mov si, offset gdt
-	mov ah,87h
-	stc
-	int 15h
-	jc error
-	movzx ax,ah
-	invoke printf, CStr("int 15h, ah=87, cx=%X ok, returned with ah=%X",lf),cx, ax
+
+;--- copy 64kB - should be ok
+
+	mov cx, 8000h
+	call i15
+	invoke printf, CStr("int 15h, ah=87h, cx=%Xh returned with C=%u, ah=%X",lf), cx, dx, ax
 	call testblock
-
-;--- this call should fail, max words to copy is 8000h
-
 	call clearblock
-	mov cx,0C000h
-	push ds
-	pop es
-	mov si, offset gdt
-	mov ah,87h
-	stc
-	int 15h
-	jc error
-	invoke printf, CStr("int 15h, ah=87, cx=%X ok, returned with ah=%X",lf),cx, ax
-	call testblock
 
-	ret
-error:
-	movzx ax,ah        
-	invoke printf, CStr("int 15h, ah=87, CX=%Xh returned with C, AH=%X",lf), cx, ax
+;--- this move should fail - max words to copy is 8000h.
+
+	mov cx, 8001h
+	call i15
+	invoke printf, CStr("int 15h, ah=87h, cx=%Xh returned with C=%u, ah=%X",lf), cx, dx, ax
+
+	invoke printf, CStr("src/dst descriptor limit = 3fffh",lf)
+	mov wSrcLim, 3fffh
+	mov wDstLim, 3fffh
+
+;--- this move should be ok
+
+	mov cx, 2000h
+	call i15
+	invoke printf, CStr("int 15h, ah=87h, cx=%Xh returned with C=%u, ah=%X",lf), cx, dx, ax
+
+;--- this move should fail - beyond descriptor limit
+
+	mov cx, 2001h
+	call i15
+	invoke printf, CStr("int 15h, ah=87h, cx=%Xh returned with C=%u, ah=%X",lf), cx, dx, ax
+
+;--- move with cx=0; MS Emm386 returns with C, AH=2; Jemm accepts a size of 0!
+
+	mov cx, 0
+	call i15
+	invoke printf, CStr("int 15h, ah=87h, cx=%Xh returned with C=%u, ah=%X",lf), cx, dx, ax
+
 	ret
 nomem:
 	invoke printf, CStr("out of DOS memory",lf)
 	ret
+i15:
+	push ds
+	pop es
+	mov si, offset gdt
+	mov ah,87h
+	stc
+	int 15h
+	sbb dx,dx
+	and dx,1
+	movzx ax,ah
+	retn
 
 clearblock:
+	cld
 	mov cl,4
 	mov eax,11111111h
 	mov es, mblock
@@ -136,21 +160,19 @@ testblock:
 main endp
 
 start:
-	mov bx, sp
-	mov cx, ss
-	mov dx, es
-	sub cx, dx
-	shr bx, 4
-	add bx, cx
-	mov ah, 4Ah
-	int 21h
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 	mov cx,ss
 	sub cx,ax
 	shl cx,4
 	mov ss,ax
-	add sp,cx
+	add sp,cx   ; tiny model (CS=SS=DS) setup
+
+	mov bx, sp
+	add bx, 100h
+	shr bx, 4
+	mov ah, 4Ah
+	int 21h
 	call main
 	mov ax,4c00h
 	int 21h

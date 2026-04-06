@@ -14,6 +14,7 @@
    its resident part into the upper memory region, it crashed.
  - Linux.mak: GNU makefile added to create Jemm binaries on Linux.
  - fixed JemmEx: unknown A20METHOD value caused a crash.
+ - AHCICD: driver now supports long reads in "raw mode".
 
  25.01.2026: v5.86
  - service table: added control proc member to allow Jemm to call out on

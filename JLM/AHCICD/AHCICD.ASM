@@ -13,6 +13,7 @@
 ?IRQWND  equ 1      ; 1=use Jemm's MoveMemory() that allows interrupts during copy op
 REQOFS   equ 16h	; must be at least "sizeof DOSDRV"
 SLCOOKED equ 2048
+SLRAW    equ 2352   ;CD-ROM "raw" sector length.
 
 ;--- macros
 
@@ -212,7 +213,7 @@ fis		db 100h dup (?)	; must be 256 B aligned
 cmdtab  CT <>			; must be 128 B aligned
 endif
 buffer db SLCOOKED dup (?)
-
+       db SLRAW - SLCOOKED dup (?)
 
 ppReq       dd ?	; linear address where request header is stored
 pRequest    dd ?	; linear address request header
@@ -387,6 +388,9 @@ LIVECT  equ ($ - offset IVect) shr 2
 IOC_Error3:
 	mov ax, 8103h
 	retn
+IOC_Error12:
+	mov ax, 810Ch
+	retn
 
 IOC_GetHdr:
 	mov eax, [pBase]
@@ -411,11 +415,18 @@ IOC_done:
 ;--- 200 - supports HSG AND red book addressing modes
 
 IOC_DevSt:
-	mov dword ptr [esi+1], 2	;set "door unlocked"
+;	mov dword ptr [esi+1], 2	;set "door unlocked"
+	mov dword ptr [esi+1], 2+4	;set "door unlocked" & "cooked AND raw"
 	jmp IOC_done
 
 IOC_SecSize:
-	mov word ptr [esi+2], SLCOOKED
+	cmp byte ptr [esi+1],1	;read mode "cooked" or "raw"?
+	ja IOC_Error12			;No?  Post "general failure" & exit.
+	mov ax, SLRAW
+	je @F
+	mov ax, SLCOOKED
+@@:
+	mov [esi+2], ax
 	jmp IOC_done
 
 IOCtlInp endp
@@ -480,9 +491,9 @@ IOC_Media endp
 ReadL proc
 	mov al, 3
 	cmp [ebx].RPRL.bAMode, 0; High Sierra addressing mode?
-	jnz ErrorAL
-	cmp [ebx].RPRL.bDMode, 0; 0=cooked, 1=raw
-	jnz ErrorAL
+	jnz ErrorAL_AMode
+	cmp [ebx].RPRL.bDMode, 1; 0=cooked, 1=raw
+	ja ErrorAL_DMode
 
 	movzx eax, word ptr [ebx].RPRL.dwAddr+0
 	movzx edx, word ptr [ebx].RPRL.dwAddr+2
@@ -496,18 +507,19 @@ ReadL proc
 	mov [dwSector], eax
 	@dprintf <'DevInt, readl, start=%X, sectors=%X, dst=%X',13,10>, eax, cx, pDest
 	xor edi, edi
-ReadLP:
+	mov esi, ebx
+ReadLP:                 ;<----
 	cmp [wSecCnt], 0
 	jz Exit
 	call Setup			; set EDI=command table, ebx=port offset
 
 ;--- write packet data ( 12 bytes )
-;--- 0: cmd 28 ( read )
+;--- 0: cmd 28/0BE ( read cooked/raw )
 ;--- 1: flags
 ;--- 2-5: LBA (high byte first)
 ;--- 6: group no
 ;--- 7-8: transfer length [sector count] ( high byte first )
-;--- 9: control
+;--- 9: control (0 for cooked, 0F8h for raw mode)
 
 	mov eax, [dwSector]
 	shld ecx, eax, 16
@@ -522,9 +534,8 @@ ReadLP:
 ;--- al=sect[8-15], ah=sect[0-7], cl=sect[24-31], ch=sect[16-23]
 
 	shl ecx, 16
-	mov cl, 28H
-
-;--- ACMD.00: 28h (opcode "read cooked"),00,Sector.04,Sector.03
+	mov cl, 28H		; read cooked
+;--- ACMD.00: 28h/0BEh (opcode "read cooked"),00,Sector.04,Sector.03
 ;--- ACMD.04: Sector.02, Sector.01, group#, length.02
 ;--- ACMD.08: length.01,00,00,00
 	mov [edi].CT.Pkt0, ecx
@@ -532,23 +543,38 @@ ReadLP:
 	mov [edi].CT.Pkt2, 1
 
 	mov ecx, 800007FFH	; PRDT.0C: FF,07,00,80  (PRC=7FF transfer 2048 bytes, 80=I)
+	cmp [esi].RPRL.bDMode, 0
+	jz @F
+;--- ACMD.00: 0BE (opcode "read raw"),00,Sector.04,Sector.03
+	mov byte ptr [edi].CT.Pkt0, 0BEh
+	mov byte ptr [edi].CT.Pkt2+1, 0F8h
+	mov ecx, 8000092FH	; PRDT.0C: 2F,09,00,80  (PRC=92F transfer 2352 bytes, 80=I)
+@@:
 	call ReqECX
 	and al, al
 	jnz readerr
 	push edi
+	push esi
+	mov ecx, SLCOOKED
+	cmp [esi].RPRL.bDMode, 0
+	jz @F
+	mov ecx, SLRAW
+@@:
+	push ecx
 	mov edi, [pDest]
 	mov esi, [pBuff]
 	cld
 if ?IRQWND
-	mov ecx, SLCOOKED
 	@VMMCall MoveMemory
 else
-	mov ecx, SLCOOKED / sizeof dword
+	shr ecx, 2
 	rep movsd
 	@VMMCall Yield
 endif
+	pop ecx
+	pop esi
 	pop edi
-	add [pDest], SLCOOKED
+	add [pDest], ecx
 	inc [dwSector]
 	dec [wSecCnt]
 	jmp ReadLP
@@ -562,6 +588,16 @@ readerr:
 	and al, 15
 	mov ebx, offset ERRTAB
 	xlat
+ErrorAL_AMode:
+ifdef _DEBUG
+	@dprintf <'DevInt, readl, error, addressing mode',13,10>
+	jmp ErrorAL
+endif
+ErrorAL_DMode:
+ifdef _DEBUG
+	@dprintf <'DevInt, readl, error, data mode',13,10>
+	jmp ErrorAL
+endif
 ErrorAL:
 	mov ah, 81h
 	@dprintf <'DevInt, readl, error, ax=%X',13,10>, ax

@@ -3,10 +3,10 @@
 ;--- Public Domain.
 ;--- to be assembled with JWasm or Masm v6.
 
-	.model small
-	.386
+	.model tiny
 	.dosseg
 	.stack 2048
+	.386
 
 cr  equ 13
 lf  equ 10
@@ -80,7 +80,7 @@ runtest endp
 
 ;--- main
 
-main    proc c
+main proc c
 
 	mov ax,4300h
 	int 2fh
@@ -97,13 +97,13 @@ main1:
 	call runtest
 exit:
 	ret
-main    endp
+main endp
 
 ;--- init
 
-start   proc
+start proc
 
-	mov ax,@data
+	mov ax,cs
 	mov ds,ax
 	mov cx,ss
 	sub cx,ax
@@ -113,6 +113,6 @@ start   proc
 	call main
 	mov ah,4Ch
 	int 21h
-start   endp
+start endp
 
 	END start
