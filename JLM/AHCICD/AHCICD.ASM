@@ -1,6 +1,6 @@
 
 ;--- JLM to read CD/DVD in AHCI mode.
-;--- "cooked" mode is supported only.
+;--- both "cooked" and "raw" mode are supported.
 
 	.386
 	.model flat
@@ -12,8 +12,8 @@
 ?OPTIONR equ 1      ; 1=enable /R option to relocate Port.CLB, Port.FB, Commandlist[0].CTBA
 ?IRQWND  equ 1      ; 1=use Jemm's MoveMemory() that allows interrupts during copy op
 REQOFS   equ 16h	; must be at least "sizeof DOSDRV"
-SLCOOKED equ 2048
-SLRAW    equ 2352   ;CD-ROM "raw" sector length.
+SLCOOKED equ 2048	; sector length "cooked" mode
+SLRAW    equ 2352   ; sector length "raw" mode
 
 ;--- macros
 
@@ -240,6 +240,7 @@ bBanner db ?		; 1=banner displayed
 
 	.const
 
+;--- error# translation for ReadL
 ERRTAB  db 12,12,2,4,12,0,15,8,8,12,12,12,12,12,12,12
 
 rmcode label byte
@@ -364,10 +365,10 @@ IVect   label dword
 	dd IOC_Error3	; 5 raw data bytes
 	dd IOC_DevSt	; 6 device status
 	dd IOC_SecSize	; 7 sector size
-	dd IOC_Error3	; 8 volume size
+	dd IOC_VolSize	; 8 volume size
 	dd IOC_Media	; 9 media change status
-;	dd IOC_Error3	;10 audio disk info
-;	dd IOC_Error3	;11 audio track info
+	dd IOC_DiskInfo	;10 audio disk info
+	dd IOC_TrkInfo	;11 audio track info
 ;	dd IOC_Error3	;12 audio q-channel info
 ;	dd IOC_Error3	;13 audio sub-channel info
 ;	dd IOC_Error3	;14 UPC code
@@ -392,6 +393,8 @@ IOC_Error12:
 	mov ax, 810Ch
 	retn
 
+;--- ioctl inp 0: returns 5 bytes
+
 IOC_GetHdr:
 	mov eax, [pBase]
 	shl eax, 12
@@ -400,6 +403,8 @@ IOC_GetHdr:
 IOC_done:
 	mov ax, RPDON
 	retn
+
+;--- ioctl inp 6: returns 5 bytes
 
 ;--- request "get device status"
 ;--- status flag bits:
@@ -419,6 +424,8 @@ IOC_DevSt:
 	mov dword ptr [esi+1], 2+4	;set "door unlocked" & "cooked AND raw"
 	jmp IOC_done
 
+;--- ioctl inp 7: returns 4 bytes
+
 IOC_SecSize:
 	cmp byte ptr [esi+1],1	;read mode "cooked" or "raw"?
 	ja IOC_Error12			;No?  Post "general failure" & exit.
@@ -430,6 +437,109 @@ IOC_SecSize:
 	jmp IOC_done
 
 IOCtlInp endp
+
+SwapEAX:
+	xchg al,ah
+	rol eax,16
+	xchg al,ah
+	retn
+
+;--- ioctl inp 8: get volume size; returns 5 bytes
+
+IOC_VolSize proc
+	@dprintf <'DevInt, ioctl input, volume size',13,10>
+	xor edi, edi
+	call Setup		; set EDI=command table, ebx=port offset
+	mov [edi].CT.Pkt0, 25H  ;"read capacity"
+	mov [edi].CT.Pkt1, 0
+	mov [edi].CT.Pkt2, 0
+
+	call Req8
+	and al,al
+	jnz error
+	mov eax, [pBuff]
+	mov eax, [eax]
+	call SwapEAX
+	mov [esi+1],eax
+	mov ax, RPDON
+	ret
+error:
+	mov ax, 8103h
+	ret
+IOC_VolSize endp
+
+;--- called by ioctl inp 10/11 (get disk info & get track info)
+;--- +0: 43h
+;--- +1: MSF: 02=return all sub-channel Q data
+;--- +6: start track/session
+;--- +7: allocation length (word)
+;--- +9: bits 6-7: format
+;---   00=first track/last track
+;---   01=first session/last session
+;---   10=sub channel Q
+;--- other fields reserved
+
+ReadTOC proc
+	mov [edi].CT.Pkt0,0243h		;0-3 Set TOC and MSF bytes.
+	mov [edi].CT.Pkt1,0			;4-7
+	mov [edi].CT.Pkt2,0			;8-11
+	mov byte ptr [edi].CT.Pkt1+2,al ;6
+	mov byte ptr [edi].CT.Pkt1+3,12 ;7
+	mov ecx,8000000Bh			;Get 12-byte "allocation" count.
+	call ReqECX 				;Issue "Read Table of Contents" cmd.
+	and al,al
+	jnz Error					;If error, exit immediately.
+	mov edi, [pBuff]
+	mov eax, [edi+8]			;Return "swapped" starting address.
+	call SwapEAX
+	clc
+	ret
+Error:
+	stc
+	ret
+ReadTOC endp
+
+;--- ioctl inp 10: get disk info; returns 7 bytes
+
+IOC_DiskInfo proc
+	@dprintf <'DevInt, ioctl input, disk info',13,10>
+	xor edi, edi
+	call Setup
+	mov al,0AAh         ;"leadout" track/session #
+	call ReadTOC
+	jc ReqErr			;If error, post return code & exit.
+	mov [esi+3],eax		;Set "lead out" LBA addr. in IOCTL.
+	mov ax,[edi+2]		;Set first & last tracks in IOCTL.
+	mov [esi+1],ax
+	mov ax, RPDON
+	ret
+ReqErr:
+	mov ax, 8103h
+	ret
+IOC_DiskInfo endp
+
+;--- ioctl inp 11: get track info; returns 7 bytes
+
+IOC_TrkInfo proc
+	@dprintf <'DevInt, ioctl input, track info',13,10>
+	xor edi, edi
+	call Setup
+	mov al,[esi+1]		;Specify desired session (track) no.
+	call ReadTOC		;Read disk table-of-contents (TOC).
+	jc ReqErr			;If error, post return code & exit.
+	@dprintf <'track info: start LBA=%X',13,10>, eax
+	mov [esi+2],eax		;Set track LBA addr. in IOCTL.
+	mov al,[edi+5]
+	shl al,4
+	mov [esi+6],al		;set ctlinfo
+	mov ax, RPDON
+	ret
+ReqErr:
+	mov ax, 8103h
+	ret
+IOC_TrkInfo endp
+
+;--- ioctl inp 9: media change status; returns 2 bytes
 
 IOC_Media proc
 	@dprintf <'DevInt, ioctl input, media',13,10>
@@ -455,7 +565,7 @@ IOC_Media proc
 
 ;--- request has returned 8 bytes,
 ;--- 0-3: event header (0-1 event data length, hibyte first)
-;--- 4-7: event data ( 0=media event [bit 0-3], 1=media status [bit 0-1])	
+;--- 4-7: event data ( 0=media event [bit 0-3], 1=media status [bit 0-1])
 
 	mov eax, [pBuff]
 	mov ax, [eax+4]
@@ -1129,7 +1239,8 @@ local pCmdLine:dword
 	jc failed
 
 	mov edi, [pBase]
-	mov [edi].DOSDRV.wAttr, 0C800h		;driver attributes
+;--- driver attributes - b15: 1=char device; b14: IOCTL supported
+	mov [edi].DOSDRV.wAttr, (1 shl 15) or (1 shl 14)
 	mov [edi].DOSDRV.ofsStr, REQOFS+4
 	mov [edi].DOSDRV.ofsInt, REQOFS+4+SIZERMCODE
 	mov [edi].DOSDRV.wRes1, 0

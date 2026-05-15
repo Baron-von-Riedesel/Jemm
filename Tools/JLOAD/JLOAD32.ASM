@@ -131,6 +131,7 @@ isapp:
 @@exit:
 	@dprintf ?INITDBG, <"start exit (returns to v86)",10>
 	mov [ebp].Client_Reg_Struc.Client_EDX, eax
+	mov word ptr [ebp].Client_Reg_Struc.Client_ECX, cx
 if ?PMSTACK
 	pop eax
 endif

@@ -224,7 +224,7 @@ iocb proc
 iocb endp
 
 ;--- install the JLM: just set eax=1
-;--- this tells JLOAD that it's ok to add IOTRAP to the list of
+;--- this tells JLOAD that it's ok to add QPIEMU to the list of
 ;--- loaded modules.
 
 install proc uses esi pcomm:ptr JLCOMM

@@ -1054,7 +1054,8 @@ endif
 	test [fOption],FOPTION_QUIET
 	jnz @@nodispsuccess
 @@:
-;--- todo: register CL has been set somewhere if ax==0. Describe the details!
+;--- register CL may contain further info if the load process failed;
+;--- cl = B7h (already loaded), cl = 8 ( memory error ), ...
 	.if ([vmms.wFlags] & JLF_UNLOAD)
 		.if (ax)
 			mov cx,DStr("' unloaded successfully.",13,10)

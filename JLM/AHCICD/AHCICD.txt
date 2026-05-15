@@ -18,6 +18,11 @@
 
   - AHCI uses tables that may be located in the XBDA - so if the XBDA is to
     be moved, setting option /R is required.
-  - AHCICD.DLL needs JLOAD v5.83 - older versions won't disable caching
-    of the controller's memory-mapped registers.
+  - AHCICD.DLL needs at least JLOAD v5.83 - older versions won't disable
+    caching of the controller's memory-mapped registers.
 
+
+  3. History
+
+  - 04/2026: v1.1; support for "raw" mode added.
+  - 09/2022: v1.0; supports "cooked" mode only.

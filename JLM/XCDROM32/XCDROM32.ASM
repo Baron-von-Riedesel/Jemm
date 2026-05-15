@@ -578,7 +578,7 @@ ReqErr:
 Ignored:
     ret                     ;Exit ("ignored" request handler).
 ;
-; IOCTL Input "Device Header Address" handler
+; IOCTL Input 0 "Device Header Address" handler
 ;
 ReqDHA:
     mov eax,[dwBase]
@@ -586,7 +586,7 @@ ReqDHA:
     mov [esi+1], eax
     ret
 ;
-; IOCTL Input "Return Sector Size" handler
+; IOCTL Input 7 "Return Sector Size" handler
 ;
 ReqSecSize:
     cmp @byte [esi+1],1     ;Is read mode "cooked" or "raw"
@@ -1091,11 +1091,11 @@ ConvLBA:
     mov dl,60       ;Convert "minute" value to "seconds".
     mul dl          ;(Multiply by 60, obviously!).
     mov dl,ch       ;Add in "second" value.
-    add ax,dx
+    add eax,edx
     mov dl,75       ;Convert "second" value to "frames".
     mul edx         ;(Multiply by 75 "frames"/second).
-    mov dl,150      ;Subtract offset - "frame".
-    sub dl,cl       ;("Adds" frame, "subtracts" offset).
+    mov dl,2*75     ;finally, add frames and subtract "2 seconds"
+    sub dl,cl
     sub eax,edx
     ret
 CnvLBAE:
