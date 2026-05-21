@@ -28,7 +28,7 @@ maxhigh     dd -1	; mask for upper memory address limit
  endif
 num_handles DW ?XMS_DEFHDLS	;XMSHANDLES= value
  if ?XMS35
-smem_used   db 0	;set to 1 if any super-extended block is used
+smem_found  db 0	;set to 1 if at least one (available) super-extended block was found
  endif
 endif
 XMSPARAMS ends

@@ -137,9 +137,13 @@ VMM_Service (Free_V86_Call_Back)
 VMM_Service (Yield)
 VMM_Service (MoveMemory)
 
-VMM_Service (_Allocate_GDT_Selector)
-VMM_Service (_Free_GDT_Selector)
-VMM_Service (Get_DDB)
+VMM_Service (_Allocate_GDT_Selector) /* v5.83 */
+VMM_Service (_Free_GDT_Selector)     /* v5.83 */
+VMM_Service (Get_DDB)                /* v5.83 */
+
+VMM_Service (V86ToPM)       /* v5.85 */
+VMM_Service (GetDOSBuffer)  /* v5.86 */
+VMM_Service (Out_Debug_Chr) /* v5.87 */
 
 End_Service_Table(VMM, VMM)
 

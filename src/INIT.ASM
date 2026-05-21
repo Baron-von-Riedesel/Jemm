@@ -634,6 +634,9 @@ if ?I41SUPP
     mov ecx, offset Int41_Entry
     @dprintf ?INITDBG, <"init: int 41h vector set to %X",10>, ecx
     call SetIDTEntry
+ if ?DBGOUT
+    mov bUseI41, 1
+ endif
 endif
 
 if ?KD

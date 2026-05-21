@@ -62,9 +62,7 @@ name_ proc
 ;--- the following functions aren't implemented yet and will always return
 ;--- an error: 
 ;---   Install_Mult_IO_Handlers, Remove_Mult_IO_Handlers
-;---   Hook_V86_Fault, Unhook_V86_Fault
 ;---   Hook_PM_Fault, Unhook_PM_Fault
-;---   Get_PM_Int_Vector, Set_PM_Int_Vector
 
 @@VMM_Service_no = 0
 
@@ -87,8 +85,8 @@ VMM_Service Crash_Cur_VM
 VMM_Service Hook_V86_Int_Chain
 VMM_Service Get_V86_Int_Vector
 VMM_Service Set_V86_Int_Vector
-VMM_Service Get_PM_Int_Vector
-VMM_Service Set_PM_Int_Vector
+VMM_Service Get_PM_Int_Vector    ; implemented in v5.87 - previously a stub only
+VMM_Service Set_PM_Int_Vector    ; implemented in v5.87 - previously a stub only
 VMM_Service Simulate_Int
 VMM_Service Simulate_Iret
 VMM_Service Simulate_Far_Call
@@ -143,6 +141,10 @@ VMM_Service V86ToPM		; jump to VCPI client, esi->V86toPM struct, ebp->client reg
 ;--- added in v5.86
 
 VMM_Service GetDOSBuffer; get linear address of 4kB DOS buffer in JLOAD (during init phase only)
+
+;--- added in v5.87
+
+VMM_Service Out_Debug_Chr
 
 ;--- equates for the page memory functions
 

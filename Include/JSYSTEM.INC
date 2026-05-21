@@ -5,7 +5,7 @@
 ?VERSIONLOW     equ 87
 
 ?BASE           EQU 110000h         ; base of Jemm 32bit code
-?SYSBASE        EQU 0F8000000h      ; linear address system space
+?SYSBASE        EQU 0F8000000h      ; linear address system space ( 128 MB )
 ?PAGEDIR        EQU ?SYSBASE+1000h  ; linear address page dir
 ?PAGETABSYS     EQU 3000h           ; rel. offset (?SYSBASE) for system page table
 ;--- 3000 = 3 page tables ( pagedir, page tab0, system page tab )

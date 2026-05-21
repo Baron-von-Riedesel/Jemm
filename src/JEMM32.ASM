@@ -174,6 +174,9 @@ endif
 if ?KD
 bKD             db  0   ; bit0: 1=kernel debugger detected and initialized
 endif
+if ?DBGOUT and ?I41SUPP
+bUseI41         db  0
+endif
 
     align 4
 
@@ -2265,6 +2268,13 @@ endif
 
 if ?I41SUPP
 Int41_Entry proc public
+ if ?DBGOUT
+    cmp ax,0
+    jnz @F
+    mov al,dl
+    call VPUTCHR
+@@:
+ endif
     iretd           ; just don't route it to v86-mode
     align 4
 Int41_Entry endp

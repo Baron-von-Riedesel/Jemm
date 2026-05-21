@@ -28,7 +28,7 @@ if ?DBGOUT
 
 VPUTCHR PROC public
 	PUSHAD
-if ?KD
+if 0;?KD
 	cmp cs:[bKD],0	; kernel debugger detected?
 	jz @F
 	mov edx, eax	; then redirect output to it

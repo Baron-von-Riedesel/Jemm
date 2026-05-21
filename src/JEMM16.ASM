@@ -1433,7 +1433,7 @@ if ?XMS35
 	mov xms.smax,0
 	jecxz exit
 smax_ok:
-	mov xms.smem_used, 1
+	mov xms.smem_found, 1
 	jmp beyond4g
 @@:
 endif

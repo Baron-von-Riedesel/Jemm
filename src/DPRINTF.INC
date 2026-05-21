@@ -198,8 +198,8 @@ print_string:		;print string ESI, size EAX
 	.endw
 	sub esi, eax
 	xchg eax, esi
-	mov ebx,size_
-	sub ebx,eax
+	mov ebx, size_
+	sub ebx, eax
 	.if flag == 1
 		.while sdword ptr ebx > 0
 			mov eax, [fillchr]
@@ -221,12 +221,21 @@ print_string:		;print string ESI, size EAX
 	retn
 
 dochar:
-	cmp al,10
+	cmp al, 10
 	jnz @F
-	mov al,13
+	mov al, 13
 	call @F
-	mov al,10
+	mov al, 10
 @@:
+if ?I41SUPP
+	cmp cs:[bUseI41],0
+	jz @F
+	mov dl, al
+	xor eax, eax
+	int 41h
+	retn
+@@:
+endif
 	jmp VPUTCHR
 
 dprintf endp

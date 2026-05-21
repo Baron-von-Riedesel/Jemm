@@ -1119,7 +1119,10 @@ local maxvalue:DWORD
 local mmap:E820MAP
 
 if ?XMS35
-	cmp xms.smem_used,FALSE
+;--- v5.87: xms.smem_found may not be set yet!
+;--- either disable the check and adjust docs or
+;--- check xms.smax == 0 instead!
+	cmp xms.smem_found,FALSE
 	jnz @F
 endif
 	cmp [bNoE820],0    ; NOE820 option set?
@@ -1856,7 +1859,7 @@ else
 	invoke GetEMBBase, jemmini.XMSControlHandle
 	mov jemmini.MonitorStart, eax
  if ?XMS35
-	.if xms.smem_used == FALSE
+	.if xms.smem_found == FALSE
 		mov cs:xms_smax_noe820,0	;disable INT15, ax=e820h check
 		mov jemmini.xms_version,INTERFACE_VER_MAXSEXT0	;make XMM report v3.0 interface
 	.endif

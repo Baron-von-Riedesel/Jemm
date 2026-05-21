@@ -72,6 +72,9 @@ endif
 if ?KD
 externdef bKD:byte
 endif
+if ?I41SUPP and ?DBGOUT
+externdef bUseI41:byte
+endif
 .text$01 ENDS
 
 @seg .text$03,<DWORD>
