@@ -66,7 +66,9 @@ endif
 
 	cmp word ptr [dfOldint20+4],0	;already initialized?
 	jnz @F
+	push ecx
 	call InitVMM
+	pop ecx
 	jc @@exit
 @@:
 

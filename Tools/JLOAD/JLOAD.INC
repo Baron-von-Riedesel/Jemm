@@ -4,7 +4,7 @@
 ;--- constants
 ;--- ?SYSBASE is from JSYSTEM.INC (=0F8000000h)
 
-?SYSTEMADDR		equ ?SYSBASE+400000h;linear address "system" region
+?SYSTEMADDR		equ ?SYSBASE+400000h;linear address "system" region ( 124 MB )
 ?PRIVATEADDR	equ 400000h			;linear address "private" region
 
 ?PMSTACK	equ 1	;1=alloc a 4 kB stack space; 0=use Jemm's stack

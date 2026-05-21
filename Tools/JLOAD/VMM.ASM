@@ -134,6 +134,7 @@ MoveMemory  		dd 0
 					dd Get_DDB ; v5.83
 					dd V86ToPM ; v5.85
 					dd GetDOSBuffer ; v5.86
+					dd Out_Debug_Chr; v5.87
 
 ?NUMSERV0001 equ ($ - vmm_services)/4
 
@@ -234,20 +235,16 @@ endif
 ;--- install an int 20h handler in IDT;
 ;--- it will install the jlm dynamic linking mechanism (Win3x/9x style)
 
-	mov esi, eax
-	add esi, 20h*8
-	mov ax, [esi].GATE.wOfsHi
-	shl eax, 16
-	mov ax, [esi].GATE.wOfsLo
-	mov dword ptr [dfOldint20+0], eax
-	mov ax, [esi].GATE.wSeg
-	mov word ptr [dfOldint20+4], ax
-	mov eax, offset Int20_Handler
-	mov [esi].GATE.wOfsLo, ax
-	shr eax, 16
-	mov [esi].GATE.wOfsHi, ax
-	mov eax, cs
-	mov [esi].GATE.wSeg, ax
+	mov eax, 20h
+	call Get_PM_Int_Vector
+	mov dword ptr [dfOldint20+0], edx
+	mov word ptr [dfOldint20+4], cx
+
+	mov edx, offset Int20_Handler
+	mov ecx, cs
+	mov eax, 20h
+	call Set_PM_Int_Vector
+	clc
 @@exit:
 	@dprintf ?INITDBG, <"Init exit",10>
 	ret
@@ -849,25 +846,38 @@ Set_V86_Int_Vector proc
 	align 4
 Set_V86_Int_Vector endp
 
-;--- the Get_PM/Set_PM API is supposed to set the vectors of the current VM
-;--- if it's in protected-mode. So not really needed by Jemm.
+;--- the Get_PM/Set_PM API in Win9x accesses the IDT only if it's called before SYSINIT;
+;--- else the "instanced" IDT of the current VM is accessed.
+;--- In Jemm there's just one IDT.
 
 ;--- in: eax=int#
-;--- out: cx=segment
+;--- out: cx=selector
 ;---     edx=offset
+;--- implemented since v5.87
 
-Get_PM_Int_Vector proc
-	stc
+Get_PM_Int_Vector proc uses esi
+	mov esi, [g_dwIDT]
+	lea esi, [esi+eax*8]
+	mov dx, [esi].GATE.wOfsHi
+	shl edx, 16
+	mov dx, [esi].GATE.wOfsLo
+	mov cx, [esi].GATE.wSeg
 	ret
 	align 4
 Get_PM_Int_Vector endp
 
 ;--- in: eax=int#
-;---      cx=segment
+;---      cx=selector
 ;---     edx=offset
+;--- implemented since v5.87
 
-Set_PM_Int_Vector proc
-	stc
+Set_PM_Int_Vector proc uses esi
+	mov esi, [g_dwIDT]
+	lea esi, [esi+eax*8]
+	mov [esi].GATE.wOfsLo, dx
+	shr edx, 16
+	mov [esi].GATE.wOfsHi, dx
+	mov [esi].GATE.wSeg, cx
 	ret
 	align 4
 Set_PM_Int_Vector endp
@@ -1243,6 +1253,8 @@ GetFreePages proc
 	align 4
 GetFreePages endp
 
+;--- return physical page in EDX
+
 AllocPage proc
 	push edi
 	push esi
@@ -1255,6 +1267,8 @@ AllocPage proc
 	ret
 	align 4
 AllocPage endp
+
+;--- release physical page in EDX
 
 FreePage proc
 	push edi
@@ -1287,6 +1301,19 @@ V86ToPM proc public
 	jmp dword ptr [eax+12*4]	; VCPI_V86ToPM
 	align 4
 V86ToPM endp
+
+;--- display char for debug log
+;--- requires either a PL0 debugger or Jemm assembled with debug support
+
+Out_Debug_Chr proc
+	push edx
+	mov dl,al
+	xor eax, eax
+	int 41h
+	pop edx
+	ret
+	align 4
+Out_Debug_Chr endp
 
 ;--- to simplify memory management,
 ;--- a "mapping" page table is maintained which
@@ -1367,9 +1394,9 @@ _PageFree proc public
 	lea esi, [esi*4 + ?PAGEMAP shl 22]
 	lodsd
 	test ah,2	;begin of a block?
-	jz	@@error
+	jz @@error
 @@nextitem:
-	test al,1	;committed page?	
+	test al,1	;committed page?
 	jz @F
 	test ah,4	;mapped page?
 	jnz @F
@@ -1405,10 +1432,10 @@ _PageFree endp
 ;--- PR_PRIVATE (80000400h), PR_SHARED (80060000h), PR_SYSTEM (80080000h)
 ;--- flags: ???
 ;--- out: linear address in EAX or -1
-;--- "private" starts at 400000h
-;--- "shared" possibly at F8000000h downwards? (already used by 4MB page heap!)
-;--- system at ?SYSTEMADDR (usually F8400000h)
-;--- the first PTE will have the 
+;--- PR_PRIVATE: 400000h - F7FFFFFFh
+;--- PR_SHARED: invalid
+;--- PR_SYSTEM: ?SYSTEMADDR (usually F8400000h, size restricted to ? MB)
+;--- the first PTE will have the ???
 
 _page  equ <esp+1*4>
 npages equ <esp+2*4>
@@ -1418,7 +1445,11 @@ _PageReserve proc public
 	cmp dword ptr [npages],0
 	jz @@error
 	mov eax, ?SYSTEMADDR shr 10
-	mov ecx, 400000h/4 - (?SYSTEMADDR shr 12)
+
+;--- v5.87: stop at page mapping region (0xFF800000)
+;	mov ecx, 400000h/4 - (?SYSTEMADDR shr 12)
+	mov ecx, ((?PAGEMAP shl 22) - ?SYSTEMADDR) shr 12
+
 	cmp dword ptr [_page],PR_SYSTEM
 	jz @F
 	cmp dword ptr [_page],PR_PRIVATE   ;currently only unspecified regions are supported
@@ -1426,6 +1457,10 @@ _PageReserve proc public
 	mov eax, ?PRIVATEADDR shr 10
 	mov ecx, (?SYSTEMADDR - ?PRIVATEADDR) shr 12
 @@:
+
+;--- EAX=offset in PAGEMAP region (4 MB) to start scan
+;--- ECX=max no of PTEs to scan
+
 	mov edx, [npages]
 	dec edx
 	push edi
@@ -1459,30 +1494,36 @@ _PageReserve proc public
 	jmp @@continuescan
 @@found:
 
-;--- now backup the PDEs and PTEs with true RAM
+;--- now backup the PDEs with true RAM
 
 	mov ecx, edx
 	inc ecx
 	mov edi, ebx
-	.while (ecx)
+	.while ecx
 		mov eax, edi
-		sub eax, ?PAGEMAP shl 22
-		shr eax, 10
-		cmp dword ptr ds:[?PAGEDIR + EAX],0	;does a PDE exist?
+		sub eax, ?PAGEMAP shl 22    ; eax = offset in (4MB) page map
+;		shr eax, 10                 ; offset page map -> ???
+		shr eax, 12                 ; v5.87: offset page map -> index page dir
+		cmp dword ptr ds:[?PAGEDIR + EAX*4],0	;does a PDE exist?
 		jnz @F
+
+;--- alloc and init a new PDE
+
 		push eax
-		call AllocPage
+		call AllocPage   ; alloc VCPI page
 		cmp ah,0
 		pop eax
 		jnz @@error
 		or edx,PTF_PRESENT or PTF_RW or PTF_USER
-		mov ds:[?PAGEDIR + EAX],edx
+;		mov ds:[?PAGEDIR + EAX], edx
+		mov ds:[?PAGEDIR + EAX*4], edx  ;v5.87
 		and dl, not PTF_USER
-		mov ds:[(?PAGEMAP shl 22) + (?PAGEMAP shl 12) + EAX],edx
+;		mov ds:[(?PAGEMAP shl 22) + (?PAGEMAP shl 12) + EAX], edx
+		mov ds:[(?PAGEMAP shl 22) + (?PAGEMAP shl 12) + EAX*4], edx ;v5.87
 		push edi
 		push ecx
 		mov edi, eax
-		shl edi, 10
+		shl edi, 12
 		add edi, ?PAGEMAP shl 22
 		mov eax, cr3
 		mov cr3, eax

@@ -1,6 +1,9 @@
 
  v5.87:
    - Linux.mak added to create JLOAD.EXE on Linux.
+   - Get_PM_Int_Vector/Set_PM_Int_Vector implemented.
+   - VMM service Out_Debug_Chr added.
+   - fixed: _PageReserve() caused a crash if a new PDE had to be set.
 
  v5.86:
    - Jemm's control notifications handled (DEVICE_REBOOT_NOTIFY).
