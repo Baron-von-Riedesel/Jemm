@@ -32,9 +32,9 @@ ifdef _DEBUG
 sym db text,0
 	.code
 	ifnb <args>
-		invoke printf, offset sym, args
+		invoke dprintf, offset sym, args
 	else
-		invoke printf, offset sym
+		invoke dprintf, offset sym
 	endif
 endif
 endm
@@ -253,7 +253,7 @@ SIZERMCODE equ $ - offset rmcode
 	.code
 
 ifdef _DEBUG
-	include printf.inc
+	include dprintf.inc
 endif
 
 DevInt proc

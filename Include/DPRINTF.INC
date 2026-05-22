@@ -4,6 +4,53 @@
 ;--- a) Jemm was assembled with debug log support OR
 ;--- b) a kernel debugger is active
 
+ifndef printf
+i64toa proc stdcall uses edi number:qword, outb:ptr, base:dword
+
+	mov ch,0
+	mov edi, base
+	mov eax, dword ptr number+0
+	mov esi, dword ptr number+4
+	cmp edi,-10
+	jne @F
+	neg edi
+	and esi,esi
+	jns @F
+	neg esi
+	neg eax
+	sbb esi,0
+	mov ch,'-'
+@@:
+	mov ebx,outb
+	add ebx,22
+	mov byte ptr [ebx],0
+@@nextdigit:
+	dec ebx
+	xor edx,edx
+	xchg eax,esi
+	div edi
+	xchg eax,esi
+	div edi
+	add dl,'0'
+	cmp dl,'9'
+	jbe @F
+	add dl,7+20h
+@@:
+	mov [ebx],dl
+	mov edx, eax
+	or edx, esi
+	jne @@nextdigit
+	cmp ch,0
+	je @F
+	dec ebx
+	mov [ebx],ch
+@@:
+	mov eax,ebx
+	ret
+
+i64toa endp
+endif
+
 dprintf proc c fmt:ptr, args:vararg
 
 local flag:byte

@@ -1,6 +1,11 @@
 
   History
 
+  05/2026: v1.6
+   - debug variant: uses Jemm's debug log support for debug messages.
+   - fixed: "get media change status" (IOCTL 9) didn't set status busy
+     flag.
+
   10/2022: v1.5
    - fixed: the driver was unable to handle multiple controllers with
      identical class/subclass/interface values.

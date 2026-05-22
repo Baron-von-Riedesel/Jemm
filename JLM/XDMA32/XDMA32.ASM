@@ -208,9 +208,9 @@ endm
 @dprintf macro text,args:vararg
 ifdef _DEBUG
 	ifnb <args>
-		invoke printf, CStr(text), args
+		invoke dprintf, CStr(text), args
 	else
-		invoke printf, CStr(text)
+		invoke dprintf, CStr(text)
 	endif
 endif
 endm
@@ -335,6 +335,9 @@ DName   db 26*2 dup (0)    ;the model number is actually 20 words only
 	.code
 
 	include printf.inc
+ifdef _DEBUG
+	include dprintf.inc
+endif
 
 ;
 ; Driver Entry Routine.  For CHS requests, the registers contain:

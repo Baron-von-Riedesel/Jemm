@@ -24,7 +24,7 @@
 
  GENERIC doesn't hook real-mode interrupt vectors. If a real-mode program
  wants to call a function provided by GENERIC, it first has to get the JLM's
- entry point. This is done similiar to Windows 9x: a call of Int 2F, 
+ entry point. This is done similiar to Windows 9x: a call of Int 2Fh, 
  AX=1684h with register BX containing the "device id". On return, if the
  "device" has been found, ES:DI will contain its entry address:
  

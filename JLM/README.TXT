@@ -10,6 +10,7 @@
  IOTRAP:   sample how to trap IO port access.
  JCLOCK:   shows clock in text mode.
  KEYBGR:   German keyboard driver.
+ LOGFILE:  redirects debug output to an XMS buffer.
  QPIEMU:   emulates port trapping part of QPI.  
  REBOOT:   shows how control message DEVICE_REBOOT_NOTIFY may be handled.
  XCDROM32: UltraDMA DVD/CD-ROM driver (GNU GPL 2).
@@ -35,7 +36,7 @@
  Open Watcom WCC386 1.9       ok
  
  COFF linker:
- JWlink             1.9beta17 ok
+ JWlink             2.0       ok
  Open Watcom WLink  1.9       ok
  MS Link            6.00      ok
 

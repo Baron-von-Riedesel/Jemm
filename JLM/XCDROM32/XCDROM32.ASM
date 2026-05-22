@@ -86,7 +86,7 @@ DWRDIO      equ 1       ;support /32 option (PIO DWORD IO)
 SAVESTAT    equ 1       ;call save/restore "client reg struct" on init
 IDENTPKT    equ 1       ;1=issue "identify packet" cmd, 0=normal "identify"
 
-VER     equ <'V1.5, 06.10.2022'>    ;Driver version number and date.
+VER     equ <'V1.6, 20.05.2026'>    ;Driver version number and date.
 MSELECT equ 0A0h        ;"Master" device-select bits.
 SSELECT equ 0B0h        ;"Slave"  device-select bits.
 COOKSL  equ 2048        ;CD-ROM "cooked" sector length.
@@ -241,9 +241,9 @@ endm
 local sym
 ifdef _DEBUG
 	ifnb <args>
-		invoke printf, CStr(text), args
+		invoke dprintf, CStr(text), args
 	else
-		invoke printf, CStr(text)
+		invoke dprintf, CStr(text)
 	endif
 endif
 endm
@@ -478,6 +478,9 @@ SIZERMCODE equ $ - offset rmcode
     .code
 
 	include printf.inc
+ifdef _DEBUG
+	include dprintf.inc
+endif
 
 ;
 ; "Device-Interrupt" routine -- This routine processes DOS requests.
@@ -759,7 +762,9 @@ ReqMCS:
     mov edi,[AudAP]     ;Get media-change flag from table.
     mov al,[edi-1]
     mov [esi+1],al      ;Return media-change flag to user.
-    ret
+;--- v1.6: set audio status busy flag
+;    ret
+	jmp ReadAudioSt
 ;
 ; IOCTL Output "Eject Disk" handler.
 ;
