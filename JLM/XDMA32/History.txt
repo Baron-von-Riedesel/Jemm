@@ -1,4 +1,8 @@
 
+  05/2026: v1.6
+
+   - debug variant: uses Jemm's debug log support for debug messages.
+
   10/2022: v1.5
 
    - ensure that busmaster flag in PCI command register is set.

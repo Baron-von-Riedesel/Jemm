@@ -64,7 +64,7 @@ HDNUM   equ 0           ;1=rely on value at 0040:0075
 ;
 ; General Program Equations.
 ;
-VERSION equ <' V1.5, 15-10-2022'>
+VERSION equ <' V1.6, 20-05-2026'>
 RDYTO   equ 08h         ;389-msec minimum I-O timeout.
 BIOSTMR equ 046Ch       ;BIOS "tick" timer address.
 HDISKS  equ 0475h       ;BIOS hard-disk count address.

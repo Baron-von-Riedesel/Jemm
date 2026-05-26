@@ -23,7 +23,7 @@
 #    fixup") is disabled; it happens if Jemm16.asm is assembled with Masm
 #    and should be regarded as a Masm bug!
 #
-# Jemm consists of 2 parts. which are created separately: the 32-bit
+# Jemm consists of 2 parts that are created separately: the 32-bit
 # part is the true Jemm application ( the "v86-monitor" program ) -
 # its sources are assembled and linked to Jemm32.bin. The 16-bit part
 # is (mostly) used during the initialization phase and - except for a 
