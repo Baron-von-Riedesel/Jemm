@@ -137,7 +137,7 @@ OldInt67        dd 0
     public  dwHeapSize
 
 dwRes           dd  0   ; linear address of resident segment
-if ?HOOK13
+if ?HOOKINT13
 dwRFlags        dd  0   ; linear address bRFlags
 endif
 dwRSeg          dd  0   ; resident segment
@@ -168,7 +168,7 @@ bPageMask       db  0   ;mask for PTEs in 0-110000h
 endif
 bBpTab          db  0   ;offset start bptable in RSEG
 bBpBack         db  BPTABLE.pBack shr 2
-ife ?HOOK13
+ife ?HOOKINT13
 bDiskIrq        db  0   ; bit0: 1=diskette transfer pending
 endif
 if ?KD
@@ -249,7 +249,7 @@ if ?VDS
 endif
     dd V86_Back             ; BPBACK, return to pm after calling v86-code
     dd I15_Simulate87       ; BP1587, simulate Int 15h, ah=87h
-if ?HOOK13
+if ?HOOKINT13
     dd Dma_CopyBuffer       ; BP1340, INT13/40 DMA read op thru buffer
 endif
     dd xms_handler          ; BPXMS, XMS handler (UMB+A20)
@@ -2290,7 +2290,7 @@ Int15_Entry PROC public
 
     cmp ax,4F53h    ;DEL pressed?
     jz @@isdel
-ife ?HOOK13
+ife ?HOOKINT13
     cmp ax,9101h    ;diskette interrupt done?
     jz @@isfdirq
 endif
@@ -2372,7 +2372,7 @@ if ?FASTBOOT
 endif
     jmp _Reboot
 
-ife ?HOOK13
+ife ?HOOKINT13
 @@isfdirq:
     btr word ptr ss:[bDiskIrq],0	; copy out of DMA buffer required?
     jnc @@v86mon

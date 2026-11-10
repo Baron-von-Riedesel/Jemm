@@ -28,7 +28,7 @@ externdef pmem:PAGEMEM
 externdef vdsstat:DMABUFF
 externdef dwRes:dword
 externdef dwRSeg:dword
-if ?HOOK13
+if ?HOOKINT13
 externdef dwRFlags:dword
 else
 externdef bDiskIrq:byte

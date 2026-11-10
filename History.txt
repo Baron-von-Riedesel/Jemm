@@ -1,10 +1,10 @@
 
  History
 
- __.__.____: v5.87
+ 11.11.2026: v5.87
 
  - fixed regression in v5.86: exceptions in PL0 were displayed incorrectly.
- - fixed: NMIs that occured while no full stack frame was setup caused
+ - fixed: NMIs that occured while no full stack frame was yet set caused
    a crash.
  - segment registers DS/ES/FS/GS and [CS:IP] now also displayed for PL0
    exceptions.
@@ -12,11 +12,13 @@
  - fixed: Simulate_Int() cleared bits 16-31 of register ESP.
  - JemmEx fix: if option XMSHANDLES was > 59 and Jemm wasn't allowed to move
    its resident part into the upper memory region, it crashed.
- - Linux.mak: GNU makefile added to create Jemm binaries on Linux.
+ - GNU makefile (Linux.mak) added to create Jemm binaries on Linux.
  - fixed JemmEx: unknown A20METHOD value caused a crash.
  - AHCICD: driver now supports long reads in "raw mode".
  - Int 15h, ah=87h: returns error 02 instead of 80h if limit out of range.
  - debug version, int 41h: routes AX=0 ( display chr ) to debug display.
+ - IOCTL interface cmd code 08: structure of service table changed; a few
+   obsolete entries were removed.
 
  25.01.2026: v5.86
  - service table: added control proc member to allow Jemm to call out on

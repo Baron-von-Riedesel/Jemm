@@ -39,6 +39,7 @@ if 0;?KD
 @@:
 endif
 if ?AUXIO
+AuxPutChar proto
 	call AuxPutChar
 else
  if ?USEMONO

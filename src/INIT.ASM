@@ -725,7 +725,7 @@ endif
     add eax,ecx
     mov [bpstart],eax
 
-if ?HOOK13
+if ?HOOKINT13
     movzx eax,[esi].RSOFS.wRFlags
     add eax,ecx
     mov [dwRFlags],eax
@@ -1414,7 +1414,7 @@ endif
     shr eax,4
     mov [dwRSeg], eax
     sub edi, esi
-  if ?HOOK13
+  if ?HOOKINT13
     add [dwRFlags],edi
   endif
     add [bpstart],edi

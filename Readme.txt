@@ -13,6 +13,8 @@
   4.6  Option MAXSEXT
   4.7  Option NOEMS
   4.8  Option SB
+  4.9  Device Driver Interface
+  4.10 Memory Layout
   5.   Compatibility
   6.   Errors and Warnings
   7.   Troubleshooting, Hints
@@ -324,8 +326,8 @@
  The change of the device name makes the usual EMM detection routines fail.
  OTOH, the interrupt 67h API is fully functional. Most of this is pretty
  similar to what "recent" MS Emm386 versions do - the only difference is
- that they won't limit the memory pool to 8 MB, but install it in its full
- size (32 MB).
+ that MS Emm386 won't limit the memory pool to 8 MB, but install it in its
+ full size (up to 32 MB, depending on the amount of physical memory).
 
 
  4.8 Option SB
@@ -342,6 +344,40 @@
  However, due to the rather hackish nature of those drivers ( they modify
  Jemm's IDT/GDT and page tables ), one may experience negative effects on
  stability.
+
+
+ 4.9 Device Driver Interface
+
+ Jemm implements a device driver, name is either EMMXXXX0 (if EMS is enabled)
+ or EMMQXXX0 (if EMS is disabled). This device driver understands a few
+ IOCTL command codes:
+
+ - 00: Get API
+ - 02: Get Version
+ - 04: Get Manager resident segment size
+ - 06: Get System status ( page frame, VCPI pages, VDS DMA buffer )
+ - 07: Get UMB status
+ - 08: Get Service Table
+
+ Using command code 08 allows to extend Jemm - this is used by the JLoad tool
+ to implement Jemm Loadable Modules (JLM).
+
+
+ 4.10 Memory Layout
+
+ Jemm's memory layout is:
+
+ - 00000000-000fffff: conventional memory; used by DOS
+ - 00100000-0010ffff: HMA, used by DOS if DOS=HIGH is set
+ - 00110000-00110fff: Jemm's support for VCPI protected-mode API
+ - 00111000-001xxxxx: Jemm's kernel code, size depends on size of EMS/VCPI
+ - 001xxxxx-f6ffffff: free at init
+ - f7000000-f7ffffff: optionally used to map-in super-extended memory
+ - f8000000-f83fffff: Jemm's page tables, PL0 stack, other data
+ - f8400000-ffffffff: optionally used by JLoad to load JLMs
+
+ For VCPI clients, address range 00000000-00110fff is returned as global
+ memory, the rest is free to use by the client.
 
 
  5. Compatibility
@@ -511,6 +547,12 @@
    DPMI16BI.OVL/DPMI32VM.OVL (coupled with RTM.EXE/32RTM.EXE). Setting Jemm
    option MAX=32752K ( that's 32MB minus 16kB) should help; alternately, try
    setting environment variable "DPMIMEM=MAXMEM 16383".
+
+ - There exist DOS-extended programs that require more than 8 MB EMS memory,
+   even if the NOEMS option has been set. That's somewhat strange, since EMS
+   memory usually is supposed to be used by real-mode programs. The game
+   "Redneck Rampage" belongs to this kind of programs. Easiest fix is to add
+   option MIN=15M to Jemm's cmdline.
 
  - The JEMM ;-) DOS extender (used for "Strike Commander" and "Privateer")
    isn't compatible with the VME option. This requirement is a strong sign

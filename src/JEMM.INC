@@ -28,7 +28,7 @@ endif
 ?UNLOAD         EQU 1       ; 1=support UNLOAD option
 ?FASTBOOT       EQU 1       ; 1=support FASTBOOT option
 ?SPLIT          EQU 1       ; 1=support SPLIT option
-?HOOK13         EQU 1       ; 1=hook int 13h/40h for DMA access trapping
+?HOOKINT13      EQU 1       ; 1=hook int 13h/40h for DMA access trapping
 ?V86EXC0D       EQU 1       ; 1=support V86EXC0D option
 ?ADDCONV        EQU 1       ; 1=add A000h to conv memory if I=A000-XXXX
 

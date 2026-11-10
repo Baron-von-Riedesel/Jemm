@@ -508,7 +508,7 @@ endif
 
 @@IsRead:
 
-if ?HOOK13
+if ?HOOKINT13
     mov eax,[dwRFlags]
   if 1
     test byte ptr [eax],RFL_DMAOP ; is a int 13h/40h read op pending?
@@ -665,15 +665,15 @@ Dma_IsContiguous ENDP
 
 ; Copy the DMA-buffercontents after termination of the DISK-I/O to the
 ; wanted target/location.
-; * If ?HOOK13 is 1, this is triggered by an v86-breakpoint in real-mode int 13
+; * If ?HOOKINT13 is 1, this is triggered by an v86-breakpoint in real-mode int 13
 ; * and int 40 handlers. First the original int 13 / 40 is done, and
 ; * then, if the DMA buffer was used, things are copied out of this buffer
 ; * to the target linear address.
-; * if ?HOOK13 is 0, this is called by Int 15h handler, ax=9101h.
+; * if ?HOOKINT13 is 0, this is called by Int 15h handler, ax=9101h.
 
 Dma_CopyBuffer PROC public
 
-if ?HOOK13
+if ?HOOKINT13
     call Simulate_Iret
     and [ebp].Client_Reg_Struc.Client_EFlags, not 1 ;CF=0
 endif
@@ -686,7 +686,7 @@ endif
 
     CLD
     call MoveMemory
-if ?HOOK13
+if ?HOOKINT13
     mov eax,[dwRFlags]
     mov byte ptr [eax],0	; clear flags RFL_xxx
 endif

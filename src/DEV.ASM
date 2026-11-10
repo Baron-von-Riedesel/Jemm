@@ -49,6 +49,7 @@ EMMXXXX0_Strategy proc public
 EMMXXXX0_Strategy endp
 
 ;--- EMMXXXX0 interrupt routine
+;--- for device driver cmd codes see RBIL, table 2595
 
 EMMXXXX0_Interrupt proc public
     call Simulate_Far_Ret                ; do a RETF in V86

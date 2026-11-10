@@ -68,7 +68,7 @@ wLow    dw RSEG_END     ;resident low memory required by driver
 ;--- the entries are offsets in RSEG
 ;--- the most important one is the offset to the v86 breakpoint table
 
-if ?HOOK13
+if ?HOOKINT13
 _brptab RSOFS < RSEG_END, bptable, bRFlags >
 else
 _brptab RSOFS < RSEG_END, bptable >
@@ -85,7 +85,7 @@ intvecs label INTMOD
 if ?INTEGRATED
 	INTMOD <2Fh,offset NEW2F, offset OldInt2F>
 endif
-if ?HOOK13
+if ?HOOKINT13
 	INTMOD <13h,offset NEW13, offset OldInt13>
 	INTMOD <40h,offset NEW40, offset OldInt40>
 endif
@@ -137,7 +137,7 @@ if ?VDS
 endif
 	@DefineBP BPBACK	; BP to return to v86 monitor from a v86 far proc
 	@DefineBP BPI1587
-if ?HOOK13
+if ?HOOKINT13
 	@DefineBP BP1340	; int 13h/40h: copy out of DMA buffer
 endif
 	@DefineBP BPXMS 	; handle XMS A20+UMB
@@ -147,7 +147,7 @@ if ?UNLOAD
 	@DefineBP BPUNL		; unload
 endif
 
-if ?HOOK13
+if ?HOOKINT13
 
 bRFlags DB 0			; bit 0: 1=copy out of DMA buffer ; bit 1: 1=new DMA op started
 
@@ -176,7 +176,7 @@ int1340common:
 	test cs:[bRFlags],RFL_COPYBUFFER
 	jnz BP1340			; breakpoint int 13/40h: copy out of DMA buffer
 endif
-if ?HOOK13 or ?INTEGRATED
+if ?HOOKINT13 or ?INTEGRATED
 iret_with_new_CY:
 	push bp
 	mov bp,sp

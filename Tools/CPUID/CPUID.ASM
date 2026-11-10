@@ -278,7 +278,7 @@ is386:
 		eax, ebx, ecx, edx
 	invoke print_cpuid_regs, 2, offset cpuid1xm	;display values returned in edx, ecx
 
-	cmp di, 5
+	cmp di, 4
 	jb nobrand
 	mov eax,80000002h
 	cpuid
